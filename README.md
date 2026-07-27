@@ -80,13 +80,12 @@ oracles, and retains stdout under `examples/qualification-logs/`:
 PS5_HOST=10.0.1.41 examples/run_fw550_m3.sh
 ```
 
-The 2026-07-27 UTC FW `0x05500008` qualification passed all four runs: both
-compute runs verified 1,024 deterministic values and both triangle runs
-verified exactly 18,432 green pixels. See
-`analysis/fw550_compute_triangle_qualification_20260727.md` for the retained
+The 2026-07-27 UTC FW `0x05500008` qualification passed all six runs: both
+compute runs verified 1,024 deterministic values, both triangle runs verified
+exactly 18,432 green pixels, and both indexed-textured runs verified exactly
+18,432 opaque sampled pixels with at least 64 distinct colors. See
+`analysis/fw550_indexed_textured_qualification_20260727.md` for the retained
 revision and artifact evidence.
-The runner now also requires the indexed-textured sample; that newer gate is
-reported separately until its repeated FW 5.50 evidence is collected.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or
@@ -116,10 +115,11 @@ selected user-SGPR immediately before dispatch. Indexed draws bind standard
 Vulkan vertex/index buffers, build per-draw GPU-visible gfx1013 vertex tables,
 and emit `DRAW_INDEX_2` for UINT16 or UINT32 indices. Combined and separate
 sampled-image/sampler descriptors for linear RGBA8/BGRA8 images are encoded
-through OpenAGC and bound to compiler-selected graphics SGPRs. Dynamic buffer
-offsets, hardware readback/display evidence for indexed/textured draws,
-and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
-features remain unavailable.
+through OpenAGC and bound to compiler-selected graphics SGPRs. Linear image
+allocation and subresource layouts use the gfx1013-required 256-byte row pitch;
+the sampled-image path is repeatedly hardware-qualified. Dynamic buffer
+offsets and optional sparse, protected, external-handle, multiview, YCbCr, and
+timeline features remain unavailable.
 
 On Prospero, `vkCreateDevice` reaches OpenAGC initialization, which now keeps
 the FW-specific GPU process-authorization preparation inside its `/dev/gc`

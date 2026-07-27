@@ -31,6 +31,9 @@ typedef struct VkPs5Image {
     VkSampleCountFlagBits samples;
     VkImageTiling tiling;
     VkImageUsageFlags usage;
+    VkDeviceSize row_pitch;
+    VkDeviceSize depth_pitch;
+    VkDeviceSize array_pitch;
     VkDeviceSize size;
     VkDeviceMemory memory;
     VkDeviceSize memory_offset;
@@ -539,13 +542,28 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     image->samples = pCreateInfo->samples;
     image->tiling = pCreateInfo->tiling;
     image->usage = pCreateInfo->usage;
-    uint64_t texels = (uint64_t)image->extent.width * image->extent.height *
-        image->extent.depth * image->array_layers;
-    if (texels > UINT64_MAX / format_bytes(image->format)) {
+    uint64_t row_bytes =
+        (uint64_t)image->extent.width * format_bytes(image->format);
+    if (row_bytes > UINT64_MAX - 255u) {
         vk_ps5_device_free(device, pAllocator, image);
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
-    image->size = (texels * format_bytes(image->format) + 255u) & ~(VkDeviceSize)255u;
+    image->row_pitch = (row_bytes + 255u) & ~(VkDeviceSize)255u;
+    if (image->extent.height > UINT64_MAX / image->row_pitch) {
+        vk_ps5_device_free(device, pAllocator, image);
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+    image->depth_pitch = image->row_pitch * image->extent.height;
+    if (image->extent.depth > UINT64_MAX / image->depth_pitch) {
+        vk_ps5_device_free(device, pAllocator, image);
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+    image->array_pitch = image->depth_pitch * image->extent.depth;
+    if (image->array_layers > UINT64_MAX / image->array_pitch) {
+        vk_ps5_device_free(device, pAllocator, image);
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+    image->size = image->array_pitch * image->array_layers;
     *pImage = (VkImage)image;
     return VK_SUCCESS;
 }
@@ -595,14 +613,11 @@ vkGetImageSubresourceLayout(VkDevice device, VkImage image_handle,
     (void)device;
     VkPs5Image *image = (VkPs5Image *)image_handle;
     if (!image || !pSubresource || !pLayout) return;
-    uint32_t bytes = format_bytes(image->format);
-    VkDeviceSize row_pitch = (VkDeviceSize)image->extent.width * bytes;
-    VkDeviceSize depth_pitch = row_pitch * image->extent.height;
-    pLayout->offset = depth_pitch * image->extent.depth * pSubresource->arrayLayer;
-    pLayout->size = depth_pitch * image->extent.depth;
-    pLayout->rowPitch = row_pitch;
-    pLayout->arrayPitch = depth_pitch * image->extent.depth;
-    pLayout->depthPitch = depth_pitch;
+    pLayout->offset = image->array_pitch * pSubresource->arrayLayer;
+    pLayout->size = image->array_pitch;
+    pLayout->rowPitch = image->row_pitch;
+    pLayout->arrayPitch = image->array_pitch;
+    pLayout->depthPitch = image->depth_pitch;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -1692,9 +1707,14 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         kAgcFilterBilinear : (AgcFilterMode)-1;
     if ((int)min_filter < 0 || (int)mag_filter < 0)
         return VK_ERROR_FEATURE_NOT_PRESENT;
-    AgcMipFilterMode mip_filter =
+    AgcMipFilterMode mip_filter = pCreateInfo->maxLod == 0.0f ?
+        kAgcMipFilterNone :
         pCreateInfo->mipmapMode == VK_SAMPLER_MIPMAP_MODE_NEAREST ?
-        kAgcMipFilterPoint : kAgcMipFilterLinear;
+        kAgcMipFilterPoint : pCreateInfo->mipmapMode ==
+            VK_SAMPLER_MIPMAP_MODE_LINEAR ? kAgcMipFilterLinear :
+            (AgcMipFilterMode)-1;
+    if ((int)mip_filter < 0)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     VkPs5Sampler *sampler = alloc_object(device, pAllocator, sizeof(*sampler),
                                          _Alignof(VkPs5Sampler));
     if (!sampler) return VK_ERROR_OUT_OF_HOST_MEMORY;

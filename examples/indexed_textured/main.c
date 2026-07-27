@@ -156,11 +156,18 @@ int main(void)
     uint32_t *texture_mapped;
     VK_CHECK(vkMapMemory(device, texture_memory, 0, texture_requirements.size,
                          0, (void **)&texture_mapped));
-    const uint32_t texels[4] = {
-        0xff0000ffu, 0xff00ff00u,
-        0xffff0000u, 0xffffffffu,
+    const VkImageSubresource texture_subresource = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, 0,
     };
-    memcpy(texture_mapped, texels, sizeof(texels));
+    VkSubresourceLayout texture_layout;
+    vkGetImageSubresourceLayout(device, texture, &texture_subresource,
+                                &texture_layout);
+    texture_mapped[0] = 0xff0000ffu;
+    texture_mapped[1] = 0xff00ff00u;
+    uint32_t *texture_row1 = (uint32_t *)
+        ((uint8_t *)texture_mapped + texture_layout.rowPitch);
+    texture_row1[0] = 0xffff0000u;
+    texture_row1[1] = 0xffffffffu;
     const VkMappedMemoryRange texture_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .memory = texture_memory,

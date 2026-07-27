@@ -248,10 +248,18 @@ int main(int argc, char **argv)
     uint32_t *texture_pixels;
     assert(vkMapMemory(device, texture_memory, 0, VK_WHOLE_SIZE, 0,
                        (void **)&texture_pixels) == VK_SUCCESS);
+    const VkImageSubresource texture_subresource = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0, 0,
+    };
+    VkSubresourceLayout texture_layout;
+    vkGetImageSubresourceLayout(device, texture_image, &texture_subresource,
+                                &texture_layout);
     texture_pixels[0] = 0xff0000ffu;
     texture_pixels[1] = 0xff00ff00u;
-    texture_pixels[2] = 0xffff0000u;
-    texture_pixels[3] = 0xffffffffu;
+    uint32_t *texture_row1 = (uint32_t *)
+        ((uint8_t *)texture_pixels + texture_layout.rowPitch);
+    texture_row1[0] = 0xffff0000u;
+    texture_row1[1] = 0xffffffffu;
     vkUnmapMemory(device, texture_memory);
     const VkImageViewCreateInfo texture_view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,

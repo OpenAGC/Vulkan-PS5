@@ -60,7 +60,7 @@ Deliberately unavailable before later milestones:
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
 
-## Milestone 3: OpenAGC command emission (compute/triangle qualified)
+## Milestone 3: OpenAGC command emission (indexed/textured qualified)
 
 Implemented and host-verified:
 
@@ -95,6 +95,10 @@ Implemented and host-verified:
   indices, interleaved position/UV input, a bilinear 2x2 RGBA8 texture, and a
   deterministic coverage/opacity/color-variation readback oracle. Host builds
   intentionally see zero pixels; the Prospero ELF cross-links successfully.
+- Linear image memory requirements and `vkGetImageSubresourceLayout` expose a
+  256-byte gfx1013 row pitch with derived depth/array pitches. Texture upload
+  tests and the sample honor the returned layout instead of assuming tightly
+  packed rows. Single-level samplers select the non-mipmapped hardware mode.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -138,9 +142,10 @@ FW 5.50 compute/triangle hardware gate:
   dynamic raster state are not emitted yet.
 - On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
   compute runs with `PASS 1024 deterministic values` and two consecutive
-  triangle runs with `PASS 18432 green pixels`. This qualifies Vulkan-owned
-  shader uploads, OpenAGC DCB emission/submission, descriptor binding, EOP
-  completion, and CPU readback for these two baseline paths.
-- `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs both
-  Prospero samples twice through foreground websrv, rejects a missing PASS
-  oracle, and retains per-run output without committing runtime logs.
+  triangle runs with `PASS 18432 green pixels`. Two indexed-textured runs each
+  reported `PASS 18432 pixels 64+ colors`. This additionally qualifies indexed
+  vertex fetch, fragment sampled-image/sampler tables, bilinear filtering, the
+  256-byte linear texture row pitch, and mapped render-target readback.
+- `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs
+  all three Prospero samples twice through foreground websrv, rejects a missing
+  PASS oracle, and retains per-run output without committing runtime logs.
