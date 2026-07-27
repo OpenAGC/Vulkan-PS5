@@ -137,10 +137,12 @@ backend. Standalone Vulkan applications do not include or call the OpenAGC
 hardware-test credential header.
 
 The initial graphics render-pass path supports one single-sampled linear color
-attachment, an optional OpenAGC-laid-out optimal depth/stencil attachment, one
+attachment or up to eight MRT color attachments, an optional OpenAGC-laid-out
+optimal depth/stencil attachment, one
 inline subpass, load/don't-care operations, fixed full-range viewport/scissor
 state, fill rasterization without culling, disabled blending, and all-component
-writes. Static depth compare/write and front/back stencil state are translated
+writes. MRT currently requires blending disabled and all components enabled on
+every target. Static depth compare/write and front/back stencil state are translated
 to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
 addresses, and restore host-readable cache state after drawing. Depth/stencil

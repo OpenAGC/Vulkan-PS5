@@ -23,8 +23,10 @@
   sampled colors per run. Linear images expose and use the gfx1013 256-byte row
   pitch. Host command tests now cover OpenAGC-laid-out optimal D32 images,
   depth attachment transitions, and static depth-test/write plus front/back
-  stencil PM4 on combined D32+S8 planes. Continue Milestone 3 with repeated FW
-  5.50 depth/stencil readback, MRT, and queries.
+  stencil PM4 on combined D32+S8 planes. Dual-target command recording also
+  verifies CB1 binding, per-attachment transitions, and packed fragment-export
+  state. Continue Milestone 3 with repeated FW 5.50 depth/stencil and MRT
+  readback, followed by queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 

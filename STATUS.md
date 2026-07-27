@@ -111,6 +111,11 @@ Implemented and host-verified:
   depth words. It host-builds, cross-links with the required target runtimes,
   and is included in the repeated FW 5.50 runner. Hardware qualification is
   pending; the first deployment attempt found the console FTP service offline.
+- Inline render passes and graphics pipelines accept one to eight color
+  attachments with matching full-component, blend-disabled state. Begin/end
+  transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
+  enables every active slot, and fragment export context carries the real MRT
+  count. The command regression verifies CB1 and dual RGBA8 export `0x44`.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -150,7 +155,7 @@ FW 5.50 compute/triangle hardware gate:
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
 - Storage-image and texel-buffer descriptors, dynamic buffer offsets, push
-  constants, depth/stencil clears, MRT, and general
+  constants, depth/stencil clears, color blending, and general
   dynamic raster state are not emitted yet.
 - On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
   compute runs with `PASS 1024 deterministic values` and two consecutive

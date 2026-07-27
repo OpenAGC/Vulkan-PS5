@@ -341,6 +341,14 @@ int main(int argc, char **argv)
             .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
         },
         {
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+            .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+        },
+        {
             .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
@@ -349,21 +357,22 @@ int main(int argc, char **argv)
             .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
         },
     };
-    const VkAttachmentReference color = {
-        0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    const VkAttachmentReference colors[] = {
+        {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
     };
     const VkAttachmentReference depth = {
-        1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        2, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     };
     const VkSubpassDescription subpass = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color,
+        .colorAttachmentCount = 2,
+        .pColorAttachments = colors,
         .pDepthStencilAttachment = &depth,
     };
     const VkRenderPassCreateInfo render_pass_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 2,
+        .attachmentCount = 3,
         .pAttachments = attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
@@ -409,6 +418,26 @@ int main(int argc, char **argv)
     VkImageView color_view;
     assert(vkCreateImageView(device, &image_view_info, NULL,
                              &color_view) == VK_SUCCESS);
+    VkImage color_image_1;
+    assert(vkCreateImage(device, &image_info, NULL,
+                         &color_image_1) == VK_SUCCESS);
+    VkMemoryRequirements image_requirements_1;
+    vkGetImageMemoryRequirements(device, color_image_1, &image_requirements_1);
+    const VkMemoryAllocateInfo image_memory_info_1 = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = image_requirements_1.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory image_memory_1;
+    assert(vkAllocateMemory(device, &image_memory_info_1, NULL,
+                            &image_memory_1) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, color_image_1, image_memory_1, 0) ==
+           VK_SUCCESS);
+    VkImageViewCreateInfo image_view_info_1 = image_view_info;
+    image_view_info_1.image = color_image_1;
+    VkImageView color_view_1;
+    assert(vkCreateImageView(device, &image_view_info_1, NULL,
+                             &color_view_1) == VK_SUCCESS);
     const VkImageCreateInfo depth_image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -457,11 +486,13 @@ int main(int argc, char **argv)
     VkImageView depth_view;
     assert(vkCreateImageView(device, &depth_view_info, NULL,
                              &depth_view) == VK_SUCCESS);
-    const VkImageView framebuffer_attachments[] = {color_view, depth_view};
+    const VkImageView framebuffer_attachments[] = {
+        color_view, color_view_1, depth_view,
+    };
     const VkFramebufferCreateInfo framebuffer_info = {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
         .renderPass = render_pass,
-        .attachmentCount = 2,
+        .attachmentCount = 3,
         .pAttachments = framebuffer_attachments,
         .width = 256,
         .height = 256,
@@ -516,14 +547,18 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
-    const VkPipelineColorBlendAttachmentState blend_attachment = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    const VkPipelineColorBlendAttachmentState blend_attachments[] = {
+        {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT},
+        {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT},
     };
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &blend_attachment,
+        .attachmentCount = 2,
+        .pAttachments = blend_attachments,
     };
     const VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -619,7 +654,8 @@ int main(int argc, char **argv)
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
-    bool found_color_target = false, found_depth_surface = false;
+    bool found_color_target = false, found_color_target_1 = false;
+    bool found_dual_export = false, found_depth_surface = false;
     bool found_depth_control = false, found_stencil_control = false;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
     for (uint32_t i = 0; i < count; ++i) {
@@ -645,6 +681,17 @@ int main(int argc, char **argv)
                 dwords[i + 2] == (uint32_t)(image_address >> 8);
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
+            uint64_t image_address_1 =
+                vk_ps5_memory_gpu_address(image_memory_1, 0);
+            found_color_target_1 |=
+                dwords[i + 2] == (uint32_t)(image_address_1 >> 8);
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_SPI_SHADER_COL_FORMAT) {
+            found_dual_export |= dwords[i + 2] == 0x44u;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_DEPTH_SIZE_XY) {
             found_depth_surface = true;
         } else if (((dwords[i] >> 8) & 0xffu) ==
@@ -658,6 +705,7 @@ int main(int argc, char **argv)
         }
     }
     assert(found_dispatch && found_draw && found_frame && found_color_target &&
+           found_color_target_1 && found_dual_export &&
            found_depth_surface && found_depth_control && found_stencil_control);
 
     VkQueue queue;
@@ -691,6 +739,9 @@ int main(int argc, char **argv)
     vkDestroyImageView(device, depth_view, NULL);
     vkDestroyImage(device, depth_image, NULL);
     vkFreeMemory(device, depth_memory, NULL);
+    vkDestroyImageView(device, color_view_1, NULL);
+    vkDestroyImage(device, color_image_1, NULL);
+    vkFreeMemory(device, image_memory_1, NULL);
     vkDestroyImageView(device, color_view, NULL);
     vkDestroyImage(device, color_image, NULL);
     vkFreeMemory(device, image_memory, NULL);

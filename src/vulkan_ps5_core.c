@@ -1587,12 +1587,16 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
             multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
             multisample->alphaToOneEnable || blend->logicOpEnable ||
-            blend->attachmentCount != 1u || !blend->pAttachments ||
-            blend->pAttachments[0].blendEnable ||
-            blend->pAttachments[0].colorWriteMask !=
-                (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                 VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
+            !blend->attachmentCount ||
+            blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
+            !blend->pAttachments)
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        for (uint32_t j = 0; j < blend->attachmentCount; ++j)
+            if (blend->pAttachments[j].blendEnable ||
+                blend->pAttachments[j].colorWriteMask !=
+                    (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
         const VkViewport *viewport = create->pViewportState->pViewports;
         const VkRect2D *scissor = create->pViewportState->pScissors;
         if (viewport->x != 0.0f || viewport->y != 0.0f ||
@@ -1684,7 +1688,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
         if (create->subpass >= render_pass->subpass_count)
             return VK_ERROR_INITIALIZATION_FAILED;
-        if (render_pass->subpasses[create->subpass].color_attachment_count != 1u)
+        uint32_t color_attachment_count =
+            render_pass->subpasses[create->subpass].color_attachment_count;
+        if (!color_attachment_count ||
+            blend->attachmentCount != color_attachment_count)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         AgcGfx1013DepthStencilState depth_stencil = {0};
         VkBool32 has_depth_stencil = render_pass->subpasses[create->subpass].
@@ -1723,7 +1730,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .descriptor_binding_count = layout->binding_count,
             .push_constant_size = layout->push_constant_size,
             .color_attachment_count =
-                render_pass->subpasses[create->subpass].color_attachment_count,
+                color_attachment_count,
             .tessellation_control_points = tess_control ?
                 create->pTessellationState->patchControlPoints : 3,
             .tessellation_patches = 8,
@@ -3201,8 +3208,9 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     }
     VkPs5RenderPass *render_pass = (VkPs5RenderPass *)b->renderPass;
     VkPs5Framebuffer *framebuffer = (VkPs5Framebuffer *)b->framebuffer;
+    uint32_t color_count = render_pass->subpasses[0].color_attachment_count;
     if (framebuffer->render_pass != render_pass || !render_pass->subpass_count ||
-        render_pass->subpasses[0].color_attachment_count != 1u ||
+        !color_count || color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
         b->renderArea.offset.x < 0 || b->renderArea.offset.y < 0 ||
         !b->renderArea.extent.width || !b->renderArea.extent.height ||
         (uint32_t)b->renderArea.offset.x > framebuffer->width ||
@@ -3214,39 +3222,50 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
-    uint32_t attachment_index =
-        render_pass->subpasses[0].color_attachments[0];
-    if (attachment_index == VK_ATTACHMENT_UNUSED ||
-        attachment_index >= framebuffer->attachment_count) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
-    const VkAttachmentDescription *attachment =
-        &render_pass->attachments[attachment_index];
-    if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
-    VkPs5ImageView *view = framebuffer->attachments[attachment_index];
-    VkPs5Image *image = (VkPs5Image *)view->image;
-    AgcGfx1013ColorTargetFormat target_format;
-    AgcGfx1013ResourceUsage before;
-    if (!image || !image->memory ||
-        !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
-        image->tiling != VK_IMAGE_TILING_LINEAR ||
-        !color_target_format(view->format, &target_format) ||
-        !layout_resource_usage(attachment->initialLayout, &before)) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
     AgcGfx1013FrameState frame = {0};
-    uint64_t address = vk_ps5_memory_gpu_address(
-        image->memory, image->memory_offset);
-    if (agcGfx1013InitColorTarget(&frame.color_target, address,
-            framebuffer->width, framebuffer->height,
-            target_format) != AGC_OK) {
-        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-        return;
+    frame.color_target_count = color_count;
+    for (uint32_t slot = 0; slot < color_count; ++slot) {
+        uint32_t attachment_index =
+            render_pass->subpasses[0].color_attachments[slot];
+        if (attachment_index == VK_ATTACHMENT_UNUSED ||
+            attachment_index >= framebuffer->attachment_count) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        const VkAttachmentDescription *attachment =
+            &render_pass->attachments[attachment_index];
+        VkPs5ImageView *view = framebuffer->attachments[attachment_index];
+        VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+        AgcGfx1013ColorTargetFormat target_format;
+        AgcGfx1013ResourceUsage before;
+        if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            !image || !image->memory ||
+            !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+            image->tiling != VK_IMAGE_TILING_LINEAR ||
+            !color_target_format(view->format, &target_format) ||
+            !layout_resource_usage(attachment->initialLayout, &before)) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        AgcGfx1013ColorTargetState *target = slot == 0u ?
+            &frame.color_target : &frame.additional_color_targets[slot - 1u];
+        uint64_t address = vk_ps5_memory_gpu_address(
+            image->memory, image->memory_offset);
+        if (agcGfx1013InitColorTarget(target, address,
+                framebuffer->width, framebuffer->height,
+                target_format) != AGC_OK) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        const AgcGfx1013ResourceTransition transition = {
+            .before = before,
+            .after = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
+        };
+        if (agcGfx1013TransitionResource(
+                &command->dcb, &transition) != AGC_OK) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
     }
     frame.viewport.width = b->renderArea.extent.width;
     frame.viewport.height = b->renderArea.extent.height;
@@ -3254,20 +3273,16 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     frame.scissor.top = (uint32_t)b->renderArea.offset.y;
     frame.scissor.right = frame.scissor.left + b->renderArea.extent.width;
     frame.scissor.bottom = frame.scissor.top + b->renderArea.extent.height;
-    frame.target_mask = AGC_GFX1013_TARGET_MASK_RGBA0;
+    frame.target_mask = color_count == AGC_GFX1013_MAX_COLOR_TARGETS ?
+        UINT32_MAX : (1u << (color_count * 4u)) - 1u;
     frame.context_load_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
     frame.context_shadow_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
     frame.max_vertex_index = UINT32_MAX;
     frame.ngg_mode_control = AGC_GFX1013_NGG_MODE_CONTROL;
     frame.vertex_reuse_block_control = AGC_GFX1013_VERTEX_REUSE_BLOCK;
     frame.instance_step_rate = 1u;
-    const AgcGfx1013ResourceTransition transition = {
-        .before = before,
-        .after = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
-    };
     AgcGfx1013GraphicsDefaultStats stats;
-    if (agcGfx1013TransitionResource(&command->dcb, &transition) != AGC_OK ||
-        agcGfx1013BuildFramePrologue(
+    if (agcGfx1013BuildFramePrologue(
             &command->dcb, &frame, &stats) != AGC_OK) {
         command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
         return;
@@ -3366,22 +3381,27 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
-    uint32_t attachment_index = command->active_render_pass->
-        subpasses[command->active_subpass].color_attachments[0];
-    const VkAttachmentDescription *attachment =
-        &command->active_render_pass->attachments[attachment_index];
-    AgcGfx1013ResourceUsage after;
-    if (!layout_resource_usage(attachment->finalLayout, &after)) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
-    const AgcGfx1013ResourceTransition transition = {
-        .before = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
-        .after = after,
-    };
-    if (agcGfx1013TransitionResource(&command->dcb, &transition) != AGC_OK) {
-        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
-        return;
+    uint32_t color_count = command->active_render_pass->
+        subpasses[command->active_subpass].color_attachment_count;
+    for (uint32_t slot = 0; slot < color_count; ++slot) {
+        uint32_t attachment_index = command->active_render_pass->
+            subpasses[command->active_subpass].color_attachments[slot];
+        const VkAttachmentDescription *attachment =
+            &command->active_render_pass->attachments[attachment_index];
+        AgcGfx1013ResourceUsage after;
+        if (!layout_resource_usage(attachment->finalLayout, &after)) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        const AgcGfx1013ResourceTransition transition = {
+            .before = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
+            .after = after,
+        };
+        if (agcGfx1013TransitionResource(
+                &command->dcb, &transition) != AGC_OK) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
     }
     uint32_t depth_index = command->active_render_pass->
         subpasses[command->active_subpass].depth_stencil_attachment;
