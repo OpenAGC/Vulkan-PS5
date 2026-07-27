@@ -2574,7 +2574,7 @@ vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlag
     }
     uint64_t address = pool->memory.gpu_address +
         (uint64_t)q * VK_PS5_QUERY_SLOT_SIZE;
-    int32_t result = agcGfx1013WriteOcclusionSnapshot(&command->dcb, address);
+    int32_t result = agcGfx1013BeginOcclusionQuery(&command->dcb, address, 0u);
     if (result != AGC_OK) {
         command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
             VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
@@ -2595,7 +2595,7 @@ vkCmdEndQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q) {
     }
     uint64_t address = pool->memory.gpu_address +
         (uint64_t)q * VK_PS5_QUERY_SLOT_SIZE;
-    int32_t result = agcGfx1013WriteOcclusionSnapshot(
+    int32_t result = agcGfx1013EndOcclusionQuery(
         &command->dcb, address + sizeof(uint64_t));
     const AgcGfx1013EopFenceState availability = {
         .address = address + VK_PS5_QUERY_AVAILABILITY_OFFSET,

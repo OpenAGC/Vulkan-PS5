@@ -50,6 +50,9 @@ int main(void)
     VkCommandPool command_pool;
     VkCommandBuffer command;
     VkFence fence;
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    VkQueryPool query_pool;
+#endif
     void *mapped;
 
     const VkInstanceCreateInfo instance_info = {
@@ -75,6 +78,14 @@ int main(void)
         .pQueueCreateInfos = &queue_info,
     };
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    const VkQueryPoolCreateInfo query_info = {
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_OCCLUSION,
+        .queryCount = 1,
+    };
+    VK_CHECK(vkCreateQueryPool(device, &query_info, NULL, &query_pool));
+#endif
 
     const VkImageCreateInfo image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -266,6 +277,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &command_begin));
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    vkCmdResetQueryPool(command, query_pool, 0, 1);
+#endif
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
@@ -273,8 +287,14 @@ int main(void)
         .renderArea = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}},
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    vkCmdBeginQuery(command, query_pool, 0, 0);
+#endif
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    vkCmdEndQuery(command, query_pool, 0);
+#endif
     vkCmdEndRenderPass(command);
     VK_CHECK(vkEndCommandBuffer(command));
 
@@ -305,17 +325,42 @@ int main(void)
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    uint64_t query_data[2] = {0, 0};
+    VkResult query_result = vkGetQueryPoolResults(device, query_pool, 0, 1,
+        sizeof(query_data), query_data, sizeof(query_data),
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+#endif
     if (green_count < 16000u || green_count > 21000u ||
         unexpected_count != 0u || center != GREEN_RGBA8 ||
-        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
+        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+        || query_result != VK_SUCCESS || query_data[1] != 1u ||
+        query_data[0] != green_count
+#endif
+        ) {
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+        printf("query: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
+            query_result, (unsigned long long)query_data[0],
+            (unsigned long long)query_data[1], green_count, unexpected_count);
+#else
         printf("triangle: mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
+#endif
         status = 1;
     } else {
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+        printf("query: PASS samples=%llu green=%u\n",
+            (unsigned long long)query_data[0], green_count);
+#else
         printf("triangle: PASS %u green pixels\n", green_count);
+#endif
     }
 
     vkDestroyFence(device, fence, NULL);
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    vkDestroyQueryPool(device, query_pool, NULL);
+#endif
     vkDestroyCommandPool(device, command_pool, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);

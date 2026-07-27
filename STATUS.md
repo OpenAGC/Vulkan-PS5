@@ -126,8 +126,11 @@ Implemented and host-verified:
   and end emit typed OpenAGC ZPASS snapshots, and end publishes a separate EOP
   availability label. Host retrieval supports partial, availability, and
   32/64-bit results with bounded waits. The command regression verifies the
-  reset, both snapshots, and availability release; hardware qualification and
-  a standalone query sample are still pending. Timestamp valid bits remain zero.
+  reset, both snapshots, and availability release. A standalone query-enabled
+  triangle requires the 64-bit occlusion result to equal mapped pixel coverage;
+  it host-builds and cross-links for Prospero with the required runtimes.
+  Hardware qualification remains pending because the console websrv is still
+  unreachable. Timestamp valid bits remain zero.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public

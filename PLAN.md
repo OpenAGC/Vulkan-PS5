@@ -27,8 +27,9 @@
   verifies CB1 binding, per-attachment transitions, and packed fragment-export
   state. A standalone two-target mapped-readback sample now exercises the MRT
   path. GPU-backed occlusion pools now cover reset, begin/end, bounded host
-  retrieval, partial results, and availability. Continue Milestone 3 with a
-  standalone query workload and repeated FW 5.50 depth/stencil, MRT, and query
+  retrieval, partial results, and availability. A standalone query workload
+  cross-checks its 64-bit occlusion result against mapped triangle coverage.
+  Continue Milestone 3 with repeated FW 5.50 depth/stencil, MRT, and query
   readback.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
