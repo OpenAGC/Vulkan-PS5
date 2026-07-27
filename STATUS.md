@@ -99,6 +99,11 @@ Implemented and host-verified:
 
 Hardware gate still open:
 
+- OpenAGC Prospero initialization now prepares GPU authorization before
+  `/dev/gc` access, including the FW 5.50 detached-thread ucred case. The
+  compute and triangle ELFs were relinked against that implementation, closing
+  the prior hidden dependency on a sample-only credential header.
+
 - Shader executable uploads and queue submission storage now use OpenAGC
   flexible GPU-visible allocations. `vkQueueSubmit` copies each recorded DCB
   into the serialized queue mapping, appends a monotonic EOP `RELEASE_MEM`,

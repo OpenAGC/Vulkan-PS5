@@ -14,6 +14,8 @@
   uniform/storage-buffer resource tables. Deterministic standalone compute and
   triangle readback applications now cross-link for Prospero, and the triangle
   path emits render-target transitions, frame state, and attachment binding.
+  OpenAGC now owns the FW 5.50 GPU process-authorization setup used by ordinary
+  Vulkan applications.
   Next, run both on FW 5.50 and collect deterministic readback evidence.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.

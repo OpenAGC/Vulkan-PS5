@@ -100,6 +100,11 @@ dynamic buffer offsets, vertex tables, hardware readback/display evidence,
 and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
 features remain unavailable.
 
+On Prospero, `vkCreateDevice` reaches OpenAGC initialization, which now keeps
+the FW-specific GPU process-authorization preparation inside its `/dev/gc`
+backend. Standalone Vulkan applications do not include or call the OpenAGC
+hardware-test credential header.
+
 The initial graphics render-pass path supports one single-sampled linear color
 attachment, one inline subpass, load/don't-care operations, fixed full-range
 viewport/scissor state, fill rasterization without culling, disabled blending,
