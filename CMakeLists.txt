@@ -192,15 +192,40 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VERBATIM)
   add_executable(vulkan_ps5_compute_example
     examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  set(VULKAN_PS5_TRIANGLE_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_vert_spv.h")
+  set(VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_frag_spv.h")
+  add_custom_command(OUTPUT "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_triangle_vert_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.vert"
+      -o "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.vert"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_triangle_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
+      -o "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
+    VERBATIM)
+  add_executable(vulkan_ps5_triangle_example
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
   if(CMAKE_CROSSCOMPILING)
-    set_target_properties(vulkan_ps5_compute_example PROPERTIES SUFFIX ".elf")
+    set_target_properties(vulkan_ps5_compute_example
+      vulkan_ps5_triangle_example PROPERTIES SUFFIX ".elf")
   endif()
-  target_compile_features(vulkan_ps5_compute_example PRIVATE c_std_11)
-  target_compile_options(vulkan_ps5_compute_example PRIVATE
-    -Wall -Wextra -Wpedantic)
-  target_include_directories(vulkan_ps5_compute_example PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}")
-  target_link_libraries(vulkan_ps5_compute_example PRIVATE vulkan_ps5_static)
+  foreach(example_target IN ITEMS
+      vulkan_ps5_compute_example vulkan_ps5_triangle_example)
+    target_compile_features(${example_target} PRIVATE c_std_11)
+    target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
+    target_include_directories(${example_target} PRIVATE
+      "${CMAKE_CURRENT_BINARY_DIR}")
+    target_link_libraries(${example_target} PRIVATE vulkan_ps5_static)
+  endforeach()
 endif()
 
 install(TARGETS vulkan_ps5_static EXPORT VulkanPS5Targets

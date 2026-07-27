@@ -36,7 +36,7 @@ sufficient—the packages must be built and installed into the SDK prefix.
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
 
-## Standalone compute sample
+## Standalone compute and triangle samples
 
 Configure with `-DVULKAN_PS5_BUILD_EXAMPLES=ON` to build
 `vulkan_ps5_compute_example`. It uses only Vulkan 1.1 APIs, dispatches a runtime
@@ -45,6 +45,23 @@ and verifies 1,024 deterministic values. A Prospero cross-build produces
 `vulkan_ps5_compute_example.elf`; FW 5.50 execution remains the qualification
 gate. Running it on the generic host backend intentionally reports a mismatch
 because that backend records submissions but does not execute shaders.
+
+The same option builds `vulkan_ps5_triangle_example`. It renders a solid-green
+triangle into a mapped 256x256 linear RGBA8 attachment through an ordinary
+render pass, waits for completion, invalidates the allocation, and verifies the
+center, background, and green-pixel count. Its Prospero output is
+`vulkan_ps5_triangle_example.elf`; generic-host execution likewise reports the
+expected all-zero readback.
+
+When the console is online, deploy either Prospero ELF through the foreground
+etaHEN websrv path so its stdout is returned to the terminal:
+
+```sh
+PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
+  build-prospero-m2/vulkan_ps5_compute_example.elf vulkan_ps5_compute
+PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
+  build-prospero-m2/vulkan_ps5_triangle_example.elf vulkan_ps5_triangle
+```
 
 The Khronos validation test is enabled automatically when the host Vulkan loader
 and Validation Layers are installed. It exercises instance/device lifecycle,
@@ -67,6 +84,13 @@ gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Compute
 uniform/storage-buffer descriptor sets are stored through standard Vulkan
 updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler
 selected user-SGPR immediately before dispatch. Image/sampler descriptors,
-dynamic buffer offsets, vertex tables, render-target frame state, hardware readback/display evidence,
+dynamic buffer offsets, vertex tables, hardware readback/display evidence,
 and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
 features remain unavailable.
+
+The initial graphics render-pass path supports one single-sampled linear color
+attachment, one inline subpass, load/don't-care operations, fixed full-range
+viewport/scissor state, fill rasterization without culling, disabled blending,
+and all-component writes. Begin/end render pass translate layouts to OpenAGC
+resource transitions, emit the qualified gfx1013 frame prologue, bind the
+attachment address, and restore host-readable cache state after drawing.

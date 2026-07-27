@@ -40,6 +40,9 @@ typedef struct VkPs5ImageView { VkImage image; VkFormat format; } VkPs5ImageView
 typedef struct VkPs5BufferView { VkBuffer buffer; VkFormat format; } VkPs5BufferView;
 typedef struct VkPs5Opaque { uint32_t kind; } VkPs5Opaque;
 
+#define VK_PS5_MAX_RENDER_ATTACHMENTS 8u
+#define VK_PS5_MAX_SUBPASSES 8u
+
 typedef struct VkPs5ShaderModule {
     size_t code_size;
     uint32_t code[];
@@ -62,9 +65,23 @@ typedef struct VkPs5PipelineLayout {
 } VkPs5PipelineLayout;
 
 typedef struct VkPs5RenderPass {
+    uint32_t attachment_count;
     uint32_t subpass_count;
-    uint32_t color_attachment_counts[];
+    VkAttachmentDescription attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    struct {
+        uint32_t color_attachment_count;
+        uint32_t color_attachments[AGC_GFX1013_MAX_COLOR_TARGETS];
+    } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
+
+typedef struct VkPs5Framebuffer {
+    VkPs5RenderPass *render_pass;
+    uint32_t attachment_count;
+    uint32_t width;
+    uint32_t height;
+    uint32_t layers;
+    VkPs5ImageView *attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
+} VkPs5Framebuffer;
 
 typedef struct VkPs5RuntimeShader {
     AgcShaderRecord record;
@@ -87,6 +104,8 @@ typedef struct VkPs5Pipeline {
     OpenAgcPsbcStage stage_types[3];
     OpenAgcPsbcOutput stages[3];
     VkPs5RuntimeShader runtime[3];
+    AgcGfx1013ViewportState viewport;
+    AgcGfx1013ScissorState scissor;
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -144,6 +163,10 @@ typedef struct VkPs5CommandBuffer {
     VkPs5Pipeline *bound_graphics;
     VkPs5DescriptorSet *compute_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
     VkPs5DescriptorSet *graphics_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    VkPs5RenderPass *active_render_pass;
+    VkPs5Framebuffer *active_framebuffer;
+    uint32_t active_subpass;
+    AgcGfx1013FrameState frame_state;
     uint32_t *dcb_storage;
     size_t dcb_size;
     SceAgcCb dcb;
@@ -403,6 +426,69 @@ static uint32_t format_bytes(VkFormat format) {
     }
 }
 
+static bool color_target_format(
+    VkFormat format, AgcGfx1013ColorTargetFormat *target_format) {
+    if (!target_format) return false;
+    switch (format) {
+    case VK_FORMAT_R8_UNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_R8_UNORM; break;
+    case VK_FORMAT_R8G8_UNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG8_UNORM; break;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_UNORM; break;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_BGRA8_UNORM; break;
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGB10A2_UNORM; break;
+    case VK_FORMAT_R16_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_R16_FLOAT; break;
+    case VK_FORMAT_R16G16_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG16_FLOAT; break;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA16_FLOAT; break;
+    case VK_FORMAT_R32_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_R32_FLOAT; break;
+    case VK_FORMAT_R32G32_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG32_FLOAT; break;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA32_FLOAT; break;
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_R11G11B10_FLOAT; break;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_SRGB; break;
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        *target_format = AGC_GFX1013_RT_FORMAT_BGRA8_SRGB; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static bool layout_resource_usage(
+    VkImageLayout layout, AgcGfx1013ResourceUsage *usage) {
+    if (!usage) return false;
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_UNDEFINED:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_UNDEFINED; break;
+    case VK_IMAGE_LAYOUT_PREINITIALIZED:
+    case VK_IMAGE_LAYOUT_GENERAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_HOST_READ; break;
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET; break;
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_SHADER_READ; break;
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_COPY_SOURCE; break;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_COPY_DESTINATION; break;
+    case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_PRESENT; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
               const VkAllocationCallbacks *pAllocator, VkImage *pImage) {
@@ -548,6 +634,8 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
         command->record_error = VK_SUCCESS;
         command->bound_compute = NULL;
         command->bound_graphics = NULL;
+        command->active_render_pass = NULL;
+        command->active_framebuffer = NULL;
         agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     }
     return VK_SUCCESS;
@@ -634,6 +722,8 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->record_error = VK_SUCCESS;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
+    command->active_render_pass = NULL;
+    command->active_framebuffer = NULL;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
@@ -645,9 +735,11 @@ vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)commandBuffer;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING)
         return VK_ERROR_INITIALIZATION_FAILED;
-    if (command->record_error != VK_SUCCESS) {
+    if (command->record_error != VK_SUCCESS || command->active_render_pass) {
+        VkResult result = command->record_error != VK_SUCCESS ?
+            command->record_error : VK_ERROR_INITIALIZATION_FAILED;
         command->state = VK_PS5_COMMAND_INITIAL;
-        return command->record_error;
+        return result;
     }
     command->state = VK_PS5_COMMAND_EXECUTABLE;
     return VK_SUCCESS;
@@ -663,6 +755,8 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->record_error = VK_SUCCESS;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
+    command->active_render_pass = NULL;
+    command->active_framebuffer = NULL;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
@@ -676,6 +770,15 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         pCreateInfo->sType != VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO ||
         !pCreateInfo->image || !format_bytes(pCreateInfo->format))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    VkPs5Image *image = (VkPs5Image *)pCreateInfo->image;
+    if (pCreateInfo->viewType != VK_IMAGE_VIEW_TYPE_2D ||
+        pCreateInfo->format != image->format ||
+        pCreateInfo->subresourceRange.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+        pCreateInfo->subresourceRange.baseMipLevel != 0u ||
+        pCreateInfo->subresourceRange.levelCount != 1u ||
+        pCreateInfo->subresourceRange.baseArrayLayer != 0u ||
+        pCreateInfo->subresourceRange.layerCount != 1u)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     VkPs5ImageView *view = alloc_object(device, pAllocator, sizeof(*view),
                                         _Alignof(VkPs5ImageView));
     if (!view) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -1250,8 +1353,59 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
     for (uint32_t i = 0; i < createInfoCount; ++i) {
         const VkGraphicsPipelineCreateInfo *create = &pCreateInfos[i];
         if (create->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO ||
-            !create->layout || !create->renderPass || !create->pVertexInputState)
+            !create->layout || !create->renderPass || !create->pVertexInputState ||
+            !create->pInputAssemblyState)
             return VK_ERROR_INITIALIZATION_FAILED;
+        if (create->pInputAssemblyState->topology !=
+                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST ||
+            create->pInputAssemblyState->primitiveRestartEnable)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (!create->pViewportState ||
+            create->pViewportState->viewportCount != 1u ||
+            create->pViewportState->scissorCount != 1u ||
+            !create->pViewportState->pViewports ||
+            !create->pViewportState->pScissors)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        if (create->pDynamicState &&
+            create->pDynamicState->dynamicStateCount != 0u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (!create->pRasterizationState || !create->pMultisampleState ||
+            !create->pColorBlendState)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        const VkPipelineRasterizationStateCreateInfo *raster =
+            create->pRasterizationState;
+        const VkPipelineMultisampleStateCreateInfo *multisample =
+            create->pMultisampleState;
+        const VkPipelineColorBlendStateCreateInfo *blend =
+            create->pColorBlendState;
+        if (raster->depthClampEnable || raster->rasterizerDiscardEnable ||
+            raster->polygonMode != VK_POLYGON_MODE_FILL ||
+            raster->cullMode != VK_CULL_MODE_NONE || raster->depthBiasEnable ||
+            raster->lineWidth != 1.0f ||
+            multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
+            multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
+            multisample->alphaToOneEnable || blend->logicOpEnable ||
+            blend->attachmentCount != 1u || !blend->pAttachments ||
+            blend->pAttachments[0].blendEnable ||
+            blend->pAttachments[0].colorWriteMask !=
+                (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                 VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const VkViewport *viewport = create->pViewportState->pViewports;
+        const VkRect2D *scissor = create->pViewportState->pScissors;
+        if (viewport->x != 0.0f || viewport->y != 0.0f ||
+            viewport->width <= 0.0f || viewport->height <= 0.0f ||
+            viewport->width > 16384.0f || viewport->height > 16384.0f ||
+            viewport->width != (float)(uint32_t)viewport->width ||
+            viewport->height != (float)(uint32_t)viewport->height ||
+            viewport->minDepth != 0.0f || viewport->maxDepth != 1.0f ||
+            scissor->offset.x < 0 || scissor->offset.y < 0 ||
+            !scissor->extent.width || !scissor->extent.height ||
+            (uint32_t)scissor->offset.x > 16384u ||
+            scissor->extent.width > 16384u - (uint32_t)scissor->offset.x ||
+            (uint32_t)scissor->offset.y > 16384u ||
+            scissor->extent.height > 16384u - (uint32_t)scissor->offset.y)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
         const VkPipelineShaderStageCreateInfo *vertex = NULL, *tess_control = NULL;
         const VkPipelineShaderStageCreateInfo *tess_evaluation = NULL;
         const VkPipelineShaderStageCreateInfo *geometry = NULL, *fragment = NULL;
@@ -1307,13 +1461,16 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
         if (create->subpass >= render_pass->subpass_count)
             return VK_ERROR_INITIALIZATION_FAILED;
+        if (render_pass->subpasses[create->subpass].color_attachment_count != 1u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
         OpenAgcPsbcPipelineContext context = {
             .vertex_attributes = attributes,
             .vertex_attribute_count = vertex_input->vertexAttributeDescriptionCount,
             .descriptor_bindings = layout->bindings,
             .descriptor_binding_count = layout->binding_count,
             .push_constant_size = layout->push_constant_size,
-            .color_attachment_count = render_pass->color_attachment_counts[create->subpass],
+            .color_attachment_count =
+                render_pass->subpasses[create->subpass].color_attachment_count,
             .tessellation_control_points = tess_control ?
                 create->pTessellationState->patchControlPoints : 3,
             .tessellation_patches = 8,
@@ -1386,6 +1543,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         }
         pipeline->bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
         pipeline->primitive_type = 4u;
+        pipeline->viewport.width = (uint32_t)viewport->width;
+        pipeline->viewport.height = (uint32_t)viewport->height;
+        pipeline->scissor.left = (uint32_t)scissor->offset.x;
+        pipeline->scissor.top = (uint32_t)scissor->offset.y;
+        pipeline->scissor.right = pipeline->scissor.left + scissor->extent.width;
+        pipeline->scissor.bottom = pipeline->scissor.top + scissor->extent.height;
         result = finalize_pipeline(device, pAllocator, pipeline);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
@@ -1422,11 +1585,54 @@ name(VkDevice device, HandleType object, const VkAllocationCallbacks *pAllocator
 
 DEFINE_SIMPLE_CREATE(vkCreateSampler, VkSamplerCreateInfo, VkSampler)
 DEFINE_SIMPLE_DESTROY(vkDestroySampler, VkSampler)
-DEFINE_SIMPLE_CREATE(vkCreateFramebuffer, VkFramebufferCreateInfo, VkFramebuffer)
-DEFINE_SIMPLE_DESTROY(vkDestroyFramebuffer, VkFramebuffer)
 DEFINE_SIMPLE_CREATE(vkCreateDescriptorUpdateTemplate, VkDescriptorUpdateTemplateCreateInfo,
                      VkDescriptorUpdateTemplate)
 DEFINE_SIMPLE_DESTROY(vkDestroyDescriptorUpdateTemplate, VkDescriptorUpdateTemplate)
+
+VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
+                    const VkAllocationCallbacks *pAllocator,
+                    VkFramebuffer *pFramebuffer) {
+    if (!device || !pCreateInfo || !pFramebuffer ||
+        pCreateInfo->sType != VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO ||
+        !pCreateInfo->renderPass || !pCreateInfo->width ||
+        !pCreateInfo->height || pCreateInfo->layers != 1u ||
+        pCreateInfo->attachmentCount > VK_PS5_MAX_RENDER_ATTACHMENTS ||
+        (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkPs5RenderPass *render_pass =
+        (VkPs5RenderPass *)pCreateInfo->renderPass;
+    if (pCreateInfo->attachmentCount != render_pass->attachment_count)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkPs5Framebuffer *framebuffer = alloc_object(
+        device, pAllocator, sizeof(*framebuffer), _Alignof(VkPs5Framebuffer));
+    if (!framebuffer) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    framebuffer->render_pass = render_pass;
+    framebuffer->attachment_count = pCreateInfo->attachmentCount;
+    framebuffer->width = pCreateInfo->width;
+    framebuffer->height = pCreateInfo->height;
+    framebuffer->layers = pCreateInfo->layers;
+    for (uint32_t i = 0; i < framebuffer->attachment_count; ++i) {
+        VkPs5ImageView *view = (VkPs5ImageView *)pCreateInfo->pAttachments[i];
+        VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+        if (!view || !image || view->format != render_pass->attachments[i].format ||
+            image->extent.width < framebuffer->width ||
+            image->extent.height < framebuffer->height) {
+            vk_ps5_device_free(device, pAllocator, framebuffer);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        framebuffer->attachments[i] = view;
+    }
+    *pFramebuffer = (VkFramebuffer)framebuffer;
+    return VK_SUCCESS;
+}
+
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer,
+                     const VkAllocationCallbacks *pAllocator) {
+    if (framebuffer)
+        vk_ps5_device_free(device, pAllocator, (void *)framebuffer);
+}
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateDescriptorSetLayout(VkDevice device,
@@ -1536,16 +1742,54 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                 if (multiview->pViewMasks[i] != 0) return VK_ERROR_FEATURE_NOT_PRESENT;
         }
     }
-    if (pCreateInfo->subpassCount && !pCreateInfo->pSubpasses)
+    if (!pCreateInfo->subpassCount || !pCreateInfo->pSubpasses ||
+        pCreateInfo->subpassCount > VK_PS5_MAX_SUBPASSES ||
+        pCreateInfo->attachmentCount > VK_PS5_MAX_RENDER_ATTACHMENTS ||
+        (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments))
         return VK_ERROR_INITIALIZATION_FAILED;
-    size_t size = sizeof(VkPs5RenderPass) +
-        (size_t)pCreateInfo->subpassCount * sizeof(uint32_t);
-    VkPs5RenderPass *render_pass = alloc_object(device, pAllocator, size,
+    VkPs5RenderPass *render_pass = alloc_object(device, pAllocator,
+                                                 sizeof(*render_pass),
                                                  _Alignof(VkPs5RenderPass));
     if (!render_pass) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    render_pass->attachment_count = pCreateInfo->attachmentCount;
     render_pass->subpass_count = pCreateInfo->subpassCount;
-    for (uint32_t i = 0; i < render_pass->subpass_count; ++i)
-        render_pass->color_attachment_counts[i] = pCreateInfo->pSubpasses[i].colorAttachmentCount;
+    if (render_pass->attachment_count)
+        memcpy(render_pass->attachments, pCreateInfo->pAttachments,
+               (size_t)render_pass->attachment_count *
+                   sizeof(render_pass->attachments[0]));
+    for (uint32_t i = 0; i < render_pass->subpass_count; ++i) {
+        const VkSubpassDescription *source = &pCreateInfo->pSubpasses[i];
+        if (source->pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS ||
+            source->colorAttachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
+            (source->colorAttachmentCount && !source->pColorAttachments)) {
+            vk_ps5_device_free(device, pAllocator, render_pass);
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        render_pass->subpasses[i].color_attachment_count =
+            source->colorAttachmentCount;
+        for (uint32_t j = 0; j < source->colorAttachmentCount; ++j) {
+            uint32_t attachment = source->pColorAttachments[j].attachment;
+            if (attachment != VK_ATTACHMENT_UNUSED &&
+                attachment >= render_pass->attachment_count) {
+                vk_ps5_device_free(device, pAllocator, render_pass);
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            if (attachment != VK_ATTACHMENT_UNUSED) {
+                AgcGfx1013ColorTargetFormat target_format;
+                if (source->pColorAttachments[j].layout !=
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+                    render_pass->attachments[attachment].samples !=
+                        VK_SAMPLE_COUNT_1_BIT ||
+                    !color_target_format(
+                        render_pass->attachments[attachment].format,
+                        &target_format)) {
+                    vk_ps5_device_free(device, pAllocator, render_pass);
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
+            }
+            render_pass->subpasses[i].color_attachments[j] = attachment;
+        }
+    }
     *pRenderPass = (VkRenderPass)render_pass;
     return VK_SUCCESS;
 }
@@ -2159,7 +2403,8 @@ vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
         command->record_error != VK_SUCCESS)
         return;
     VkPs5Pipeline *pipeline = command->bound_graphics;
-    if (!pipeline || pipeline->stage_count != 2 || !v || !i ||
+    if (!pipeline || !command->active_render_pass ||
+        pipeline->stage_count != 2 || !v || !i ||
         pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_VERTEX ||
         pipeline->stage_types[1] != OPENAGC_PSBC_STAGE_FRAGMENT) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
@@ -2191,6 +2436,16 @@ vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
+    if (pipeline->viewport.width > command->active_framebuffer->width ||
+        pipeline->viewport.height > command->active_framebuffer->height ||
+        pipeline->scissor.right > command->active_framebuffer->width ||
+        pipeline->scissor.bottom > command->active_framebuffer->height) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    AgcGfx1013FrameState draw_frame = command->frame_state;
+    draw_frame.viewport = pipeline->viewport;
+    draw_frame.scissor = pipeline->scissor;
     const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
     const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
     const AgcGfx1013BaselineDrawState draw = {
@@ -2200,6 +2455,7 @@ vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
             .primitive_back_code_address = primitive->binding.code_address,
             .primitive_type = pipeline->primitive_type,
         },
+        .frame = &draw_frame,
         .post_bind_sh_registers = user_data,
         .num_post_bind_sh_registers = user_data_count,
         .index_type = kAgcIndexSize16,
@@ -2245,11 +2501,138 @@ vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
-                     VkSubpassContents s) { IGNORE(c); IGNORE(b); IGNORE(s); }
+                     VkSubpassContents s) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!b || b->sType != VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO ||
+        !b->renderPass || !b->framebuffer || command->active_render_pass ||
+        s != VK_SUBPASS_CONTENTS_INLINE) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    VkPs5RenderPass *render_pass = (VkPs5RenderPass *)b->renderPass;
+    VkPs5Framebuffer *framebuffer = (VkPs5Framebuffer *)b->framebuffer;
+    if (framebuffer->render_pass != render_pass || !render_pass->subpass_count ||
+        render_pass->subpasses[0].color_attachment_count != 1u ||
+        b->renderArea.offset.x < 0 || b->renderArea.offset.y < 0 ||
+        !b->renderArea.extent.width || !b->renderArea.extent.height ||
+        (uint32_t)b->renderArea.offset.x > framebuffer->width ||
+        b->renderArea.extent.width >
+            framebuffer->width - (uint32_t)b->renderArea.offset.x ||
+        (uint32_t)b->renderArea.offset.y > framebuffer->height ||
+        b->renderArea.extent.height >
+            framebuffer->height - (uint32_t)b->renderArea.offset.y) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    uint32_t attachment_index =
+        render_pass->subpasses[0].color_attachments[0];
+    if (attachment_index == VK_ATTACHMENT_UNUSED ||
+        attachment_index >= framebuffer->attachment_count) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    const VkAttachmentDescription *attachment =
+        &render_pass->attachments[attachment_index];
+    if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    VkPs5ImageView *view = framebuffer->attachments[attachment_index];
+    VkPs5Image *image = (VkPs5Image *)view->image;
+    AgcGfx1013ColorTargetFormat target_format;
+    AgcGfx1013ResourceUsage before;
+    if (!image || !image->memory ||
+        !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+        image->tiling != VK_IMAGE_TILING_LINEAR ||
+        !color_target_format(view->format, &target_format) ||
+        !layout_resource_usage(attachment->initialLayout, &before)) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    AgcGfx1013FrameState frame = {0};
+    uint64_t address = vk_ps5_memory_gpu_address(
+        image->memory, image->memory_offset);
+    if (agcGfx1013InitColorTarget(&frame.color_target, address,
+            framebuffer->width, framebuffer->height,
+            target_format) != AGC_OK) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    frame.viewport.width = b->renderArea.extent.width;
+    frame.viewport.height = b->renderArea.extent.height;
+    frame.scissor.left = (uint32_t)b->renderArea.offset.x;
+    frame.scissor.top = (uint32_t)b->renderArea.offset.y;
+    frame.scissor.right = frame.scissor.left + b->renderArea.extent.width;
+    frame.scissor.bottom = frame.scissor.top + b->renderArea.extent.height;
+    frame.target_mask = AGC_GFX1013_TARGET_MASK_RGBA0;
+    frame.context_load_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
+    frame.context_shadow_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
+    frame.max_vertex_index = UINT32_MAX;
+    frame.ngg_mode_control = AGC_GFX1013_NGG_MODE_CONTROL;
+    frame.vertex_reuse_block_control = AGC_GFX1013_VERTEX_REUSE_BLOCK;
+    frame.instance_step_rate = 1u;
+    const AgcGfx1013ResourceTransition transition = {
+        .before = before,
+        .after = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
+    };
+    AgcGfx1013GraphicsDefaultStats stats;
+    if (agcGfx1013TransitionResource(&command->dcb, &transition) != AGC_OK ||
+        agcGfx1013BuildFramePrologue(
+            &command->dcb, &frame, &stats) != AGC_OK) {
+        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+    command->frame_state = frame;
+    command->active_render_pass = render_pass;
+    command->active_framebuffer = framebuffer;
+    command->active_subpass = 0u;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdNextSubpass(VkCommandBuffer c, VkSubpassContents s) { IGNORE(c); IGNORE(s); }
+vkCmdNextSubpass(VkCommandBuffer c, VkSubpassContents s) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!command->active_render_pass || s != VK_SUBPASS_CONTENTS_INLINE ||
+        command->active_subpass + 1u >= command->active_render_pass->subpass_count) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdEndRenderPass(VkCommandBuffer c) { IGNORE(c); }
+vkCmdEndRenderPass(VkCommandBuffer c) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!command->active_render_pass || !command->active_framebuffer) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    uint32_t attachment_index = command->active_render_pass->
+        subpasses[command->active_subpass].color_attachments[0];
+    const VkAttachmentDescription *attachment =
+        &command->active_render_pass->attachments[attachment_index];
+    AgcGfx1013ResourceUsage after;
+    if (!layout_resource_usage(attachment->finalLayout, &after)) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    const AgcGfx1013ResourceTransition transition = {
+        .before = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
+        .after = after,
+    };
+    if (agcGfx1013TransitionResource(&command->dcb, &transition) != AGC_OK) {
+        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+    command->active_render_pass = NULL;
+    command->active_framebuffer = NULL;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetDeviceMask(VkCommandBuffer c, uint32_t m) { IGNORE(c); IGNORE(m); }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

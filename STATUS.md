@@ -86,6 +86,16 @@ Implemented and host-verified:
   pipeline compilation, dispatch, fence wait, mapped-memory invalidation, and
   deterministic verification of 1,024 words. It cross-links as a Prospero ELF
   against `libunwind`, `libc++abi`, `libc++`, and `libm`.
+- Render-pass and framebuffer objects now retain real attachment state. An
+  inline single-color pass translates Vulkan layouts to OpenAGC transitions,
+  emits `agcGfx1013BuildFramePrologue`, binds the image allocation as CB0, and
+  applies fixed viewport/scissor state before `DRAW_INDEX_AUTO`. Draws outside
+  an active pass and unsupported clear/dynamic/multisample/blend state fail
+  command-buffer or pipeline creation instead of recording incomplete state.
+- The standalone triangle sample uses only Vulkan 1.1 APIs and verifies a
+  mapped 256x256 linear RGBA8 result after a VS/PS draw and fence wait. Both
+  compute and triangle samples now cross-link as Prospero ELFs with the target
+  C++ and math runtimes.
 
 Hardware gate still open:
 
@@ -99,7 +109,7 @@ Hardware gate still open:
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
 - Image/sampler descriptor tables, dynamic buffer offsets, vertex-buffer
-  tables, push constants, render-target frame prologues, and render-pass
-  attachment state are not emitted yet.
+  tables, push constants, clears, MRT, depth/stencil attachments, and general
+  dynamic raster state are not emitted yet.
 - FW 5.50 execution and deterministic readback/display evidence have not yet
   been collected for the Vulkan-owned submission path.

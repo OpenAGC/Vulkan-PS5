@@ -162,11 +162,48 @@ int main(int argc, char **argv) {
         .vertexAttributeDescriptionCount = 2,
         .pVertexAttributeDescriptions = vertex_attributes,
     };
+    const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    const VkViewport viewport = {0, 0, 256, 256, 0, 1};
+    const VkRect2D scissor = {{0, 0}, {256, 256}};
+    const VkPipelineViewportStateCreateInfo viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .lineWidth = 1,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineColorBlendAttachmentState blend_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &blend_attachment,
+    };
     const VkGraphicsPipelineCreateInfo graphics_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
         .pStages = stages,
         .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pColorBlendState = &blend,
         .layout = graphics_layout,
         .renderPass = render_pass,
     };

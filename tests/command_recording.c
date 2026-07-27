@@ -1,6 +1,7 @@
 #include <vulkan/vulkan.h>
 #include <agc_driver_debug.h>
 #include <agc_pm4.h>
+#include <agc_registers.h>
 #include <agc_shader.h>
 
 #include "../src/vulkan_ps5_internal.h"
@@ -172,8 +173,8 @@ int main(int argc, char **argv)
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
     };
     const VkAttachmentReference color = {
         0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -193,6 +194,56 @@ int main(int argc, char **argv)
     VkRenderPass render_pass;
     assert(vkCreateRenderPass(device, &render_pass_info, NULL,
                               &render_pass) == VK_SUCCESS);
+    const VkImageCreateInfo image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {256, 256, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+    };
+    VkImage color_image;
+    assert(vkCreateImage(device, &image_info, NULL, &color_image) == VK_SUCCESS);
+    VkMemoryRequirements image_requirements;
+    vkGetImageMemoryRequirements(device, color_image, &image_requirements);
+    const VkMemoryAllocateInfo image_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = image_requirements.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory image_memory;
+    assert(vkAllocateMemory(device, &image_memory_info, NULL,
+                            &image_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, color_image, image_memory, 0) == VK_SUCCESS);
+    const VkImageViewCreateInfo image_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = color_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1,
+        },
+    };
+    VkImageView color_view;
+    assert(vkCreateImageView(device, &image_view_info, NULL,
+                             &color_view) == VK_SUCCESS);
+    const VkFramebufferCreateInfo framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = render_pass,
+        .attachmentCount = 1,
+        .pAttachments = &color_view,
+        .width = 256,
+        .height = 256,
+        .layers = 1,
+    };
+    VkFramebuffer framebuffer;
+    assert(vkCreateFramebuffer(device, &framebuffer_info, NULL,
+                               &framebuffer) == VK_SUCCESS);
     const VkPipelineShaderStageCreateInfo graphics_stages[] = {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_VERTEX_BIT, vertex, "main", NULL},
@@ -206,12 +257,44 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
+    const VkViewport viewport = {0, 0, 256, 256, 0, 1};
+    const VkRect2D scissor = {{0, 0}, {256, 256}};
+    const VkPipelineViewportStateCreateInfo viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .lineWidth = 1,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineColorBlendAttachmentState blend_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &blend_attachment,
+    };
     const VkGraphicsPipelineCreateInfo graphics_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
         .pStages = graphics_stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pColorBlendState = &blend,
         .layout = graphics_layout,
         .renderPass = render_pass,
     };
@@ -242,19 +325,35 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
                             0, 1, &descriptor_sets[1], 0, NULL);
     vkCmdDispatch(command, 3, 5, 7);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       graphics_pipeline);
+    const VkRenderPassBeginInfo render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, {256, 256}},
+    };
+    vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
 
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 20);
-    bool found_dispatch = false, found_draw = false;
+    bool found_dispatch = false, found_draw = false, found_frame = false;
+    bool found_color_target = false;
+    uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
     for (uint32_t i = 0; i < count; ++i) {
         if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
             assert(i + 4 < count);
@@ -266,9 +365,16 @@ int main(int argc, char **argv)
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_AUTO) {
             assert(i + 2 < count && dwords[i + 1] == 3);
             found_draw = true;
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_CONTEXT_CONTROL) {
+            found_frame = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG &&
+                   i + 2 < count && dwords[i + 1] == AGC_REG_CB_COLOR0_BASE) {
+            found_color_target |=
+                dwords[i + 2] == (uint32_t)(image_address >> 8);
         }
     }
-    assert(found_dispatch && found_draw);
+    assert(found_dispatch && found_draw && found_frame && found_color_target);
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
@@ -297,6 +403,10 @@ int main(int argc, char **argv)
     vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
+    vkDestroyFramebuffer(device, framebuffer, NULL);
+    vkDestroyImageView(device, color_view, NULL);
+    vkDestroyImage(device, color_image, NULL);
+    vkFreeMemory(device, image_memory, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
     vkDestroyShaderModule(device, fragment, NULL);
