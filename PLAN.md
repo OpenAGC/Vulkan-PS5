@@ -20,8 +20,9 @@
   Vulkan applications. Two consecutive FW 5.50 runs of each sample passed:
   compute verified all 1,024 values and triangle verified exactly 18,432 green
   pixels per run. Host command tests now cover GPU-visible vertex tables and
-  direct UINT16/UINT32 indexed draws. Continue Milestone 3 with indexed-draw
-  hardware readback and textured rendering,
+  direct UINT16/UINT32 indexed draws, plus combined image/sampler descriptor
+  encoding and compiler-selected VS/PS table binding. Continue Milestone 3
+  with indexed/textured hardware readback,
   depth/stencil, MRT, and queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.

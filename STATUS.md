@@ -85,6 +85,12 @@ Implemented and host-verified:
   SGPR, and emit OpenAGC's hardware-qualified `DRAW_INDEX_2` path for UINT16
   and UINT32 indices. Signed vertex offsets and first-instance values use the
   compiler metadata-selected SGPRs.
+- Vulkan sampler objects now translate nearest/linear filtering, mip filtering,
+  repeat/mirror/clamp modes, LOD state, comparison, and standard border colors
+  into OpenAGC sampler descriptors. Graphics descriptor preparation supports
+  combined image samplers and separate sampled-image/sampler mappings for
+  linear single-mip RGBA8/BGRA8 2D images, flushes the GPU table, and patches
+  the compiler-selected VS/PS descriptor-set SGPRs before drawing.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -123,8 +129,8 @@ FW 5.50 compute/triangle hardware gate:
 - Vulkan memory type 0 uses flexible write-back GPU memory; type 1 uses
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
-- Image/sampler descriptor tables, dynamic buffer offsets, push constants,
-  clears, MRT, depth/stencil attachments, and general
+- Storage-image and texel-buffer descriptors, dynamic buffer offsets, push
+  constants, clears, MRT, depth/stencil attachments, and general
   dynamic raster state are not emitted yet.
 - On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
   compute runs with `PASS 1024 deterministic values` and two consecutive

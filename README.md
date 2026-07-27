@@ -105,8 +105,10 @@ uniform/storage-buffer descriptor sets are stored through standard Vulkan
 updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler
 selected user-SGPR immediately before dispatch. Indexed draws bind standard
 Vulkan vertex/index buffers, build per-draw GPU-visible gfx1013 vertex tables,
-and emit `DRAW_INDEX_2` for UINT16 or UINT32 indices. Image/sampler descriptors,
-dynamic buffer offsets, hardware readback/display evidence for indexed draws,
+and emit `DRAW_INDEX_2` for UINT16 or UINT32 indices. Combined and separate
+sampled-image/sampler descriptors for linear RGBA8/BGRA8 images are encoded
+through OpenAGC and bound to compiler-selected graphics SGPRs. Dynamic buffer
+offsets, hardware readback/display evidence for indexed/textured draws,
 and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
 features remain unavailable.
 

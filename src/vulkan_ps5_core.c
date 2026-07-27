@@ -36,9 +36,14 @@ typedef struct VkPs5Image {
     VkDeviceSize memory_offset;
 } VkPs5Image;
 
-typedef struct VkPs5ImageView { VkImage image; VkFormat format; } VkPs5ImageView;
+typedef struct VkPs5ImageView {
+    VkImage image;
+    VkFormat format;
+    VkComponentMapping components;
+} VkPs5ImageView;
 typedef struct VkPs5BufferView { VkBuffer buffer; VkFormat format; } VkPs5BufferView;
 typedef struct VkPs5Opaque { uint32_t kind; } VkPs5Opaque;
+typedef struct VkPs5Sampler { AgcSamplerDescriptor descriptor; } VkPs5Sampler;
 
 #define VK_PS5_MAX_RENDER_ATTACHMENTS 8u
 #define VK_PS5_MAX_SUBPASSES 8u
@@ -124,6 +129,7 @@ typedef struct VkPs5DescriptorSet VkPs5DescriptorSet;
 typedef struct VkPs5DescriptorValue {
     VkDescriptorType type;
     VkDescriptorBufferInfo buffer;
+    VkDescriptorImageInfo image;
     VkBool32 valid;
 } VkPs5DescriptorValue;
 
@@ -822,6 +828,7 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
     if (!view) return VK_ERROR_OUT_OF_HOST_MEMORY;
     view->image = pCreateInfo->image;
     view->format = pCreateInfo->format;
+    view->components = pCreateInfo->components;
     *pView = (VkImageView)view;
     return VK_SUCCESS;
 }
@@ -1645,8 +1652,87 @@ name(VkDevice device, HandleType object, const VkAllocationCallbacks *pAllocator
     if (object) vk_ps5_device_free(device, pAllocator, (void *)object); \
 }
 
-DEFINE_SIMPLE_CREATE(vkCreateSampler, VkSamplerCreateInfo, VkSampler)
-DEFINE_SIMPLE_DESTROY(vkDestroySampler, VkSampler)
+static bool sampler_clamp(VkSamplerAddressMode mode, AgcClampMode *clamp)
+{
+    switch (mode) {
+    case VK_SAMPLER_ADDRESS_MODE_REPEAT: *clamp = kAgcClampRepeat; return true;
+    case VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+        *clamp = kAgcClampMirror; return true;
+    case VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+        *clamp = kAgcClampClamp; return true;
+    case VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
+        *clamp = kAgcClampBorder; return true;
+    case VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
+        *clamp = kAgcClampMirrorOnce; return true;
+    default: return false;
+    }
+}
+
+VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
+                const VkAllocationCallbacks *pAllocator, VkSampler *pSampler)
+{
+    if (!device || !pCreateInfo || !pSampler ||
+        pCreateInfo->sType != VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (pCreateInfo->pNext || pCreateInfo->flags ||
+        pCreateInfo->unnormalizedCoordinates || pCreateInfo->anisotropyEnable ||
+        pCreateInfo->minLod < 0.0f || pCreateInfo->maxLod < pCreateInfo->minLod)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    AgcClampMode u, v, w;
+    if (!sampler_clamp(pCreateInfo->addressModeU, &u) ||
+        !sampler_clamp(pCreateInfo->addressModeV, &v) ||
+        !sampler_clamp(pCreateInfo->addressModeW, &w))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    AgcFilterMode min_filter = pCreateInfo->minFilter == VK_FILTER_NEAREST ?
+        kAgcFilterPoint : pCreateInfo->minFilter == VK_FILTER_LINEAR ?
+        kAgcFilterBilinear : (AgcFilterMode)-1;
+    AgcFilterMode mag_filter = pCreateInfo->magFilter == VK_FILTER_NEAREST ?
+        kAgcFilterPoint : pCreateInfo->magFilter == VK_FILTER_LINEAR ?
+        kAgcFilterBilinear : (AgcFilterMode)-1;
+    if ((int)min_filter < 0 || (int)mag_filter < 0)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    AgcMipFilterMode mip_filter =
+        pCreateInfo->mipmapMode == VK_SAMPLER_MIPMAP_MODE_NEAREST ?
+        kAgcMipFilterPoint : kAgcMipFilterLinear;
+    VkPs5Sampler *sampler = alloc_object(device, pAllocator, sizeof(*sampler),
+                                         _Alignof(VkPs5Sampler));
+    if (!sampler) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    agcSamplerDescriptorInit(&sampler->descriptor);
+    agcSamplerDescriptorSetClampMode(&sampler->descriptor, u, v, w);
+    agcSamplerDescriptorSetFilterMode(&sampler->descriptor, min_filter,
+                                      mag_filter, mip_filter);
+    agcSamplerDescriptorSetLod(&sampler->descriptor, pCreateInfo->minLod,
+                               pCreateInfo->maxLod, pCreateInfo->mipLodBias);
+    if (pCreateInfo->compareEnable)
+        agcSamplerDescriptorSetCompareFunc(&sampler->descriptor,
+                                            pCreateInfo->compareOp);
+    AgcBorderColor border;
+    switch (pCreateInfo->borderColor) {
+    case VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK:
+    case VK_BORDER_COLOR_INT_TRANSPARENT_BLACK:
+        border = kAgcBorderTransparentBlack; break;
+    case VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK:
+    case VK_BORDER_COLOR_INT_OPAQUE_BLACK:
+        border = kAgcBorderOpaqueBlack; break;
+    case VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE:
+    case VK_BORDER_COLOR_INT_OPAQUE_WHITE:
+        border = kAgcBorderWhite; break;
+    default:
+        vk_ps5_device_free(device, pAllocator, sampler);
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    agcSamplerDescriptorSetBorderColor(&sampler->descriptor, border);
+    *pSampler = (VkSampler)sampler;
+    return VK_SUCCESS;
+}
+
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkDestroySampler(VkDevice device, VkSampler sampler,
+                 const VkAllocationCallbacks *pAllocator)
+{
+    if (sampler) vk_ps5_device_free(device, pAllocator, (void *)sampler);
+}
 DEFINE_SIMPLE_CREATE(vkCreateDescriptorUpdateTemplate, VkDescriptorUpdateTemplateCreateInfo,
                      VkDescriptorUpdateTemplate)
 DEFINE_SIMPLE_DESTROY(vkDestroyDescriptorUpdateTemplate, VkDescriptorUpdateTemplate)
@@ -2017,7 +2103,7 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
     for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
         const VkWriteDescriptorSet *write = &pDescriptorWrites[i];
         VkPs5DescriptorSet *set = (VkPs5DescriptorSet *)write->dstSet;
-        if (!set || !write->pBufferInfo) continue;
+        if (!set) continue;
         uint32_t first = 0;
         const VkDescriptorSetLayoutBinding *layout_binding = NULL;
         for (uint32_t j = 0; j < set->layout->binding_count; ++j) {
@@ -2040,6 +2126,12 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            if (!write->pBufferInfo) continue;
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            if (!write->pImageInfo) continue;
             break;
         default:
             continue;
@@ -2047,7 +2139,13 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
         first += write->dstArrayElement;
         for (uint32_t j = 0; j < write->descriptorCount; ++j) {
             set->values[first + j].type = write->descriptorType;
-            set->values[first + j].buffer = write->pBufferInfo[j];
+            if (write->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
+                write->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+                write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
+                set->values[first + j].buffer = write->pBufferInfo[j];
+            else
+                set->values[first + j].image = write->pImageInfo[j];
             set->values[first + j].valid = VK_TRUE;
         }
     }
@@ -2346,6 +2444,139 @@ static VkResult prepare_compute_resource_tables(
     return VK_SUCCESS;
 }
 
+static VkResult sampled_image_state(
+    const VkDescriptorImageInfo *info, AgcGfx1013Image2DState *state)
+{
+    VkPs5ImageView *view = info ? (VkPs5ImageView *)info->imageView : NULL;
+    VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+    if (!view || !image || !image->memory ||
+        !(image->usage & VK_IMAGE_USAGE_SAMPLED_BIT) ||
+        image->type != VK_IMAGE_TYPE_2D || image->tiling != VK_IMAGE_TILING_LINEAR ||
+        image->samples != VK_SAMPLE_COUNT_1_BIT || image->mip_levels != 1u ||
+        image->array_layers != 1u ||
+        (info->imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+         info->imageLayout != VK_IMAGE_LAYOUT_GENERAL) ||
+        view->components.r != VK_COMPONENT_SWIZZLE_IDENTITY ||
+        view->components.g != VK_COMPONENT_SWIZZLE_IDENTITY ||
+        view->components.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
+        view->components.a != VK_COMPONENT_SWIZZLE_IDENTITY)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    uint32_t dst_x = 4u, dst_y = 5u, dst_z = 6u, dst_w = 7u;
+    if (view->format == VK_FORMAT_B8G8R8A8_UNORM) {
+        dst_x = 6u;
+        dst_z = 4u;
+    } else if (view->format != VK_FORMAT_R8G8B8A8_UNORM) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+    *state = (AgcGfx1013Image2DState){
+        .address = vk_ps5_memory_gpu_address(image->memory,
+            image->memory_offset),
+        .width = image->extent.width,
+        .height = image->extent.height,
+        .format = AGC_GFX1013_IMAGE_FORMAT_RGBA8_UNORM,
+        .image_type = AGC_GFX1013_IMAGE_TYPE_2D,
+        .dst_sel_x = dst_x,
+        .dst_sel_y = dst_y,
+        .dst_sel_z = dst_z,
+        .dst_sel_w = dst_w,
+        .sample_count = 1u,
+    };
+    return VK_SUCCESS;
+}
+
+static VkResult prepare_graphics_descriptor_tables(
+    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
+    uint32_t stage_index, AgcGfx1013ResourceTableBinding *tables,
+    uint32_t *table_count)
+{
+    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[stage_index].metadata;
+    bool used_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS] = {false};
+    *table_count = 0u;
+    for (uint32_t i = 0; i < metadata->user_sgpr_count; ++i) {
+        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[i];
+        if (sgpr->kind != OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET) continue;
+        if (sgpr->index >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+            !command->graphics_sets[sgpr->index])
+            return VK_ERROR_INITIALIZATION_FAILED;
+        used_sets[sgpr->index] = true;
+    }
+    for (uint32_t i = 0; i < metadata->descriptor_mapping_count; ++i) {
+        const OpenAgcPsbcDescriptorMapping *mapping =
+            &metadata->descriptor_mappings[i];
+        size_t descriptor_size;
+        if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER)
+            descriptor_size = sizeof(AgcGfx1013CombinedImageSamplerDescriptor);
+        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE)
+            descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
+        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER)
+            descriptor_size = sizeof(AgcSamplerDescriptor);
+        else
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (mapping->set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+            mapping->byte_offset > VK_PS5_DESCRIPTOR_TABLE_SIZE ||
+            mapping->byte_stride < descriptor_size ||
+            mapping->array_size >
+                (VK_PS5_DESCRIPTOR_TABLE_SIZE - mapping->byte_offset) /
+                    mapping->byte_stride)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkPs5DescriptorSet *set = command->graphics_sets[mapping->set];
+        if (!set) return VK_ERROR_INITIALIZATION_FAILED;
+        for (uint32_t array = 0; array < mapping->array_size; ++array) {
+            VkDescriptorType layout_type;
+            VkPs5DescriptorValue *value = descriptor_value(
+                set, mapping->binding, array, &layout_type);
+            OpenAgcPsbcDescriptorType psbc_type;
+            if (!value || !value->valid ||
+                !psbc_descriptor_type(layout_type, &psbc_type) ||
+                psbc_type != mapping->type)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            size_t offset = mapping->byte_offset +
+                (size_t)array * mapping->byte_stride;
+            void *destination =
+                (uint8_t *)set->table_memory.cpu_address + offset;
+            if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER) {
+                VkPs5Sampler *sampler =
+                    (VkPs5Sampler *)value->image.sampler;
+                if (!sampler) return VK_ERROR_INITIALIZATION_FAILED;
+                memcpy(destination, &sampler->descriptor,
+                       sizeof(sampler->descriptor));
+            } else {
+                AgcGfx1013Image2DState image_state;
+                VkResult image_result = sampled_image_state(
+                    &value->image, &image_state);
+                if (image_result != VK_SUCCESS) return image_result;
+                if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE) {
+                    if (agcGfx1013Image2DDescriptorEncode(
+                            destination, &image_state) != AGC_OK)
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                } else {
+                    VkPs5Sampler *sampler =
+                        (VkPs5Sampler *)value->image.sampler;
+                    if (!sampler ||
+                        agcGfx1013CombinedImageSamplerDescriptorEncode(
+                            destination, &image_state,
+                            &sampler->descriptor) != AGC_OK)
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                }
+            }
+        }
+        used_sets[mapping->set] = true;
+    }
+    for (uint32_t set_index = 0;
+         set_index < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set_index) {
+        if (!used_sets[set_index]) continue;
+        VkPs5DescriptorSet *set = command->graphics_sets[set_index];
+        if (agcGpuMemoryFlush(&set->table_memory, 0,
+                VK_PS5_DESCRIPTOR_TABLE_SIZE) != AGC_OK)
+            return VK_ERROR_DEVICE_LOST;
+        tables[*table_count].placeholder =
+            OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(set_index);
+        tables[*table_count].address = descriptor_table_gpu_address(set);
+        (*table_count)++;
+    }
+    return VK_SUCCESS;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
@@ -2565,8 +2796,12 @@ static void record_graphics_draw(
     }
     AgcRegisterValue user_data[2];
     uint32_t user_data_count = 0;
-    AgcGfx1013ResourceTableBinding primitive_tables[1];
+    AgcGfx1013ResourceTableBinding
+        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
     uint32_t primitive_table_count = 0;
+    AgcGfx1013ResourceTableBinding
+        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    uint32_t pixel_table_count = 0;
     const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
     for (uint32_t n = 0; n < metadata->user_sgpr_count; ++n) {
         const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
@@ -2584,6 +2819,8 @@ static void record_graphics_draw(
             primitive_table_count++;
             continue;
         }
+        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
+            continue;
         uint32_t value;
         if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
             value = indexed ? (uint32_t)vertex_offset : first_element;
@@ -2601,8 +2838,27 @@ static void record_graphics_draw(
             sgpr->register_offset, value,
         };
     }
-    if (pipeline->stages[1].metadata.user_sgpr_count) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+    for (uint32_t n = 0;
+         n < pipeline->stages[1].metadata.user_sgpr_count; ++n) {
+        if (pipeline->stages[1].metadata.user_sgprs[n].kind !=
+                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+    }
+    uint32_t descriptor_table_count = 0;
+    VkResult descriptor_result = prepare_graphics_descriptor_tables(
+        command, pipeline, 0u, &primitive_tables[primitive_table_count],
+        &descriptor_table_count);
+    if (descriptor_result != VK_SUCCESS) {
+        command->record_error = descriptor_result;
+        return;
+    }
+    primitive_table_count += descriptor_table_count;
+    descriptor_result = prepare_graphics_descriptor_tables(
+        command, pipeline, 1u, pixel_tables, &pixel_table_count);
+    if (descriptor_result != VK_SUCCESS) {
+        command->record_error = descriptor_result;
         return;
     }
     if (pipeline->viewport.width > command->active_framebuffer->width ||
@@ -2627,6 +2883,8 @@ static void record_graphics_draw(
         .frame = &draw_frame,
         .primitive_resource_tables = primitive_tables,
         .num_primitive_resource_tables = primitive_table_count,
+        .pixel_resource_tables = pixel_tables,
+        .num_pixel_resource_tables = pixel_table_count,
         .post_bind_sh_registers = user_data,
         .num_post_bind_sh_registers = user_data_count,
         .index_type = indexed && command->index_type == VK_INDEX_TYPE_UINT32 ?
