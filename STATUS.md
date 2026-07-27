@@ -121,6 +121,13 @@ Implemented and host-verified:
   with the required target runtimes, and is included in the repeated FW 5.50
   runner. Hardware qualification remains pending; the 2026-07-28 runner retry
   stopped before deployment because the console websrv was unreachable.
+- Occlusion query pools now use GPU-visible OpenAGC storage with conservative
+  space for 16 render backends. Command reset writes zeroes on the GPU, begin
+  and end emit typed OpenAGC ZPASS snapshots, and end publishes a separate EOP
+  availability label. Host retrieval supports partial, availability, and
+  32/64-bit results with bounded waits. The command regression verifies the
+  reset, both snapshots, and availability release; hardware qualification and
+  a standalone query sample are still pending. Timestamp valid bits remain zero.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public

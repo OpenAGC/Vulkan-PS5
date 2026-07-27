@@ -613,6 +613,13 @@ int main(int argc, char **argv)
     };
     VkCommandBuffer command;
     assert(vkAllocateCommandBuffers(device, &allocate_info, &command) == VK_SUCCESS);
+    const VkQueryPoolCreateInfo query_info = {
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_OCCLUSION,
+        .queryCount = 2,
+    };
+    VkQueryPool query_pool;
+    assert(vkCreateQueryPool(device, &query_info, NULL, &query_pool) == VK_SUCCESS);
     const VkCommandBufferBeginInfo begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
@@ -628,6 +635,7 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdResetQueryPool(command, query_pool, 0, 2);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
                             0, 1, &descriptor_sets[1], 0, NULL);
@@ -643,10 +651,12 @@ int main(int argc, char **argv)
         .renderArea = {{0, 0}, {256, 256}},
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginQuery(command, query_pool, 1, 0);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
+    vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
 
@@ -657,6 +667,8 @@ int main(int argc, char **argv)
     bool found_color_target = false, found_color_target_1 = false;
     bool found_dual_export = false, found_depth_surface = false;
     bool found_depth_control = false, found_stencil_control = false;
+    uint32_t occlusion_snapshots = 0;
+    bool found_query_reset = false, found_query_availability = false;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
     for (uint32_t i = 0; i < count; ++i) {
         if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
@@ -702,11 +714,21 @@ int main(int argc, char **argv)
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_STENCIL_CONTROL) {
             found_stencil_control |= dwords[i + 2] == 0x00030030u;
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_EVENT_WRITE &&
+                   i + 3 < count && dwords[i + 1] == 0x115u) {
+            ++occlusion_snapshots;
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_WRITE_DATA) {
+            found_query_reset = true;
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_RELEASE_MEM &&
+                   i + 7 < count && dwords[i + 5] == 1u) {
+            found_query_availability = true;
         }
     }
     assert(found_dispatch && found_draw && found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
-           found_depth_surface && found_depth_control && found_stencil_control);
+           found_depth_surface && found_depth_control && found_stencil_control &&
+           found_query_reset && occlusion_snapshots == 2 &&
+           found_query_availability);
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
@@ -732,7 +754,20 @@ int main(int argc, char **argv)
             AGC_PM4_OP_RELEASE_MEM;
     assert(found_release);
 
+    uint64_t query_results[] = {UINT64_MAX, UINT64_MAX};
+    assert(vkGetQueryPoolResults(device, query_pool, 1, 1,
+        sizeof(query_results), query_results, sizeof(query_results),
+        VK_QUERY_RESULT_64_BIT |
+        VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) == VK_NOT_READY);
+    assert(query_results[0] == UINT64_MAX && query_results[1] == 0u);
+    query_results[0] = UINT64_MAX;
+    assert(vkGetQueryPoolResults(device, query_pool, 1, 1,
+        sizeof(query_results[0]), query_results, sizeof(query_results[0]),
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_PARTIAL_BIT) == VK_SUCCESS);
+    assert(query_results[0] == 0u);
+
     vkDestroyFence(device, fence, NULL);
+    vkDestroyQueryPool(device, query_pool, NULL);
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);

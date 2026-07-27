@@ -135,8 +135,13 @@ typedef struct VkPs5Pipeline {
 typedef struct VkPs5QueryPool {
     VkQueryType type;
     uint32_t count;
-    uint64_t values[];
+    AgcGpuMemory memory;
 } VkPs5QueryPool;
+
+#define VK_PS5_QUERY_AVAILABILITY_OFFSET \
+    AGC_GFX1013_OCCLUSION_QUERY_STRIDE
+#define VK_PS5_QUERY_SLOT_SIZE \
+    (AGC_GFX1013_OCCLUSION_QUERY_STRIDE + 16u)
 
 typedef struct VkPs5DescriptorSet VkPs5DescriptorSet;
 typedef struct VkPs5DescriptorValue {
@@ -194,6 +199,8 @@ typedef struct VkPs5CommandBuffer {
     uint32_t active_subpass;
     AgcGfx1013FrameState frame_state;
     AgcGfx1013DepthSurfaceState depth_surface_state;
+    VkPs5QueryPool *active_query_pool;
+    uint32_t active_query;
     VkPs5Buffer *index_buffer;
     VkDeviceSize index_offset;
     VkIndexType index_type;
@@ -808,6 +815,7 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
         command->bound_graphics = NULL;
         command->active_render_pass = NULL;
         command->active_framebuffer = NULL;
+        command->active_query_pool = NULL;
         command->index_buffer = NULL;
         memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
         command->vertex_table_offset = 0u;
@@ -911,6 +919,7 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->bound_graphics = NULL;
     command->active_render_pass = NULL;
     command->active_framebuffer = NULL;
+    command->active_query_pool = NULL;
     command->index_buffer = NULL;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
@@ -925,7 +934,8 @@ vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)commandBuffer;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING)
         return VK_ERROR_INITIALIZATION_FAILED;
-    if (command->record_error != VK_SUCCESS || command->active_render_pass) {
+    if (command->record_error != VK_SUCCESS || command->active_render_pass ||
+        command->active_query_pool) {
         VkResult result = command->record_error != VK_SUCCESS ?
             command->record_error : VK_ERROR_INITIALIZATION_FAILED;
         command->state = VK_PS5_COMMAND_INITIAL;
@@ -948,6 +958,7 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->bound_graphics = NULL;
     command->active_render_pass = NULL;
     command->active_framebuffer = NULL;
+    command->active_query_pool = NULL;
     command->index_buffer = NULL;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
@@ -1138,13 +1149,25 @@ vkCreateQueryPool(VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo,
         return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->queryType != VK_QUERY_TYPE_OCCLUSION)
         return VK_ERROR_FEATURE_NOT_PRESENT;
-    size_t size = sizeof(VkPs5QueryPool) +
-        (size_t)pCreateInfo->queryCount * sizeof(uint64_t);
-    VkPs5QueryPool *pool = alloc_object(device, pAllocator, size,
+    if ((size_t)pCreateInfo->queryCount > SIZE_MAX / VK_PS5_QUERY_SLOT_SIZE)
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    VkPs5QueryPool *pool = alloc_object(device, pAllocator, sizeof(*pool),
                                         _Alignof(VkPs5QueryPool));
     if (!pool) return VK_ERROR_OUT_OF_HOST_MEMORY;
     pool->type = pCreateInfo->queryType;
     pool->count = pCreateInfo->queryCount;
+    size_t size = (size_t)pool->count * VK_PS5_QUERY_SLOT_SIZE;
+    if (agcGpuMemoryAllocateFlexible(&pool->memory, size, 256u,
+            "vulkan_ps5_queries") != AGC_OK) {
+        vk_ps5_device_free(device, pAllocator, pool);
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+    memset(pool->memory.cpu_address, 0, size);
+    if (agcGpuMemoryFlush(&pool->memory, 0, size) != AGC_OK) {
+        agcGpuMemoryFreeFlexible(&pool->memory);
+        vk_ps5_device_free(device, pAllocator, pool);
+        return VK_ERROR_DEVICE_LOST;
+    }
     *pQueryPool = (VkQueryPool)pool;
     return VK_SUCCESS;
 }
@@ -1152,7 +1175,11 @@ vkCreateQueryPool(VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo,
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkDestroyQueryPool(VkDevice device, VkQueryPool queryPool,
                    const VkAllocationCallbacks *pAllocator) {
-    if (queryPool) vk_ps5_device_free(device, pAllocator, (void *)queryPool);
+    if (queryPool) {
+        VkPs5QueryPool *pool = (VkPs5QueryPool *)queryPool;
+        agcGpuMemoryFreeFlexible(&pool->memory);
+        vk_ps5_device_free(device, pAllocator, pool);
+    }
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -1169,11 +1196,55 @@ vkGetQueryPoolResults(VkDevice device, VkQueryPool queryPool_handle, uint32_t fi
     if (stride < entry_size || (queryCount && dataSize <
         (size_t)(queryCount - 1) * (size_t)stride + entry_size))
         return VK_ERROR_INITIALIZATION_FAILED;
+    VkResult result = VK_SUCCESS;
     for (uint32_t i = 0; i < queryCount; ++i) {
+        size_t slot = (size_t)(firstQuery + i) * VK_PS5_QUERY_SLOT_SIZE;
+        if (flags & VK_QUERY_RESULT_WAIT_BIT) {
+            int32_t wait = agcGpuMemoryWait32(&pool->memory,
+                slot + VK_PS5_QUERY_AVAILABILITY_OFFSET, 1u, 5000000u);
+            if (wait != AGC_OK && !(flags & VK_QUERY_RESULT_PARTIAL_BIT))
+                result = VK_NOT_READY;
+        }
+        if (agcGpuMemoryInvalidate(&pool->memory, slot,
+                VK_PS5_QUERY_SLOT_SIZE) != AGC_OK)
+            return VK_ERROR_DEVICE_LOST;
+        const uint8_t *source =
+            (const uint8_t *)pool->memory.cpu_address + slot;
+        uint32_t available_word;
+        memcpy(&available_word, source + VK_PS5_QUERY_AVAILABILITY_OFFSET,
+               sizeof(available_word));
+        VkBool32 available = available_word == 1u;
+        uint64_t value = 0u;
+        for (uint32_t rb = 0; rb < AGC_GFX1013_OCCLUSION_QUERY_MAX_RBS;
+             ++rb) {
+            uint64_t begin, end;
+            memcpy(&begin, source + rb * 16u, sizeof(begin));
+            memcpy(&end, source + rb * 16u + 8u, sizeof(end));
+            if ((begin >> 63u) && (end >> 63u))
+                value += (end & INT64_MAX) - (begin & INT64_MAX);
+        }
         uint8_t *dst = (uint8_t *)pData + (size_t)i * (size_t)stride;
-        memset(dst, 0, entry_size);
+        if (available || (flags & VK_QUERY_RESULT_PARTIAL_BIT)) {
+            if (flags & VK_QUERY_RESULT_64_BIT)
+                memcpy(dst, &value, sizeof(value));
+            else {
+                uint32_t value32 = (uint32_t)value;
+                memcpy(dst, &value32, sizeof(value32));
+            }
+        }
+        if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) {
+            if (flags & VK_QUERY_RESULT_64_BIT) {
+                uint64_t availability = available;
+                memcpy(dst + value_size, &availability, sizeof(availability));
+            } else {
+                uint32_t availability = available;
+                memcpy(dst + value_size, &availability, sizeof(availability));
+            }
+        }
+        if (!available && !(flags & VK_QUERY_RESULT_PARTIAL_BIT))
+            result = VK_NOT_READY;
     }
-    return (flags & VK_QUERY_RESULT_PARTIAL_BIT) ? VK_SUCCESS : VK_NOT_READY;
+    return result;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -2488,24 +2559,92 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlags f) {
-    IGNORE(c); IGNORE(p); IGNORE(q); IGNORE(f);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
+        pool->type != VK_QUERY_TYPE_OCCLUSION || q >= pool->count ||
+        !command->active_render_pass || command->active_query_pool) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (f & VK_QUERY_CONTROL_PRECISE_BIT) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    uint64_t address = pool->memory.gpu_address +
+        (uint64_t)q * VK_PS5_QUERY_SLOT_SIZE;
+    int32_t result = agcGfx1013WriteOcclusionSnapshot(&command->dcb, address);
+    if (result != AGC_OK) {
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    command->active_query_pool = pool;
+    command->active_query = q;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdEndQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q) {
-    IGNORE(c); IGNORE(p); IGNORE(q);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
+        command->active_query_pool != pool || command->active_query != q) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    uint64_t address = pool->memory.gpu_address +
+        (uint64_t)q * VK_PS5_QUERY_SLOT_SIZE;
+    int32_t result = agcGfx1013WriteOcclusionSnapshot(
+        &command->dcb, address + sizeof(uint64_t));
+    const AgcGfx1013EopFenceState availability = {
+        .address = address + VK_PS5_QUERY_AVAILABILITY_OFFSET,
+        .value = 1u,
+    };
+    if (result == AGC_OK)
+        result = agcGfx1013SignalEopFence(&command->dcb, &availability);
+    if (result != AGC_OK)
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+    command->active_query_pool = NULL;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdResetQueryPool(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n) {
-    IGNORE(c); IGNORE(p); IGNORE(f); IGNORE(n);
+    static const uint32_t zeros[VK_PS5_QUERY_SLOT_SIZE / sizeof(uint32_t)] = {0};
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
+        command->active_render_pass || f > pool->count || n > pool->count - f) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        uint64_t address = pool->memory.gpu_address +
+            (uint64_t)(f + i) * VK_PS5_QUERY_SLOT_SIZE;
+        if (!sceAgcDcbWriteData(&command->dcb, 1u, 3u, address, zeros,
+                VK_PS5_QUERY_SLOT_SIZE / sizeof(uint32_t), 1u, 1u)) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdWriteTimestamp(VkCommandBuffer c, VkPipelineStageFlagBits s, VkQueryPool p,
-                    uint32_t q) { IGNORE(c); IGNORE(s); IGNORE(p); IGNORE(q); }
+                    uint32_t q) {
+    IGNORE(s); IGNORE(p); IGNORE(q);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (command && command->state == VK_PS5_COMMAND_RECORDING)
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyQueryPoolResults(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n,
                           VkBuffer d, VkDeviceSize o, VkDeviceSize s,
                           VkQueryResultFlags flags) {
-    IGNORE(c); IGNORE(p); IGNORE(f); IGNORE(n); IGNORE(d); IGNORE(o); IGNORE(s); IGNORE(flags);
+    IGNORE(p); IGNORE(f); IGNORE(n); IGNORE(d); IGNORE(o); IGNORE(s); IGNORE(flags);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (command && command->state == VK_PS5_COMMAND_RECORDING)
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdExecuteCommands(VkCommandBuffer c, uint32_t n, const VkCommandBuffer *p) {
@@ -3378,6 +3517,10 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
         command->record_error != VK_SUCCESS)
         return;
     if (!command->active_render_pass || !command->active_framebuffer) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (command->active_query_pool) {
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }

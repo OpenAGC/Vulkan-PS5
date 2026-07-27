@@ -155,3 +155,9 @@ resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
 addresses, and restore host-readable cache state after drawing. Depth/stencil
 clears remain unavailable; the first hardware gate initializes mapped direct
 memory and uses `LOAD`.
+
+Occlusion query pools use GPU-visible storage and OpenAGC-owned gfx1013 ZPASS
+snapshots. Reset is command-ordered, end-query publishes a separate EOP
+availability label, and `vkGetQueryPoolResults` supports 32/64-bit values,
+availability, partial results, and bounded waits. Precise occlusion and
+timestamps remain disabled pending hardware qualification.
