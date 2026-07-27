@@ -25,7 +25,8 @@
   depth attachment transitions, and static depth-test/write plus front/back
   stencil PM4 on combined D32+S8 planes. Dual-target command recording also
   verifies CB1 binding, per-attachment transitions, and packed fragment-export
-  state. Continue Milestone 3 with repeated FW 5.50 depth/stencil and MRT
+  state. A standalone two-target mapped-readback sample now exercises the MRT
+  path. Continue Milestone 3 with repeated FW 5.50 depth/stencil and MRT
   readback, followed by queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.

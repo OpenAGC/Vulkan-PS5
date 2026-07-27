@@ -68,6 +68,11 @@ the initialized depth value. Its oracle checks exact interior colors, coverage,
 and raw clear/near/far D32 words. Generic-host execution intentionally reports
 unchanged memory because that backend does not execute GPU commands.
 
+`vulkan_ps5_mrt_example` draws one triangle to two linear RGBA8 attachments.
+Its fragment shader exports green to location 0 and magenta to location 1;
+the mapped-memory oracle independently checks coverage, exact color, center,
+and untouched background for both targets.
+
 When the console is online, deploy either Prospero ELF through the foreground
 etaHEN websrv path so its stdout is returned to the terminal:
 
@@ -80,7 +85,7 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
 
 The Milestone 3 qualification runner checks websrv reachability, performs two
 foreground runs of each sample, requires the exact compute, triangle,
-indexed-textured, and depth PASS
+indexed-textured, depth, and MRT PASS
 oracles, and retains stdout under `examples/qualification-logs/`:
 
 ```sh
@@ -94,8 +99,10 @@ exactly 18,432 green pixels, and both indexed-textured runs verified exactly
 `analysis/fw550_indexed_textured_qualification_20260727.md` for the retained
 revision and artifact evidence.
 
-The depth sample is part of the runner but remains unqualified until two FW
-5.50 runs produce its complete color and raw-depth oracle.
+The depth and MRT samples are part of the runner but remain unqualified until
+two FW 5.50 runs produce their complete mapped-memory oracles. The latest
+2026-07-28 retry stopped at the runner's preflight because the console websrv
+at `10.0.1.41:8080` was unreachable; no hardware result was inferred.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or

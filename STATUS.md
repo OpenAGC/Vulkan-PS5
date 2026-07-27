@@ -116,6 +116,11 @@ Implemented and host-verified:
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
   enables every active slot, and fragment export context carries the real MRT
   count. The command regression verifies CB1 and dual RGBA8 export `0x44`.
+- The standalone MRT sample writes green and magenta from fragment locations
+  0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
+  with the required target runtimes, and is included in the repeated FW 5.50
+  runner. Hardware qualification remains pending; the 2026-07-28 runner retry
+  stopped before deployment because the console websrv was unreachable.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -164,5 +169,6 @@ FW 5.50 compute/triangle hardware gate:
   vertex fetch, fragment sampled-image/sampler tables, bilinear filtering, the
   256-byte linear texture row pitch, and mapped render-target readback.
 - `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs
-  all three Prospero samples twice through foreground websrv, rejects a missing
-  PASS oracle, and retains per-run output without committing runtime logs.
+  compute, triangle, indexed-textured, depth, and MRT twice through foreground
+  websrv, rejects a missing PASS oracle, and retains per-run output without
+  committing runtime logs.

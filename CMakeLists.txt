@@ -236,6 +236,28 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/depth/main.c
     "${VULKAN_PS5_DEPTH_VERTEX_HEADER}"
     "${VULKAN_PS5_DEPTH_FRAGMENT_HEADER}")
+  set(VULKAN_PS5_MRT_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_mrt_vert_spv.h")
+  set(VULKAN_PS5_MRT_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_mrt_frag_spv.h")
+  add_custom_command(OUTPUT "${VULKAN_PS5_MRT_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_mrt_vert_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/mrt/mrt.vert"
+      -o "${VULKAN_PS5_MRT_VERTEX_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mrt/mrt.vert"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_MRT_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_mrt_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/mrt/mrt.frag"
+      -o "${VULKAN_PS5_MRT_FRAGMENT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/mrt/mrt.frag"
+    VERBATIM)
+  add_executable(vulkan_ps5_mrt_example
+    examples/mrt/main.c
+    "${VULKAN_PS5_MRT_VERTEX_HEADER}"
+    "${VULKAN_PS5_MRT_FRAGMENT_HEADER}")
   set(VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indexed_textured_vert_spv.h")
   set(VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER
@@ -263,12 +285,13 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_depth_example
-      vulkan_ps5_indexed_textured_example
+      vulkan_ps5_mrt_example vulkan_ps5_indexed_textured_example
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_triangle_example
-      vulkan_ps5_depth_example vulkan_ps5_indexed_textured_example)
+      vulkan_ps5_depth_example vulkan_ps5_mrt_example
+      vulkan_ps5_indexed_textured_example)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE
