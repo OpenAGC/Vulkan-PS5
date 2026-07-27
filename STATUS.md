@@ -105,6 +105,11 @@ Implemented and host-verified:
   translates static compare/write/stencil state, and each draw restores the
   typed DB surface and control after shader binding. The command regression
   verifies D32 transitions and exact surface/control PM4 emission.
+- A standalone D32 sample draws overlapping near/far and independent far
+  triangles, then validates green/red color decisions plus raw clear/near/far
+  depth words. It host-builds, cross-links with the required target runtimes,
+  and is included in the repeated FW 5.50 runner. Hardware qualification is
+  pending; the first deployment attempt found the console FTP service offline.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public

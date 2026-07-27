@@ -18,8 +18,10 @@ esac
 
 compute_elf="$build_dir/vulkan_ps5_compute_example.elf"
 triangle_elf="$build_dir/vulkan_ps5_triangle_example.elf"
+depth_elf="$build_dir/vulkan_ps5_depth_example.elf"
 indexed_textured_elf="$build_dir/vulkan_ps5_indexed_textured_example.elf"
-for elf in "$compute_elf" "$triangle_elf" "$indexed_textured_elf"; do
+for elf in "$compute_elf" "$triangle_elf" "$depth_elf" \
+    "$indexed_textured_elf"; do
     if [ ! -f "$elf" ]; then
         echo "missing Prospero sample: $elf" >&2
         exit 2
@@ -63,6 +65,8 @@ run_sample compute "$compute_elf" '^compute: PASS 1024 deterministic values$'
 run_sample triangle "$triangle_elf" '^triangle: PASS [0-9]+ green pixels$'
 run_sample indexed_textured "$indexed_textured_elf" \
     '^indexed_textured: PASS [0-9]+ pixels [0-9]+\+ colors$'
+run_sample depth "$depth_elf" \
+    '^depth: PASS green=[0-9]+ red=[0-9]+ raw=[0-9]+/[0-9]+/[0-9]+$'
 
-echo "FW550 Milestone 3: PASS (${run_count} compute + ${run_count} triangle + ${run_count} indexed-textured runs)"
+echo "FW550 Milestone 3: PASS (${run_count} compute + ${run_count} triangle + ${run_count} indexed-textured + ${run_count} depth runs)"
 echo "logs: $log_dir"

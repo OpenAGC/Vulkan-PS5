@@ -61,6 +61,13 @@ bilinear clamp sampler over a 2x2 RGBA8 image. Its readback oracle requires
 triangle coverage, fully opaque sampled pixels, at least 16 distinct colors,
 an interior center sample, and untouched background corners.
 
+`vulkan_ps5_depth_example` combines a mapped linear RGBA8 target with an
+OpenAGC-laid-out optimal D32 attachment. One near green triangle must occlude
+an overlapping far red triangle while a separate far red triangle passes over
+the initialized depth value. Its oracle checks exact interior colors, coverage,
+and raw clear/near/far D32 words. Generic-host execution intentionally reports
+unchanged memory because that backend does not execute GPU commands.
+
 When the console is online, deploy either Prospero ELF through the foreground
 etaHEN websrv path so its stdout is returned to the terminal:
 
@@ -72,8 +79,8 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
 ```
 
 The Milestone 3 qualification runner checks websrv reachability, performs two
-foreground runs of each sample, requires the exact compute, triangle, and
-indexed-textured PASS
+foreground runs of each sample, requires the exact compute, triangle,
+indexed-textured, and depth PASS
 oracles, and retains stdout under `examples/qualification-logs/`:
 
 ```sh
@@ -86,6 +93,9 @@ exactly 18,432 green pixels, and both indexed-textured runs verified exactly
 18,432 opaque sampled pixels with at least 64 distinct colors. See
 `analysis/fw550_indexed_textured_qualification_20260727.md` for the retained
 revision and artifact evidence.
+
+The depth sample is part of the runner but remains unqualified until two FW
+5.50 runs produce its complete color and raw-depth oracle.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or
