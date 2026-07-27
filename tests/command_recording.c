@@ -1,6 +1,7 @@
 #include <vulkan/vulkan.h>
 #include <agc_driver_debug.h>
 #include <agc_pm4.h>
+#include <agc_shader.h>
 
 #include "../src/vulkan_ps5_internal.h"
 
@@ -62,9 +63,43 @@ int main(int argc, char **argv)
     VkDevice device;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
 
+    const VkBufferCreateInfo buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 256,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer output_buffer;
+    assert(vkCreateBuffer(device, &buffer_info, NULL, &output_buffer) == VK_SUCCESS);
+    VkMemoryRequirements buffer_requirements;
+    vkGetBufferMemoryRequirements(device, output_buffer, &buffer_requirements);
+    const VkMemoryAllocateInfo memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = buffer_requirements.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory output_memory;
+    assert(vkAllocateMemory(device, &memory_info, NULL, &output_memory) == VK_SUCCESS);
+    assert(vkBindBufferMemory(device, output_buffer, output_memory, 0) == VK_SUCCESS);
+    const VkDescriptorSetLayoutBinding output_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &output_binding,
+    };
+    VkDescriptorSetLayout set_layout;
+    assert(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL,
+                                       &set_layout) == VK_SUCCESS);
     VkShaderModule module = shader_module(device, argv[1]);
     const VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &set_layout,
     };
     VkPipelineLayout layout;
     assert(vkCreatePipelineLayout(device, &layout_info, NULL, &layout) == VK_SUCCESS);
@@ -81,6 +116,48 @@ int main(int argc, char **argv)
     VkPipeline pipeline;
     assert(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
                                     &pipeline_info, NULL, &pipeline) == VK_SUCCESS);
+    const VkDescriptorPoolSize pool_size = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2,
+    };
+    const VkDescriptorPoolCreateInfo descriptor_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 2,
+        .poolSizeCount = 1,
+        .pPoolSizes = &pool_size,
+    };
+    VkDescriptorPool descriptor_pool;
+    assert(vkCreateDescriptorPool(device, &descriptor_pool_info, NULL,
+                                  &descriptor_pool) == VK_SUCCESS);
+    const VkDescriptorSetAllocateInfo set_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = 2,
+        .pSetLayouts = (VkDescriptorSetLayout[]){set_layout, set_layout},
+    };
+    VkDescriptorSet descriptor_sets[2];
+    assert(vkAllocateDescriptorSets(device, &set_allocate_info,
+                                    descriptor_sets) == VK_SUCCESS);
+    const VkDescriptorBufferInfo output_info = {
+        output_buffer, 0, VK_WHOLE_SIZE,
+    };
+    const VkWriteDescriptorSet descriptor_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_sets[0],
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &output_info,
+    };
+    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+    const VkCopyDescriptorSet descriptor_copy = {
+        .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
+        .srcSet = descriptor_sets[0],
+        .srcBinding = 0,
+        .dstSet = descriptor_sets[1],
+        .dstBinding = 0,
+        .descriptorCount = 1,
+    };
+    vkUpdateDescriptorSets(device, 0, NULL, 1, &descriptor_copy);
 
     VkShaderModule vertex = shader_module(device, argv[2]);
     VkShaderModule fragment = shader_module(device, argv[3]);
@@ -161,6 +238,13 @@ int main(int argc, char **argv)
     };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdDispatch(command, 1, 1, 1);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
     vkCmdDispatch(command, 3, 5, 7);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       graphics_pipeline);
@@ -175,6 +259,9 @@ int main(int argc, char **argv)
         if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 1] == 3 && dwords[i + 2] == 5 && dwords[i + 3] == 7);
+            assert(i >= 3);
+            assert(((dwords[i - 3] >> 8) & 0xffu) == AGC_PM4_OP_SET_SH_REG);
+            assert(dwords[i - 1] != OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(0));
             found_dispatch = true;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_AUTO) {
             assert(i + 2 < count && dwords[i + 1] == 3);
@@ -215,8 +302,12 @@ int main(int argc, char **argv)
     vkDestroyShaderModule(device, fragment, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
+    vkDestroyDescriptorPool(device, descriptor_pool, NULL);
     vkDestroyPipelineLayout(device, layout, NULL);
     vkDestroyShaderModule(device, module, NULL);
+    vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+    vkDestroyBuffer(device, output_buffer, NULL);
+    vkFreeMemory(device, output_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
     return 0;

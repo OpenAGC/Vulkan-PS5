@@ -10,8 +10,9 @@
   render-pass context.
 - Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
   compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
-  uploads and bounded EOP-backed OpenAGC queue submission. Next, emit descriptor
-  and render-target state in standalone samples, then collect FW 5.50 compute
+  uploads, bounded EOP-backed OpenAGC queue submission, and compute
+  uniform/storage-buffer resource tables. Next, add deterministic standalone
+  compute readback, emit render-target state, then collect FW 5.50 compute
   readback and triangle display evidence. Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 

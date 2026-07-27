@@ -4,6 +4,7 @@
 #include <agc_graphics.h>
 #include <agc_memory.h>
 #include <agc_shader.h>
+#include <agc_texture.h>
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -95,6 +96,12 @@ typedef struct VkPs5QueryPool {
 } VkPs5QueryPool;
 
 typedef struct VkPs5DescriptorSet VkPs5DescriptorSet;
+typedef struct VkPs5DescriptorValue {
+    VkDescriptorType type;
+    VkDescriptorBufferInfo buffer;
+    VkBool32 valid;
+} VkPs5DescriptorValue;
+
 typedef struct VkPs5DescriptorPool {
     VkDevice device;
     uint32_t max_sets;
@@ -105,7 +112,13 @@ typedef struct VkPs5DescriptorPool {
 struct VkPs5DescriptorSet {
     VkPs5DescriptorPool *pool;
     VkPs5DescriptorSet *next;
+    VkPs5DescriptorSetLayout *layout;
+    uint32_t descriptor_count;
+    AgcGpuMemory table_memory;
+    VkPs5DescriptorValue values[];
 };
+
+#define VK_PS5_DESCRIPTOR_TABLE_SIZE 0x4000u
 
 typedef struct VkPs5CommandPool {
     VkDevice device;
@@ -129,6 +142,8 @@ typedef struct VkPs5CommandBuffer {
     VkResult record_error;
     VkPs5Pipeline *bound_compute;
     VkPs5Pipeline *bound_graphics;
+    VkPs5DescriptorSet *compute_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    VkPs5DescriptorSet *graphics_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
     uint32_t *dcb_storage;
     size_t dcb_size;
     SceAgcCb dcb;
@@ -619,6 +634,8 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->record_error = VK_SUCCESS;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
+    memset(command->compute_sets, 0, sizeof(command->compute_sets));
+    memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
@@ -646,6 +663,8 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->record_error = VK_SUCCESS;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
+    memset(command->compute_sets, 0, sizeof(command->compute_sets));
+    memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
@@ -1556,6 +1575,7 @@ static void clear_descriptor_pool(VkPs5DescriptorPool *pool) {
     VkPs5DescriptorSet *set = pool->sets;
     while (set) {
         VkPs5DescriptorSet *next = set->next;
+        agcGpuMemoryFreeFlexible(&set->table_memory);
         vk_ps5_device_free(pool->device, NULL, set);
         set = next;
     }
@@ -1587,7 +1607,8 @@ vkAllocateDescriptorSets(VkDevice device,
                          const VkDescriptorSetAllocateInfo *pAllocateInfo,
                          VkDescriptorSet *pDescriptorSets) {
     if (!device || !pAllocateInfo || !pDescriptorSets ||
-        pAllocateInfo->sType != VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO)
+        pAllocateInfo->sType != VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO ||
+        (pAllocateInfo->descriptorSetCount && !pAllocateInfo->pSetLayouts))
         return VK_ERROR_INITIALIZATION_FAILED;
     VkPs5DescriptorPool *pool = (VkPs5DescriptorPool *)pAllocateInfo->descriptorPool;
     if (!pool || pAllocateInfo->descriptorSetCount >
@@ -1597,18 +1618,48 @@ vkAllocateDescriptorSets(VkDevice device,
     VkPs5DescriptorSet *old_head = pool->sets;
     uint32_t old_count = pool->allocated_sets;
     for (uint32_t i = 0; i < pAllocateInfo->descriptorSetCount; ++i) {
-        VkPs5DescriptorSet *set = alloc_object(device, NULL, sizeof(*set),
+        VkPs5DescriptorSetLayout *layout = (VkPs5DescriptorSetLayout *)
+            pAllocateInfo->pSetLayouts[i];
+        if (!layout) goto invalid_layout;
+        uint32_t descriptor_count = 0;
+        for (uint32_t binding = 0; binding < layout->binding_count; ++binding) {
+            if (layout->bindings[binding].descriptorCount >
+                UINT32_MAX - descriptor_count)
+                goto invalid_layout;
+            descriptor_count += layout->bindings[binding].descriptorCount;
+        }
+        size_t size = sizeof(VkPs5DescriptorSet) +
+            (size_t)descriptor_count * sizeof(VkPs5DescriptorValue);
+        VkPs5DescriptorSet *set = alloc_object(device, NULL, size,
                                                _Alignof(VkPs5DescriptorSet));
         if (!set) {
             while (pool->sets != old_head) {
                 VkPs5DescriptorSet *rollback = pool->sets;
                 pool->sets = rollback->next;
+                agcGpuMemoryFreeFlexible(&rollback->table_memory);
                 vk_ps5_device_free(device, NULL, rollback);
             }
             pool->allocated_sets = old_count;
             for (uint32_t j = 0; j < pAllocateInfo->descriptorSetCount; ++j)
                 pDescriptorSets[j] = VK_NULL_HANDLE;
             return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        set->layout = layout;
+        set->descriptor_count = descriptor_count;
+        if (agcGpuMemoryAllocateFlexible(&set->table_memory,
+                VK_PS5_DESCRIPTOR_TABLE_SIZE, 16u,
+                "vulkan_ps5_descriptor_table") != AGC_OK) {
+            vk_ps5_device_free(device, NULL, set);
+            while (pool->sets != old_head) {
+                VkPs5DescriptorSet *rollback = pool->sets;
+                pool->sets = rollback->next;
+                agcGpuMemoryFreeFlexible(&rollback->table_memory);
+                vk_ps5_device_free(device, NULL, rollback);
+            }
+            pool->allocated_sets = old_count;
+            for (uint32_t j = 0; j < pAllocateInfo->descriptorSetCount; ++j)
+                pDescriptorSets[j] = VK_NULL_HANDLE;
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
         }
         set->pool = pool;
         set->next = pool->sets;
@@ -1617,6 +1668,18 @@ vkAllocateDescriptorSets(VkDevice device,
         pDescriptorSets[i] = (VkDescriptorSet)set;
     }
     return VK_SUCCESS;
+
+invalid_layout:
+    while (pool->sets != old_head) {
+        VkPs5DescriptorSet *rollback = pool->sets;
+        pool->sets = rollback->next;
+        agcGpuMemoryFreeFlexible(&rollback->table_memory);
+        vk_ps5_device_free(device, NULL, rollback);
+    }
+    pool->allocated_sets = old_count;
+    for (uint32_t j = 0; j < pAllocateInfo->descriptorSetCount; ++j)
+        pDescriptorSets[j] = VK_NULL_HANDLE;
+    return VK_ERROR_INITIALIZATION_FAILED;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -1633,6 +1696,7 @@ vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
         VkPs5DescriptorSet *set = *link;
         *link = set->next;
         pool->allocated_sets--;
+        agcGpuMemoryFreeFlexible(&set->table_memory);
         vk_ps5_device_free(device, NULL, set);
     }
     return VK_SUCCESS;
@@ -1643,8 +1707,80 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
                        const VkWriteDescriptorSet *pDescriptorWrites,
                        uint32_t descriptorCopyCount,
                        const VkCopyDescriptorSet *pDescriptorCopies) {
-    (void)device; (void)descriptorWriteCount; (void)pDescriptorWrites;
-    (void)descriptorCopyCount; (void)pDescriptorCopies;
+    (void)device;
+    for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
+        const VkWriteDescriptorSet *write = &pDescriptorWrites[i];
+        VkPs5DescriptorSet *set = (VkPs5DescriptorSet *)write->dstSet;
+        if (!set || !write->pBufferInfo) continue;
+        uint32_t first = 0;
+        const VkDescriptorSetLayoutBinding *layout_binding = NULL;
+        for (uint32_t j = 0; j < set->layout->binding_count; ++j) {
+            const VkDescriptorSetLayoutBinding *candidate =
+                &set->layout->bindings[j];
+            if (candidate->binding == write->dstBinding) {
+                layout_binding = candidate;
+                break;
+            }
+            first += candidate->descriptorCount;
+        }
+        if (!layout_binding || layout_binding->descriptorType !=
+                write->descriptorType ||
+            write->dstArrayElement > layout_binding->descriptorCount ||
+            write->descriptorCount > layout_binding->descriptorCount -
+                write->dstArrayElement)
+            continue;
+        switch (write->descriptorType) {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            break;
+        default:
+            continue;
+        }
+        first += write->dstArrayElement;
+        for (uint32_t j = 0; j < write->descriptorCount; ++j) {
+            set->values[first + j].type = write->descriptorType;
+            set->values[first + j].buffer = write->pBufferInfo[j];
+            set->values[first + j].valid = VK_TRUE;
+        }
+    }
+    for (uint32_t i = 0; i < descriptorCopyCount; ++i) {
+        const VkCopyDescriptorSet *copy = &pDescriptorCopies[i];
+        VkPs5DescriptorSet *source = (VkPs5DescriptorSet *)copy->srcSet;
+        VkPs5DescriptorSet *dest = (VkPs5DescriptorSet *)copy->dstSet;
+        uint32_t source_first = 0, dest_first = 0;
+        const VkDescriptorSetLayoutBinding *source_binding = NULL;
+        const VkDescriptorSetLayoutBinding *dest_binding = NULL;
+        if (!source || !dest) continue;
+        for (uint32_t j = 0; j < source->layout->binding_count; ++j) {
+            if (source->layout->bindings[j].binding == copy->srcBinding) {
+                source_binding = &source->layout->bindings[j];
+                break;
+            }
+            source_first += source->layout->bindings[j].descriptorCount;
+        }
+        for (uint32_t j = 0; j < dest->layout->binding_count; ++j) {
+            if (dest->layout->bindings[j].binding == copy->dstBinding) {
+                dest_binding = &dest->layout->bindings[j];
+                break;
+            }
+            dest_first += dest->layout->bindings[j].descriptorCount;
+        }
+        if (!source_binding || !dest_binding ||
+            source_binding->descriptorType != dest_binding->descriptorType ||
+            copy->srcArrayElement > source_binding->descriptorCount ||
+            copy->descriptorCount > source_binding->descriptorCount -
+                copy->srcArrayElement ||
+            copy->dstArrayElement > dest_binding->descriptorCount ||
+            copy->descriptorCount > dest_binding->descriptorCount -
+                copy->dstArrayElement)
+            continue;
+        source_first += copy->srcArrayElement;
+        dest_first += copy->dstArrayElement;
+        memmove(&dest->values[dest_first], &source->values[source_first],
+            (size_t)copy->descriptorCount * sizeof(VkPs5DescriptorValue));
+    }
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -1766,7 +1902,30 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindDescriptorSets(VkCommandBuffer c, VkPipelineBindPoint b, VkPipelineLayout l,
                         uint32_t f, uint32_t n, const VkDescriptorSet *s,
                         uint32_t dn, const uint32_t *d) {
-    IGNORE(c); IGNORE(b); IGNORE(l); IGNORE(f); IGNORE(n); IGNORE(s); IGNORE(dn); IGNORE(d);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    IGNORE(l); IGNORE(d);
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        (n && !s) || f > OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+        n > OPENAGC_PSBC_MAX_DESCRIPTOR_SETS - f || dn != 0u) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+            command->record_error = dn ? VK_ERROR_FEATURE_NOT_PRESENT :
+                VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    VkPs5DescriptorSet **sets = b == VK_PIPELINE_BIND_POINT_COMPUTE ?
+        command->compute_sets : b == VK_PIPELINE_BIND_POINT_GRAPHICS ?
+        command->graphics_sets : NULL;
+    if (!sets) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        if (!s[i]) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        sets[f + i] = (VkPs5DescriptorSet *)s[i];
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
@@ -1774,6 +1933,113 @@ vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
                      const VkImageSubresourceRange *r) {
     IGNORE(c); IGNORE(i); IGNORE(l); IGNORE(v); IGNORE(n); IGNORE(r);
 }
+
+static VkPs5DescriptorValue *descriptor_value(
+    VkPs5DescriptorSet *set, uint32_t binding, uint32_t array_element,
+    VkDescriptorType *type)
+{
+    uint32_t first = 0u;
+    if (!set) return NULL;
+    for (uint32_t i = 0; i < set->layout->binding_count; ++i) {
+        const VkDescriptorSetLayoutBinding *candidate = &set->layout->bindings[i];
+        if (candidate->binding == binding) {
+            if (array_element >= candidate->descriptorCount) return NULL;
+            if (type) *type = candidate->descriptorType;
+            return &set->values[first + array_element];
+        }
+        first += candidate->descriptorCount;
+    }
+    return NULL;
+}
+
+static uint64_t descriptor_table_gpu_address(const VkPs5DescriptorSet *set)
+{
+#if defined(OPENAGC_GENERIC)
+    return ((uint64_t)AGC_GFX1013_ADDRESS32_HIGH << 32u) |
+        (uint32_t)set->table_memory.gpu_address;
+#else
+    return set->table_memory.gpu_address;
+#endif
+}
+
+static VkResult prepare_compute_resource_tables(
+    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
+    AgcGfx1013ResourceTableBinding *tables, uint32_t *table_count)
+{
+    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
+    bool used_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS] = {false};
+    *table_count = 0u;
+    for (uint32_t i = 0; i < metadata->user_sgpr_count; ++i) {
+        if (metadata->user_sgprs[i].kind !=
+                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (metadata->user_sgprs[i].index >=
+                OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+            !command->compute_sets[metadata->user_sgprs[i].index])
+            return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    for (uint32_t i = 0; i < metadata->descriptor_mapping_count; ++i) {
+        const OpenAgcPsbcDescriptorMapping *mapping =
+            &metadata->descriptor_mappings[i];
+        if (mapping->set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+            mapping->byte_offset > VK_PS5_DESCRIPTOR_TABLE_SIZE ||
+            mapping->byte_stride < sizeof(AgcGfx1013BufferDescriptor) ||
+            mapping->array_size >
+                (VK_PS5_DESCRIPTOR_TABLE_SIZE - mapping->byte_offset) /
+                    mapping->byte_stride)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (mapping->type != OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER &&
+            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkPs5DescriptorSet *set = command->compute_sets[mapping->set];
+        if (!set) return VK_ERROR_INITIALIZATION_FAILED;
+        for (uint32_t array = 0; array < mapping->array_size; ++array) {
+            VkDescriptorType layout_type;
+            VkPs5DescriptorValue *value = descriptor_value(
+                set, mapping->binding, array, &layout_type);
+            OpenAgcPsbcDescriptorType psbc_type;
+            if (!value || !value->valid ||
+                !psbc_descriptor_type(layout_type, &psbc_type) ||
+                psbc_type != mapping->type || !value->buffer.buffer)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
+            if (!buffer->memory || value->buffer.offset >= buffer->size)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkDeviceSize available = buffer->size - value->buffer.offset;
+            VkDeviceSize range = value->buffer.range == VK_WHOLE_SIZE ?
+                available : value->buffer.range;
+            if (!range || range > available || range / 4u > UINT32_MAX)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            if (buffer->memory_offset > UINT64_MAX - value->buffer.offset)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
+                buffer->memory_offset + value->buffer.offset);
+            AgcGfx1013BufferDescriptor descriptor;
+            if (agcGfx1013BufferDescriptorEncode(&descriptor, address, 4u,
+                    (uint32_t)(range / 4u)) != AGC_OK)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            size_t offset = mapping->byte_offset +
+                (size_t)array * mapping->byte_stride;
+            memcpy((uint8_t *)set->table_memory.cpu_address + offset,
+                &descriptor, sizeof(descriptor));
+        }
+        used_sets[mapping->set] = true;
+    }
+    for (uint32_t set_index = 0;
+         set_index < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set_index) {
+        if (!used_sets[set_index]) continue;
+        VkPs5DescriptorSet *set = command->compute_sets[set_index];
+        if (agcGpuMemoryFlush(&set->table_memory, 0,
+                VK_PS5_DESCRIPTOR_TABLE_SIZE) != AGC_OK)
+            return VK_ERROR_DEVICE_LOST;
+        tables[*table_count].placeholder =
+            OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(set_index);
+        tables[*table_count].address = descriptor_table_gpu_address(set);
+        (*table_count)++;
+    }
+    return VK_SUCCESS;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
@@ -1788,8 +2054,17 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
     }
     const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
     if (!metadata->local_size_x || !metadata->local_size_y ||
-        !metadata->local_size_z || metadata->user_sgpr_count) {
+        !metadata->local_size_z) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    AgcGfx1013ResourceTableBinding
+        tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    uint32_t table_count;
+    VkResult prepare_result = prepare_compute_resource_tables(
+        command, pipeline, tables, &table_count);
+    if (prepare_result != VK_SUCCESS) {
+        command->record_error = prepare_result;
         return;
     }
     const VkPs5RuntimeShader *shader = &pipeline->runtime[0];
@@ -1804,6 +2079,8 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
         .group_count_x = x,
         .group_count_y = y,
         .group_count_z = z,
+        .resource_tables = tables,
+        .num_resource_tables = table_count,
     };
     int32_t result = agcGfx1013DispatchCompute(&command->dcb, &state);
     if (result != AGC_OK)

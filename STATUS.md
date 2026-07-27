@@ -70,6 +70,12 @@ Implemented and host-verified:
 - Command buffers own resettable 64 KiB OpenAGC DCBs. Compute bind/dispatch
   emits gfx1013 compute state and `DISPATCH_DIRECT` with the compiler's resolved
   post-specialization local size.
+- Descriptor pools own deterministic GPU-visible table storage. Standard
+  storage/uniform-buffer descriptor writes and copies remain logical Vulkan
+  state until dispatch, where the ICD encodes gfx1013 buffer descriptors,
+  flushes the table, and asks OpenAGC to patch compiler descriptor-set
+  placeholders immediately before `DISPATCH_DIRECT`. Missing sets and
+  unsupported user-SGPR kinds fail command-buffer finalization.
 - No-input VS/PS triangle bind/draw emits the fused Wave32 NGG state,
   interpolant state, base-vertex/start-instance user SGPRs, and
   `DRAW_INDEX_AUTO` through `agcGfx1013DrawBaselineIndexAuto`.
@@ -87,9 +93,8 @@ Hardware gate still open:
 - Vulkan memory type 0 uses flexible write-back GPU memory; type 1 uses
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
-- Descriptor tables, vertex-buffer tables, push constants, render-target frame
-  prologues, and render-pass attachment state are not emitted yet. Unsupported
-  user-SGPR requirements fail command-buffer finalization instead of producing
-  incomplete packets.
+- Image/sampler descriptor tables, dynamic buffer offsets, vertex-buffer
+  tables, push constants, render-target frame prologues, and render-pass
+  attachment state are not emitted yet.
 - FW 5.50 execution and deterministic readback/display evidence have not yet
   been collected for the Vulkan-owned submission path.

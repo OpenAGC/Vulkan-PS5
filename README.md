@@ -53,7 +53,10 @@ context. Geometry and tessellation stage fusion are also wired through pipeline
 creation, including independent specialization data for fused stages, but their
 Vulkan feature bits remain disabled until the resulting pipelines are qualified
 on hardware. Compute dispatch and a no-input triangle draw now emit real
-gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Descriptor and
-vertex tables, render-target frame state, hardware readback/display evidence,
+gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Compute
+uniform/storage-buffer descriptor sets are stored through standard Vulkan
+updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler
+selected user-SGPR immediately before dispatch. Image/sampler descriptors,
+dynamic buffer offsets, vertex tables, render-target frame state, hardware readback/display evidence,
 and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
 features remain unavailable.
