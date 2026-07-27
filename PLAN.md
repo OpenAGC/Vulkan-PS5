@@ -22,7 +22,7 @@
   pixels per run. Host command tests now cover GPU-visible vertex tables and
   direct UINT16/UINT32 indexed draws, plus combined image/sampler descriptor
   encoding and compiler-selected VS/PS table binding. Continue Milestone 3
-  with indexed/textured hardware readback,
+  with repeated FW 5.50 readback from the standalone indexed-textured sample,
   depth/stencil, MRT, and queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.

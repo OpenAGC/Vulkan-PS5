@@ -55,6 +55,12 @@ center, background, and green-pixel count. Its Prospero output is
 `vulkan_ps5_triangle_example.elf`; generic-host execution likewise reports the
 expected all-zero readback.
 
+`vulkan_ps5_indexed_textured_example` binds an interleaved position/UV vertex
+buffer, a UINT16 index buffer containing `{1,2,3}` after a decoy vertex, and a
+bilinear clamp sampler over a 2x2 RGBA8 image. Its readback oracle requires
+triangle coverage, fully opaque sampled pixels, at least 16 distinct colors,
+an interior center sample, and untouched background corners.
+
 When the console is online, deploy either Prospero ELF through the foreground
 etaHEN websrv path so its stdout is returned to the terminal:
 
@@ -66,7 +72,8 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
 ```
 
 The Milestone 3 qualification runner checks websrv reachability, performs two
-foreground runs of each sample, requires the exact compute and triangle PASS
+foreground runs of each sample, requires the exact compute, triangle, and
+indexed-textured PASS
 oracles, and retains stdout under `examples/qualification-logs/`:
 
 ```sh
@@ -78,6 +85,8 @@ compute runs verified 1,024 deterministic values and both triangle runs
 verified exactly 18,432 green pixels. See
 `analysis/fw550_compute_triangle_qualification_20260727.md` for the retained
 revision and artifact evidence.
+The runner now also requires the indexed-textured sample; that newer gate is
+reported separately until its repeated FW 5.50 evidence is collected.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or

@@ -1,0 +1,517 @@
+#include <vulkan/vulkan.h>
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "vulkan_ps5_indexed_textured_frag_spv.h"
+#include "vulkan_ps5_indexed_textured_vert_spv.h"
+
+#define TARGET_WIDTH 256u
+#define TARGET_HEIGHT 256u
+
+#define VK_CHECK(expression) do { \
+    VkResult check_result = (expression); \
+    if (check_result != VK_SUCCESS) { \
+        printf("indexed_textured: %s failed (%d)\n", #expression, check_result); \
+        return 1; \
+    } \
+} while (0)
+
+typedef struct Vertex {
+    float position[2];
+    float uv[2];
+} Vertex;
+
+static uint32_t find_host_visible_memory_type(
+    VkPhysicalDevice physical, uint32_t compatible_types)
+{
+    VkPhysicalDeviceMemoryProperties properties;
+    vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+    for (uint32_t i = 0; i < properties.memoryTypeCount; ++i) {
+        VkMemoryPropertyFlags flags = properties.memoryTypes[i].propertyFlags;
+        if ((compatible_types & (1u << i)) &&
+            (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+            return i;
+    }
+    return UINT32_MAX;
+}
+
+static VkResult create_buffer(
+    VkPhysicalDevice physical, VkDevice device, VkDeviceSize size,
+    VkBufferUsageFlags usage, VkBuffer *buffer, VkDeviceMemory *memory,
+    void **mapped)
+{
+    const VkBufferCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkResult result = vkCreateBuffer(device, &info, NULL, buffer);
+    if (result != VK_SUCCESS) return result;
+    VkMemoryRequirements requirements;
+    vkGetBufferMemoryRequirements(device, *buffer, &requirements);
+    uint32_t type = find_host_visible_memory_type(
+        physical, requirements.memoryTypeBits);
+    if (type == UINT32_MAX) return VK_ERROR_FEATURE_NOT_PRESENT;
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = type,
+    };
+    result = vkAllocateMemory(device, &allocation, NULL, memory);
+    if (result != VK_SUCCESS) return result;
+    result = vkBindBufferMemory(device, *buffer, *memory, 0);
+    if (result != VK_SUCCESS) return result;
+    return vkMapMemory(device, *memory, 0, requirements.size, 0, mapped);
+}
+
+int main(void)
+{
+    VkInstance instance;
+    const VkInstanceCreateInfo instance_info = {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    };
+    VK_CHECK(vkCreateInstance(&instance_info, NULL, &instance));
+    VkPhysicalDevice physical;
+    uint32_t physical_count = 1u;
+    VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
+    if (physical_count != 1u) return 1;
+    float priority = 1.0f;
+    const VkDeviceQueueCreateInfo queue_info = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .queueFamilyIndex = 0,
+        .queueCount = 1,
+        .pQueuePriorities = &priority,
+    };
+    const VkDeviceCreateInfo device_info = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queue_info,
+    };
+    VkDevice device;
+    VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));
+
+    const VkImageCreateInfo target_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {TARGET_WIDTH, TARGET_HEIGHT, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+    };
+    VkImage target;
+    VK_CHECK(vkCreateImage(device, &target_info, NULL, &target));
+    VkMemoryRequirements target_requirements;
+    vkGetImageMemoryRequirements(device, target, &target_requirements);
+    uint32_t target_type = find_host_visible_memory_type(
+        physical, target_requirements.memoryTypeBits);
+    if (target_type == UINT32_MAX) return 1;
+    const VkMemoryAllocateInfo target_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = target_requirements.size,
+        .memoryTypeIndex = target_type,
+    };
+    VkDeviceMemory target_memory;
+    VK_CHECK(vkAllocateMemory(device, &target_allocation, NULL, &target_memory));
+    VK_CHECK(vkBindImageMemory(device, target, target_memory, 0));
+    void *target_mapped;
+    VK_CHECK(vkMapMemory(device, target_memory, 0, target_requirements.size,
+                         0, &target_mapped));
+    memset(target_mapped, 0, (size_t)target_requirements.size);
+    const VkMappedMemoryRange target_range = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = target_memory,
+        .size = target_requirements.size,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &target_range));
+
+    VkImageCreateInfo texture_info = target_info;
+    texture_info.extent.width = 2;
+    texture_info.extent.height = 2;
+    texture_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImage texture;
+    VK_CHECK(vkCreateImage(device, &texture_info, NULL, &texture));
+    VkMemoryRequirements texture_requirements;
+    vkGetImageMemoryRequirements(device, texture, &texture_requirements);
+    uint32_t texture_type = find_host_visible_memory_type(
+        physical, texture_requirements.memoryTypeBits);
+    if (texture_type == UINT32_MAX) return 1;
+    const VkMemoryAllocateInfo texture_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = texture_requirements.size,
+        .memoryTypeIndex = texture_type,
+    };
+    VkDeviceMemory texture_memory;
+    VK_CHECK(vkAllocateMemory(device, &texture_allocation, NULL, &texture_memory));
+    VK_CHECK(vkBindImageMemory(device, texture, texture_memory, 0));
+    uint32_t *texture_mapped;
+    VK_CHECK(vkMapMemory(device, texture_memory, 0, texture_requirements.size,
+                         0, (void **)&texture_mapped));
+    const uint32_t texels[4] = {
+        0xff0000ffu, 0xff00ff00u,
+        0xffff0000u, 0xffffffffu,
+    };
+    memcpy(texture_mapped, texels, sizeof(texels));
+    const VkMappedMemoryRange texture_range = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = texture_memory,
+        .size = texture_requirements.size,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &texture_range));
+
+    const Vertex vertices[4] = {
+        {{9.0f, 9.0f}, {0.5f, 0.5f}},
+        {{-0.75f, -0.75f}, {0.0f, 0.0f}},
+        {{ 0.75f, -0.75f}, {1.0f, 0.0f}},
+        {{ 0.00f,  0.75f}, {0.5f, 1.0f}},
+    };
+    const uint16_t indices[3] = {1, 2, 3};
+    VkBuffer vertex_buffer, index_buffer;
+    VkDeviceMemory vertex_memory, index_memory;
+    void *vertex_mapped, *index_mapped;
+    VK_CHECK(create_buffer(physical, device, sizeof(vertices),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &vertex_buffer, &vertex_memory,
+        &vertex_mapped));
+    VK_CHECK(create_buffer(physical, device, sizeof(indices),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &index_buffer, &index_memory,
+        &index_mapped));
+    memcpy(vertex_mapped, vertices, sizeof(vertices));
+    memcpy(index_mapped, indices, sizeof(indices));
+    const VkMappedMemoryRange upload_ranges[] = {
+        {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, vertex_memory, 0, VK_WHOLE_SIZE},
+        {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, index_memory, 0, VK_WHOLE_SIZE},
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 2, upload_ranges));
+
+    const VkImageViewCreateInfo target_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = target,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+    };
+    VkImageView target_view;
+    VK_CHECK(vkCreateImageView(device, &target_view_info, NULL, &target_view));
+    VkImageViewCreateInfo texture_view_info = target_view_info;
+    texture_view_info.image = texture;
+    VkImageView texture_view;
+    VK_CHECK(vkCreateImageView(device, &texture_view_info, NULL, &texture_view));
+    const VkSamplerCreateInfo sampler_info = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+    };
+    VkSampler sampler;
+    VK_CHECK(vkCreateSampler(device, &sampler_info, NULL, &sampler));
+
+    const VkDescriptorSetLayoutBinding texture_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &texture_binding,
+    };
+    VkDescriptorSetLayout set_layout;
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL, &set_layout));
+    const VkDescriptorPoolSize pool_size = {
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+    };
+    const VkDescriptorPoolCreateInfo pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &pool_size,
+    };
+    VkDescriptorPool descriptor_pool;
+    VK_CHECK(vkCreateDescriptorPool(device, &pool_info, NULL, &descriptor_pool));
+    const VkDescriptorSetAllocateInfo set_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &set_layout,
+    };
+    VkDescriptorSet descriptor_set;
+    VK_CHECK(vkAllocateDescriptorSets(device, &set_info, &descriptor_set));
+    const VkDescriptorImageInfo descriptor_image = {
+        .sampler = sampler,
+        .imageView = texture_view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+    const VkWriteDescriptorSet descriptor_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &descriptor_image,
+    };
+    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+
+    const VkAttachmentDescription attachment = {
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkAttachmentReference color_attachment = {
+        0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+    const VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+    };
+    const VkRenderPassCreateInfo render_pass_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &attachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+    };
+    VkRenderPass render_pass;
+    VK_CHECK(vkCreateRenderPass(device, &render_pass_info, NULL, &render_pass));
+    const VkFramebufferCreateInfo framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = render_pass,
+        .attachmentCount = 1,
+        .pAttachments = &target_view,
+        .width = TARGET_WIDTH,
+        .height = TARGET_HEIGHT,
+        .layers = 1,
+    };
+    VkFramebuffer framebuffer;
+    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_info, NULL, &framebuffer));
+
+    const VkShaderModuleCreateInfo vertex_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_indexed_textured_vert_spv),
+        .pCode = vulkan_ps5_indexed_textured_vert_spv,
+    };
+    const VkShaderModuleCreateInfo fragment_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_indexed_textured_frag_spv),
+        .pCode = vulkan_ps5_indexed_textured_frag_spv,
+    };
+    VkShaderModule vertex_shader, fragment_shader;
+    VK_CHECK(vkCreateShaderModule(device, &vertex_shader_info, NULL, &vertex_shader));
+    VK_CHECK(vkCreateShaderModule(device, &fragment_shader_info, NULL, &fragment_shader));
+    const VkPipelineLayoutCreateInfo pipeline_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &set_layout,
+    };
+    VkPipelineLayout pipeline_layout;
+    VK_CHECK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL,
+                                    &pipeline_layout));
+    const VkPipelineShaderStageCreateInfo stages[] = {
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_VERTEX_BIT, vertex_shader, "main", NULL},
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_FRAGMENT_BIT, fragment_shader, "main", NULL},
+    };
+    const VkVertexInputBindingDescription binding = {
+        .binding = 0, .stride = sizeof(Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+    const VkVertexInputAttributeDescription attributes[] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, position)},
+        {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+    };
+    const VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = attributes,
+    };
+    const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    const VkViewport viewport = {0, 0, TARGET_WIDTH, TARGET_HEIGHT, 0, 1};
+    const VkRect2D scissor = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}};
+    const VkPipelineViewportStateCreateInfo viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1, .pViewports = &viewport,
+        .scissorCount = 1, .pScissors = &scissor,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineColorBlendAttachmentState blend_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1, .pAttachments = &blend_attachment,
+    };
+    const VkGraphicsPipelineCreateInfo pipeline_info = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .stageCount = 2, .pStages = stages,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pColorBlendState = &blend,
+        .layout = pipeline_layout,
+        .renderPass = render_pass,
+    };
+    VkPipeline pipeline;
+    VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &pipeline_info, NULL, &pipeline));
+
+    const VkCommandPoolCreateInfo command_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = 0,
+    };
+    VkCommandPool command_pool;
+    VK_CHECK(vkCreateCommandPool(device, &command_pool_info, NULL, &command_pool));
+    const VkCommandBufferAllocateInfo command_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    VkCommandBuffer command;
+    VK_CHECK(vkAllocateCommandBuffers(device, &command_info, &command));
+    const VkCommandBufferBeginInfo command_begin = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    VK_CHECK(vkBeginCommandBuffer(command, &command_begin));
+    const VkImageMemoryBarrier texture_barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = texture,
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
+        &texture_barrier);
+    const VkRenderPassBeginInfo render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}},
+    };
+    vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline_layout, 0, 1, &descriptor_set, 0, NULL);
+    VkDeviceSize vertex_offset = 0;
+    vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
+    vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
+    vkCmdEndRenderPass(command);
+    VK_CHECK(vkEndCommandBuffer(command));
+
+    VkQueue queue;
+    vkGetDeviceQueue(device, 0, 0, &queue);
+    const VkFenceCreateInfo fence_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+    VkFence fence;
+    VK_CHECK(vkCreateFence(device, &fence_info, NULL, &fence));
+    const VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command,
+    };
+    VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, fence));
+    VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+    VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &target_range));
+
+    const uint32_t *pixels = target_mapped;
+    uint32_t covered = 0u;
+    uint32_t opaque = 0u;
+    uint32_t distinct[64] = {0};
+    uint32_t distinct_count = 0u;
+    for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+        uint32_t pixel = pixels[i];
+        if (!pixel) continue;
+        covered++;
+        if ((pixel >> 24u) == 0xffu) opaque++;
+        bool found = false;
+        for (uint32_t j = 0; j < distinct_count; ++j)
+            found |= distinct[j] == pixel;
+        if (!found && distinct_count < 64u)
+            distinct[distinct_count++] = pixel;
+    }
+    uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+        TARGET_WIDTH / 2u];
+    int status = 0;
+    if (covered < 16000u || covered > 21000u || opaque != covered ||
+        distinct_count < 16u || center == 0u || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("indexed_textured: mismatch covered=%u opaque=%u colors=%u center=%08x\n",
+            covered, opaque, distinct_count, center);
+        status = 1;
+    } else {
+        printf("indexed_textured: PASS %u pixels %u+ colors\n",
+            covered, distinct_count);
+    }
+
+    vkDestroyFence(device, fence, NULL);
+    vkDestroyCommandPool(device, command_pool, NULL);
+    vkDestroyPipeline(device, pipeline, NULL);
+    vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+    vkDestroyShaderModule(device, fragment_shader, NULL);
+    vkDestroyShaderModule(device, vertex_shader, NULL);
+    vkDestroyFramebuffer(device, framebuffer, NULL);
+    vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyDescriptorPool(device, descriptor_pool, NULL);
+    vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+    vkDestroySampler(device, sampler, NULL);
+    vkDestroyImageView(device, texture_view, NULL);
+    vkDestroyImageView(device, target_view, NULL);
+    vkUnmapMemory(device, index_memory);
+    vkUnmapMemory(device, vertex_memory);
+    vkDestroyBuffer(device, index_buffer, NULL);
+    vkDestroyBuffer(device, vertex_buffer, NULL);
+    vkFreeMemory(device, index_memory, NULL);
+    vkFreeMemory(device, vertex_memory, NULL);
+    vkUnmapMemory(device, texture_memory);
+    vkDestroyImage(device, texture, NULL);
+    vkFreeMemory(device, texture_memory, NULL);
+    vkUnmapMemory(device, target_memory);
+    vkDestroyImage(device, target, NULL);
+    vkFreeMemory(device, target_memory, NULL);
+    vkDestroyDevice(device, NULL);
+    vkDestroyInstance(instance, NULL);
+    return status;
+}

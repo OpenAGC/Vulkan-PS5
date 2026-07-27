@@ -91,6 +91,10 @@ Implemented and host-verified:
   combined image samplers and separate sampled-image/sampler mappings for
   linear single-mip RGBA8/BGRA8 2D images, flushes the GPU table, and patches
   the compiler-selected VS/PS descriptor-set SGPRs before drawing.
+- A standalone indexed-textured sample combines a decoy vertex, direct UINT16
+  indices, interleaved position/UV input, a bilinear 2x2 RGBA8 texture, and a
+  deterministic coverage/opacity/color-variation readback oracle. Host builds
+  intentionally see zero pixels; the Prospero ELF cross-links successfully.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
