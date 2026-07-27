@@ -29,6 +29,7 @@
   path. GPU-backed occlusion pools now cover reset, begin/end, bounded host
   retrieval, partial results, and availability. A standalone query workload
   cross-checks its 64-bit occlusion result against mapped triangle coverage.
+  The planned `VK_EXT_host_query_reset` surface is also implemented and tested.
   Continue Milestone 3 with repeated FW 5.50 depth/stencil, MRT, and query
   readback.
   Geometry/tessellation feature bits

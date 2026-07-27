@@ -167,3 +167,5 @@ snapshots. Reset is command-ordered, end-query publishes a separate EOP
 availability label, and `vkGetQueryPoolResults` supports 32/64-bit values,
 availability, partial results, and bounded waits. Precise occlusion and
 timestamps remain disabled pending hardware qualification.
+`VK_EXT_host_query_reset` is advertised with `hostQueryReset = VK_TRUE` and
+flushes the selected query slots after a host-side reset.

@@ -131,6 +131,11 @@ Implemented and host-verified:
   it host-builds and cross-links for Prospero with the required runtimes.
   Hardware qualification remains pending because the console websrv is still
   unreachable. Timestamp valid bits remain zero.
+- `VK_EXT_host_query_reset` is advertised and accepted during device creation.
+  Its feature query reports true, and `vkResetQueryPoolEXT` zeroes and flushes
+  exactly the requested GPU-visible query slots. Lifecycle coverage verifies
+  extension enumeration, enablement, dispatch lookup, reset, and unavailable
+  result semantics.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public

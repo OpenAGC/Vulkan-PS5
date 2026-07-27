@@ -54,15 +54,30 @@ int main(void) {
     assert(maintenance.maxMemoryAllocationSize == 12ull * 1024 * 1024 * 1024);
     assert(subgroup.subgroupSize == 32);
 
+    uint32_t extension_count = 0;
+    assert(vkEnumerateDeviceExtensionProperties(
+        physical, NULL, &extension_count, NULL) == VK_SUCCESS);
+    assert(extension_count == 1);
+    VkExtensionProperties extension;
+    assert(vkEnumerateDeviceExtensionProperties(
+        physical, NULL, &extension_count, &extension) == VK_SUCCESS);
+    assert(strcmp(extension.extensionName,
+                  VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0);
+
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
         .shaderDrawParameters = VK_TRUE,
     };
-    VkPhysicalDeviceFeatures2 features2 = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+    VkPhysicalDeviceHostQueryResetFeatures host_query_reset = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
         .pNext = &features11,
     };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &host_query_reset,
+    };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
+    assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(features11.shaderDrawParameters == VK_FALSE);
 
     VkPhysicalDeviceFeatures features;
@@ -106,9 +121,17 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames =
+            (const char *const[]){VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME},
+    };
+    VkPhysicalDeviceHostQueryResetFeatures enabled_host_query_reset = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+        .hostQueryReset = VK_TRUE,
     };
     VkDeviceGroupDeviceCreateInfo group_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO,
+        .pNext = &enabled_host_query_reset,
         .physicalDeviceCount = 1,
         .pPhysicalDevices = &physical,
     };
@@ -118,6 +141,22 @@ int main(void) {
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
     assert(queue != VK_NULL_HANDLE);
+
+    const VkQueryPoolCreateInfo query_info = {
+        .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
+        .queryType = VK_QUERY_TYPE_OCCLUSION,
+        .queryCount = 2,
+    };
+    VkQueryPool query_pool;
+    assert(vkCreateQueryPool(device, &query_info, NULL, &query_pool) == VK_SUCCESS);
+    vkResetQueryPoolEXT(device, query_pool, 0, 2);
+    uint64_t query_result[] = {UINT64_MAX, UINT64_MAX};
+    assert(vkGetQueryPoolResults(device, query_pool, 0, 1,
+        sizeof(query_result), query_result, sizeof(query_result),
+        VK_QUERY_RESULT_64_BIT |
+        VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) == VK_NOT_READY);
+    assert(query_result[0] == UINT64_MAX && query_result[1] == 0u);
+    vkDestroyQueryPool(device, query_pool, NULL);
 
     VkPipelineCacheCreateInfo cache_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
@@ -159,6 +198,7 @@ int main(void) {
     assert(vkGetDeviceProcAddr(device, "vkAllocateMemory") != NULL);
     assert(vkGetDeviceProcAddr(device, "vkCreateImage") != NULL);
     assert(vkGetDeviceProcAddr(device, "vkCreateGraphicsPipelines") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkResetQueryPoolEXT") != NULL);
     assert(vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateDevice") == NULL);
     assert(vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkAllocateMemory") == NULL);
     assert(vkDeviceWaitIdle(device) == VK_SUCCESS);

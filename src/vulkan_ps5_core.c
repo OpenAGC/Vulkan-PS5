@@ -1182,6 +1182,21 @@ vkDestroyQueryPool(VkDevice device, VkQueryPool queryPool,
     }
 }
 
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkResetQueryPoolEXT(VkDevice device, VkQueryPool queryPool_handle,
+                    uint32_t firstQuery, uint32_t queryCount) {
+    (void)device;
+    VkPs5QueryPool *pool = (VkPs5QueryPool *)queryPool_handle;
+    if (!pool || firstQuery > pool->count ||
+        queryCount > pool->count - firstQuery)
+        return;
+    size_t offset = (size_t)firstQuery * VK_PS5_QUERY_SLOT_SIZE;
+    size_t size = (size_t)queryCount * VK_PS5_QUERY_SLOT_SIZE;
+    if (!size) return;
+    memset((uint8_t *)pool->memory.cpu_address + offset, 0, size);
+    (void)agcGpuMemoryFlush(&pool->memory, offset, size);
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkGetQueryPoolResults(VkDevice device, VkQueryPool queryPool_handle, uint32_t firstQuery,
                       uint32_t queryCount, size_t dataSize, void *pData,

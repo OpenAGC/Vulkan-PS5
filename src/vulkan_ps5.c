@@ -256,6 +256,11 @@ static const VkExtensionProperties instance_extensions[] = {
     { VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME, 1 },
 };
 
+static const VkExtensionProperties device_extensions[] = {
+    { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+      VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
+};
+
 static VkBool32 extension_supported(const char *name,
                                     const VkExtensionProperties *extensions,
                                     size_t count) {
@@ -674,7 +679,9 @@ vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char
                                      VkExtensionProperties *pProperties) {
     (void)physicalDevice;
     if (pLayerName) return VK_ERROR_LAYER_NOT_PRESENT;
-    return enumerate_items(0, sizeof(*pProperties), NULL, pPropertyCount, pProperties);
+    return enumerate_items((uint32_t)(sizeof(device_extensions) /
+                           sizeof(device_extensions[0])), sizeof(*pProperties),
+                           device_extensions, pPropertyCount, pProperties);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -796,6 +803,10 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
             ((VkPhysicalDeviceShaderDrawParametersFeatures *)next)->shaderDrawParameters =
                 VK_FALSE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES:
+            ((VkPhysicalDeviceHostQueryResetFeatures *)next)->hostQueryReset =
+                VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
             VkPhysicalDeviceVulkan11Features *f = (VkPhysicalDeviceVulkan11Features *)next;
@@ -1018,7 +1029,12 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         pCreateInfo->sType != VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO)
         return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->enabledLayerCount) return VK_ERROR_LAYER_NOT_PRESENT;
-    if (pCreateInfo->enabledExtensionCount) return VK_ERROR_EXTENSION_NOT_PRESENT;
+    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i) {
+        if (!extension_supported(pCreateInfo->ppEnabledExtensionNames[i],
+                device_extensions,
+                sizeof(device_extensions) / sizeof(device_extensions[0])))
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+    }
     if (features_requested(pCreateInfo->pEnabledFeatures) ||
         device_feature_chain_requested(pCreateInfo->pNext))
         return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -1323,6 +1339,7 @@ static const ProcEntry device_procs[] = {
     ALIAS("vkGetImageSparseMemoryRequirements2KHR", vkGetImageSparseMemoryRequirements2),
     ALIAS("vkTrimCommandPoolKHR", vkTrimCommandPool),
     ENTRY(vkCreateQueryPool), ENTRY(vkDestroyQueryPool), ENTRY(vkGetQueryPoolResults),
+    ENTRY(vkResetQueryPoolEXT),
     ENTRY(vkCreateShaderModule), ENTRY(vkDestroyShaderModule),
     ENTRY(vkCreatePipelineCache), ENTRY(vkDestroyPipelineCache),
     ENTRY(vkGetPipelineCacheData), ENTRY(vkMergePipelineCaches),
