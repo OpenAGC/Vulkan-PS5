@@ -331,26 +331,40 @@ int main(int argc, char **argv)
     VkPipelineLayout graphics_layout;
     assert(vkCreatePipelineLayout(device, &graphics_layout_info, NULL,
                                   &graphics_layout) == VK_SUCCESS);
-    const VkAttachmentDescription attachment = {
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
-        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+    const VkAttachmentDescription attachments[] = {
+        {
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+            .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+        },
+        {
+            .format = VK_FORMAT_D32_SFLOAT,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+        },
     };
     const VkAttachmentReference color = {
         0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    };
+    const VkAttachmentReference depth = {
+        1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
     };
     const VkSubpassDescription subpass = {
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
         .pColorAttachments = &color,
+        .pDepthStencilAttachment = &depth,
     };
     const VkRenderPassCreateInfo render_pass_info = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &attachment,
+        .attachmentCount = 2,
+        .pAttachments = attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
     };
@@ -395,11 +409,59 @@ int main(int argc, char **argv)
     VkImageView color_view;
     assert(vkCreateImageView(device, &image_view_info, NULL,
                              &color_view) == VK_SUCCESS);
+    const VkImageCreateInfo depth_image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_D32_SFLOAT,
+        .extent = {256, 256, 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage depth_image;
+    assert(vkCreateImage(device, &depth_image_info, NULL,
+                         &depth_image) == VK_SUCCESS);
+    VkMemoryRequirements depth_requirements;
+    vkGetImageMemoryRequirements(device, depth_image, &depth_requirements);
+    assert(depth_requirements.alignment == 65536u);
+    assert(depth_requirements.memoryTypeBits == 0x2u);
+    const VkMemoryAllocateInfo depth_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = depth_requirements.size,
+        .memoryTypeIndex = 1,
+    };
+    VkDeviceMemory depth_memory;
+    assert(vkAllocateMemory(device, &depth_memory_info, NULL,
+                            &depth_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, depth_image, depth_memory, 0) == VK_SUCCESS);
+    void *depth_data;
+    assert(vkMapMemory(device, depth_memory, 0, VK_WHOLE_SIZE, 0,
+                       &depth_data) == VK_SUCCESS);
+    for (size_t i = 0; i < depth_requirements.size / sizeof(uint32_t); ++i)
+        ((uint32_t *)depth_data)[i] = 0x3f800000u;
+    vkUnmapMemory(device, depth_memory);
+    const VkImageViewCreateInfo depth_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = depth_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_D32_SFLOAT,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1,
+        },
+    };
+    VkImageView depth_view;
+    assert(vkCreateImageView(device, &depth_view_info, NULL,
+                             &depth_view) == VK_SUCCESS);
+    const VkImageView framebuffer_attachments[] = {color_view, depth_view};
     const VkFramebufferCreateInfo framebuffer_info = {
         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
         .renderPass = render_pass,
-        .attachmentCount = 1,
-        .pAttachments = &color_view,
+        .attachmentCount = 2,
+        .pAttachments = framebuffer_attachments,
         .width = 256,
         .height = 256,
         .layers = 1,
@@ -462,6 +524,14 @@ int main(int argc, char **argv)
         .attachmentCount = 1,
         .pAttachments = &blend_attachment,
     };
+    const VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .front = {.compareOp = VK_COMPARE_OP_ALWAYS},
+        .back = {.compareOp = VK_COMPARE_OP_ALWAYS},
+    };
     const VkGraphicsPipelineCreateInfo graphics_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
@@ -471,6 +541,7 @@ int main(int argc, char **argv)
         .pViewportState = &viewport_state,
         .pRasterizationState = &rasterization,
         .pMultisampleState = &multisample,
+        .pDepthStencilState = &depth_stencil,
         .pColorBlendState = &blend,
         .layout = graphics_layout,
         .renderPass = render_pass,
@@ -534,7 +605,8 @@ int main(int argc, char **argv)
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
-    bool found_color_target = false;
+    bool found_color_target = false, found_depth_surface = false;
+    bool found_depth_control = false;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
     for (uint32_t i = 0; i < count; ++i) {
         if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
@@ -557,9 +629,18 @@ int main(int argc, char **argv)
                    i + 2 < count && dwords[i + 1] == AGC_REG_CB_COLOR0_BASE) {
             found_color_target |=
                 dwords[i + 2] == (uint32_t)(image_address >> 8);
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_DB_DEPTH_SIZE_XY) {
+            found_depth_surface = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_DB_DEPTH_CONTROL) {
+            found_depth_control |= dwords[i + 2] == 0x00700716u;
         }
     }
-    assert(found_dispatch && found_draw && found_frame && found_color_target);
+    assert(found_dispatch && found_draw && found_frame && found_color_target &&
+           found_depth_surface && found_depth_control);
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
@@ -589,6 +670,9 @@ int main(int argc, char **argv)
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
+    vkDestroyImageView(device, depth_view, NULL);
+    vkDestroyImage(device, depth_image, NULL);
+    vkFreeMemory(device, depth_memory, NULL);
     vkDestroyImageView(device, color_view, NULL);
     vkDestroyImage(device, color_image, NULL);
     vkFreeMemory(device, image_memory, NULL);

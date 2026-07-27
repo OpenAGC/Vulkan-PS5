@@ -34,6 +34,12 @@ typedef struct VkPs5Image {
     VkDeviceSize row_pitch;
     VkDeviceSize depth_pitch;
     VkDeviceSize array_pitch;
+    VkDeviceSize alignment;
+    VkDeviceSize depth_plane_offset;
+    VkDeviceSize stencil_plane_offset;
+    AgcGfx1013DepthSurfaceLayout depth_layout;
+    AgcGfx1013DepthSurfaceFormat depth_format;
+    VkBool32 is_depth_surface;
     VkDeviceSize size;
     VkDeviceMemory memory;
     VkDeviceSize memory_offset;
@@ -83,6 +89,8 @@ typedef struct VkPs5RenderPass {
     struct {
         uint32_t color_attachment_count;
         uint32_t color_attachments[AGC_GFX1013_MAX_COLOR_TARGETS];
+        uint32_t depth_stencil_attachment;
+        VkImageLayout depth_stencil_layout;
     } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
 
@@ -120,6 +128,8 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013ScissorState scissor;
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
+    AgcGfx1013DepthStencilState depth_stencil;
+    VkBool32 has_depth_stencil;
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -183,6 +193,7 @@ typedef struct VkPs5CommandBuffer {
     VkPs5Framebuffer *active_framebuffer;
     uint32_t active_subpass;
     AgcGfx1013FrameState frame_state;
+    AgcGfx1013DepthSurfaceState depth_surface_state;
     VkPs5Buffer *index_buffer;
     VkDeviceSize index_offset;
     VkIndexType index_type;
@@ -487,6 +498,65 @@ static bool color_target_format(
     return true;
 }
 
+static bool depth_surface_format(
+    VkFormat format, AgcGfx1013DepthSurfaceFormat *depth_format)
+{
+    if (!depth_format) return false;
+    switch (format) {
+    case VK_FORMAT_D16_UNORM:
+        *depth_format = AGC_GFX1013_DEPTH_FORMAT_D16_UNORM; break;
+    case VK_FORMAT_D32_SFLOAT:
+        *depth_format = AGC_GFX1013_DEPTH_FORMAT_D32_FLOAT; break;
+    case VK_FORMAT_S8_UINT:
+        *depth_format = AGC_GFX1013_DEPTH_FORMAT_S8_UINT; break;
+    case VK_FORMAT_D16_UNORM_S8_UINT:
+        *depth_format = AGC_GFX1013_DEPTH_FORMAT_D16_UNORM_S8_UINT; break;
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
+        *depth_format = AGC_GFX1013_DEPTH_FORMAT_D32_FLOAT_S8_UINT; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static AgcGfx1013StencilOp stencil_operation(VkStencilOp operation)
+{
+    switch (operation) {
+    case VK_STENCIL_OP_KEEP: return AGC_GFX1013_STENCIL_KEEP;
+    case VK_STENCIL_OP_ZERO: return AGC_GFX1013_STENCIL_ZERO;
+    case VK_STENCIL_OP_REPLACE: return AGC_GFX1013_STENCIL_REPLACE;
+    case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
+        return AGC_GFX1013_STENCIL_INCREMENT_CLAMP;
+    case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
+        return AGC_GFX1013_STENCIL_DECREMENT_CLAMP;
+    case VK_STENCIL_OP_INVERT: return AGC_GFX1013_STENCIL_INVERT;
+    case VK_STENCIL_OP_INCREMENT_AND_WRAP:
+        return AGC_GFX1013_STENCIL_INCREMENT_WRAP;
+    case VK_STENCIL_OP_DECREMENT_AND_WRAP:
+        return AGC_GFX1013_STENCIL_DECREMENT_WRAP;
+    default: return (AgcGfx1013StencilOp)-1;
+    }
+}
+
+static bool stencil_face_state(
+    const VkStencilOpState *source, AgcGfx1013StencilFaceState *dest)
+{
+    if (!source || !dest || source->compareOp > VK_COMPARE_OP_ALWAYS)
+        return false;
+    dest->compare_operation = (AgcGfx1013CompareOp)source->compareOp;
+    dest->fail_operation = stencil_operation(source->failOp);
+    dest->depth_fail_operation = stencil_operation(source->depthFailOp);
+    dest->pass_operation = stencil_operation(source->passOp);
+    if ((int)dest->fail_operation < 0 ||
+        (int)dest->depth_fail_operation < 0 ||
+        (int)dest->pass_operation < 0)
+        return false;
+    dest->reference = source->reference;
+    dest->compare_mask = source->compareMask;
+    dest->write_mask = source->writeMask;
+    return true;
+}
+
 static bool layout_resource_usage(
     VkImageLayout layout, AgcGfx1013ResourceUsage *usage) {
     if (!usage) return false;
@@ -498,6 +568,10 @@ static bool layout_resource_usage(
         *usage = AGC_GFX1013_RESOURCE_USAGE_HOST_READ; break;
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET; break;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE; break;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+        *usage = AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ; break;
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_SHADER_READ; break;
     case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
@@ -542,6 +616,67 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     image->samples = pCreateInfo->samples;
     image->tiling = pCreateInfo->tiling;
     image->usage = pCreateInfo->usage;
+    image->alignment = 256u;
+    AgcGfx1013DepthSurfaceFormat depth_format;
+    bool is_depth_format = depth_surface_format(
+        pCreateInfo->format, &depth_format);
+    if (pCreateInfo->tiling == VK_IMAGE_TILING_OPTIMAL && is_depth_format) {
+        if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
+            pCreateInfo->extent.depth != 1u) {
+            vk_ps5_device_free(device, pAllocator, image);
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
+        const bool has_depth = pCreateInfo->format != VK_FORMAT_S8_UINT;
+        const bool has_stencil = pCreateInfo->format == VK_FORMAT_S8_UINT ||
+            pCreateInfo->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+            pCreateInfo->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+        const AgcGfx1013DepthSurfaceLayoutInput input = {
+            .width = pCreateInfo->extent.width,
+            .height = pCreateInfo->extent.height,
+            .layer_count = pCreateInfo->arrayLayers,
+            .mip_level_count = pCreateInfo->mipLevels,
+            .sample_count = 1u,
+            .format = depth_format,
+            .depth_swizzle_mode = has_depth ?
+                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
+            .stencil_swizzle_mode = has_stencil ?
+                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
+        };
+        if (agcGfx1013GetDepthSurfaceLayout(
+                &input, &image->depth_layout) != AGC_OK) {
+            vk_ps5_device_free(device, pAllocator, image);
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
+        image->is_depth_surface = VK_TRUE;
+        image->depth_format = depth_format;
+        image->alignment = AGC_GFX1013_64KB_SURFACE_ALIGNMENT;
+        VkDeviceSize size = image->depth_layout.depth.allocation_size;
+        if (has_stencil) {
+            VkDeviceSize stencil_alignment =
+                image->depth_layout.stencil.alignment;
+            if (!stencil_alignment || size > UINT64_MAX - stencil_alignment + 1u) {
+                vk_ps5_device_free(device, pAllocator, image);
+                return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+            }
+            image->stencil_plane_offset =
+                (size + stencil_alignment - 1u) & ~(stencil_alignment - 1u);
+            if (image->depth_layout.stencil.allocation_size >
+                    UINT64_MAX - image->stencil_plane_offset) {
+                vk_ps5_device_free(device, pAllocator, image);
+                return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+            }
+            size = image->stencil_plane_offset +
+                image->depth_layout.stencil.allocation_size;
+        }
+        image->size = size;
+        *pImage = (VkImage)image;
+        return VK_SUCCESS;
+    }
+    if (pCreateInfo->tiling != VK_IMAGE_TILING_LINEAR &&
+        pCreateInfo->tiling != VK_IMAGE_TILING_OPTIMAL) {
+        vk_ps5_device_free(device, pAllocator, image);
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     uint64_t row_bytes =
         (uint64_t)image->extent.width * format_bytes(image->format);
     if (row_bytes > UINT64_MAX - 255u) {
@@ -580,8 +715,8 @@ vkGetImageMemoryRequirements(VkDevice device, VkImage image_handle,
     if (!image_handle || !pMemoryRequirements) return;
     VkPs5Image *image = (VkPs5Image *)image_handle;
     pMemoryRequirements->size = image->size;
-    pMemoryRequirements->alignment = 256;
-    pMemoryRequirements->memoryTypeBits = 0x3;
+    pMemoryRequirements->alignment = image->alignment;
+    pMemoryRequirements->memoryTypeBits = image->is_depth_surface ? 0x2 : 0x3;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -597,7 +732,7 @@ vkBindImageMemory(VkDevice device, VkImage image_handle, VkDeviceMemory memory,
                   VkDeviceSize memoryOffset) {
     (void)device;
     VkPs5Image *image = (VkPs5Image *)image_handle;
-    if (!image || !memory || memoryOffset % 256 != 0 ||
+    if (!image || !memory || memoryOffset % image->alignment != 0 ||
         memoryOffset > vk_ps5_memory_size(memory) ||
         image->size > vk_ps5_memory_size(memory) - memoryOffset)
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
@@ -830,9 +965,16 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         !pCreateInfo->image || !format_bytes(pCreateInfo->format))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkPs5Image *image = (VkPs5Image *)pCreateInfo->image;
+    VkImageAspectFlags valid_aspects = image->is_depth_surface ?
+        (image->format == VK_FORMAT_S8_UINT ? VK_IMAGE_ASPECT_STENCIL_BIT :
+         image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+         image->format == VK_FORMAT_D32_SFLOAT_S8_UINT ?
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT :
+            VK_IMAGE_ASPECT_DEPTH_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
     if (pCreateInfo->viewType != VK_IMAGE_VIEW_TYPE_2D ||
         pCreateInfo->format != image->format ||
-        pCreateInfo->subresourceRange.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+        !pCreateInfo->subresourceRange.aspectMask ||
+        (pCreateInfo->subresourceRange.aspectMask & ~valid_aspects) ||
         pCreateInfo->subresourceRange.baseMipLevel != 0u ||
         pCreateInfo->subresourceRange.levelCount != 1u ||
         pCreateInfo->subresourceRange.baseArrayLayer != 0u ||
@@ -1544,6 +1686,36 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return VK_ERROR_INITIALIZATION_FAILED;
         if (render_pass->subpasses[create->subpass].color_attachment_count != 1u)
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        AgcGfx1013DepthStencilState depth_stencil = {0};
+        VkBool32 has_depth_stencil = render_pass->subpasses[create->subpass].
+            depth_stencil_attachment != VK_ATTACHMENT_UNUSED;
+        if (has_depth_stencil) {
+            const VkPipelineDepthStencilStateCreateInfo *depth =
+                create->pDepthStencilState;
+            if (!depth || depth->sType !=
+                    VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            if (depth->depthBoundsTestEnable ||
+                depth->depthCompareOp > VK_COMPARE_OP_ALWAYS ||
+                !stencil_face_state(&depth->front, &depth_stencil.front) ||
+                !stencil_face_state(&depth->back, &depth_stencil.back))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            depth_stencil.depth_test_enable = depth->depthTestEnable;
+            depth_stencil.depth_write_enable =
+                depth->depthTestEnable && depth->depthWriteEnable;
+            depth_stencil.depth_compare_operation =
+                (AgcGfx1013CompareOp)depth->depthCompareOp;
+            depth_stencil.min_depth_bounds = depth->minDepthBounds;
+            depth_stencil.max_depth_bounds = depth->maxDepthBounds;
+            depth_stencil.stencil_test_enable = depth->stencilTestEnable;
+            depth_stencil.back_face_enable = depth->stencilTestEnable;
+            if (render_pass->subpasses[create->subpass].depth_stencil_layout ==
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
+                (depth->depthWriteEnable ||
+                 (depth->stencilTestEnable &&
+                  (depth->front.writeMask || depth->back.writeMask))))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
         OpenAgcPsbcPipelineContext context = {
             .vertex_attributes = attributes,
             .vertex_attribute_count = vertex_input->vertexAttributeDescriptionCount,
@@ -1560,6 +1732,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         pipeline->vertex_binding_mask = vertex_binding_mask;
+        pipeline->has_depth_stencil = has_depth_stencil;
+        pipeline->depth_stencil = depth_stencil;
         memcpy(pipeline->vertex_strides, vertex_strides,
                sizeof(vertex_strides));
         VkResult result = VK_SUCCESS;
@@ -1927,6 +2101,8 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                    sizeof(render_pass->attachments[0]));
     for (uint32_t i = 0; i < render_pass->subpass_count; ++i) {
         const VkSubpassDescription *source = &pCreateInfo->pSubpasses[i];
+        render_pass->subpasses[i].depth_stencil_attachment =
+            VK_ATTACHMENT_UNUSED;
         if (source->pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS ||
             source->colorAttachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             (source->colorAttachmentCount && !source->pColorAttachments)) {
@@ -1956,6 +2132,29 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                 }
             }
             render_pass->subpasses[i].color_attachments[j] = attachment;
+        }
+        if (source->pDepthStencilAttachment &&
+            source->pDepthStencilAttachment->attachment != VK_ATTACHMENT_UNUSED) {
+            uint32_t attachment =
+                source->pDepthStencilAttachment->attachment;
+            AgcGfx1013DepthSurfaceFormat depth_format;
+            if (attachment >= render_pass->attachment_count) {
+                vk_ps5_device_free(device, pAllocator, render_pass);
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            VkImageLayout layout = source->pDepthStencilAttachment->layout;
+            if ((layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
+                 layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) ||
+                render_pass->attachments[attachment].samples !=
+                    VK_SAMPLE_COUNT_1_BIT ||
+                !depth_surface_format(
+                    render_pass->attachments[attachment].format,
+                    &depth_format)) {
+                vk_ps5_device_free(device, pAllocator, render_pass);
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+            render_pass->subpasses[i].depth_stencil_attachment = attachment;
+            render_pass->subpasses[i].depth_stencil_layout = layout;
         }
     }
     *pRenderPass = (VkRenderPass)render_pass;
@@ -2901,6 +3100,10 @@ static void record_graphics_draw(
             .primitive_type = pipeline->primitive_type,
         },
         .frame = &draw_frame,
+        .depth_surface_state = pipeline->has_depth_stencil ?
+            &command->depth_surface_state : NULL,
+        .depth_stencil_state = pipeline->has_depth_stencil ?
+            &pipeline->depth_stencil : NULL,
         .primitive_resource_tables = primitive_tables,
         .num_primitive_resource_tables = primitive_table_count,
         .pixel_resource_tables = pixel_tables,
@@ -3069,6 +3272,72 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
         return;
     }
+    memset(&command->depth_surface_state, 0,
+           sizeof(command->depth_surface_state));
+    uint32_t depth_index =
+        render_pass->subpasses[0].depth_stencil_attachment;
+    if (depth_index != VK_ATTACHMENT_UNUSED) {
+        const VkAttachmentDescription *depth_attachment =
+            &render_pass->attachments[depth_index];
+        VkPs5ImageView *depth_view = framebuffer->attachments[depth_index];
+        VkPs5Image *depth_image = depth_view ?
+            (VkPs5Image *)depth_view->image : NULL;
+        AgcGfx1013ResourceUsage depth_before;
+        if (depth_attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            depth_attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            !depth_image || !depth_image->memory ||
+            !depth_image->is_depth_surface ||
+            !(depth_image->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
+            depth_image->extent.width < framebuffer->width ||
+            depth_image->extent.height < framebuffer->height ||
+            !layout_resource_usage(
+                depth_attachment->initialLayout, &depth_before)) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        uint64_t depth_base = vk_ps5_memory_gpu_address(
+            depth_image->memory, depth_image->memory_offset);
+        const bool has_depth = depth_image->format != VK_FORMAT_S8_UINT;
+        const bool has_stencil = depth_image->format == VK_FORMAT_S8_UINT ||
+            depth_image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+            depth_image->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+        command->depth_surface_state = (AgcGfx1013DepthSurfaceState){
+            .depth_read_address = has_depth ?
+                depth_base + depth_image->depth_plane_offset : 0u,
+            .depth_write_address = has_depth ?
+                depth_base + depth_image->depth_plane_offset : 0u,
+            .stencil_read_address = has_stencil ?
+                depth_base + depth_image->stencil_plane_offset : 0u,
+            .stencil_write_address = has_stencil ?
+                depth_base + depth_image->stencil_plane_offset : 0u,
+            .width = framebuffer->width,
+            .height = framebuffer->height,
+            .format = depth_image->depth_format,
+            .depth_swizzle_mode = has_depth ?
+                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
+            .stencil_swizzle_mode = has_stencil ?
+                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
+            .mip_level_count = 1u,
+            .last_layer = framebuffer->layers - 1u,
+            .sample_count = 1u,
+            .depth_read_only = render_pass->subpasses[0].depth_stencil_layout ==
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            .stencil_read_only = render_pass->subpasses[0].depth_stencil_layout ==
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+        };
+        const AgcGfx1013ResourceTransition depth_transition = {
+            .before = depth_before,
+            .after = render_pass->subpasses[0].depth_stencil_layout ==
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
+                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ :
+                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE,
+        };
+        if (agcGfx1013TransitionResource(
+                &command->dcb, &depth_transition) != AGC_OK) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
+    }
     command->frame_state = frame;
     command->active_render_pass = render_pass;
     command->active_framebuffer = framebuffer;
@@ -3113,6 +3382,31 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
     if (agcGfx1013TransitionResource(&command->dcb, &transition) != AGC_OK) {
         command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
         return;
+    }
+    uint32_t depth_index = command->active_render_pass->
+        subpasses[command->active_subpass].depth_stencil_attachment;
+    if (depth_index != VK_ATTACHMENT_UNUSED) {
+        const VkAttachmentDescription *depth_attachment =
+            &command->active_render_pass->attachments[depth_index];
+        AgcGfx1013ResourceUsage depth_after;
+        if (!layout_resource_usage(
+                depth_attachment->finalLayout, &depth_after)) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        const AgcGfx1013ResourceTransition depth_transition = {
+            .before = command->active_render_pass->
+                subpasses[command->active_subpass].depth_stencil_layout ==
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
+                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ :
+                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE,
+            .after = depth_after,
+        };
+        if (agcGfx1013TransitionResource(
+                &command->dcb, &depth_transition) != AGC_OK) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
     }
     command->active_render_pass = NULL;
     command->active_framebuffer = NULL;

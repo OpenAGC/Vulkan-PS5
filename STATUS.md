@@ -99,6 +99,12 @@ Implemented and host-verified:
   256-byte gfx1013 row pitch with derived depth/array pitches. Texture upload
   tests and the sample honor the returned layout instead of assuming tightly
   packed rows. Single-level samplers select the non-mipmapped hardware mode.
+- Optimal D16, D32, S8, D16+S8, and D32+S8 images use OpenAGC's typed
+  `64KB_Z_X` plane layouts, 64 KiB binding alignment, and direct-memory type.
+  Render passes retain an optional depth/stencil attachment, pipeline creation
+  translates static compare/write/stencil state, and each draw restores the
+  typed DB surface and control after shader binding. The command regression
+  verifies D32 transitions and exact surface/control PM4 emission.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -138,7 +144,7 @@ FW 5.50 compute/triangle hardware gate:
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
 - Storage-image and texel-buffer descriptors, dynamic buffer offsets, push
-  constants, clears, MRT, depth/stencil attachments, and general
+  constants, depth/stencil clears, MRT, and general
   dynamic raster state are not emitted yet.
 - On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
   compute runs with `PASS 1024 deterministic values` and two consecutive

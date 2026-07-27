@@ -21,7 +21,9 @@
   passed: compute verified all 1,024 values, triangle verified exactly 18,432
   green pixels, and indexed-textured verified 18,432 opaque pixels with 64+
   sampled colors per run. Linear images expose and use the gfx1013 256-byte row
-  pitch. Continue Milestone 3 with depth/stencil, MRT, and queries.
+  pitch. Host command tests now cover OpenAGC-laid-out optimal D32 images,
+  depth attachment transitions, and static depth-test/write PM4. Continue
+  Milestone 3 with repeated FW 5.50 depth readback, stencil, MRT, and queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 
