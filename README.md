@@ -63,6 +63,18 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
   build-prospero-m2/vulkan_ps5_triangle_example.elf vulkan_ps5_triangle
 ```
 
+The Milestone 3 qualification runner checks websrv reachability, performs two
+foreground runs of each sample, requires the exact compute and triangle PASS
+oracles, and retains stdout under `examples/qualification-logs/`:
+
+```sh
+PS5_HOST=10.0.1.41 examples/run_fw550_m3.sh
+```
+
+Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
+`VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or
+log destination.
+
 The Khronos validation test is enabled automatically when the host Vulkan loader
 and Validation Layers are installed. It exercises instance/device lifecycle,
 property chains, memory, buffers, images, views, render-pass/framebuffer objects,

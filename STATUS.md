@@ -113,3 +113,6 @@ Hardware gate still open:
   dynamic raster state are not emitted yet.
 - FW 5.50 execution and deterministic readback/display evidence have not yet
   been collected for the Vulkan-owned submission path.
+- `examples/run_fw550_m3.sh` is the authoritative remaining gate: it runs both
+  Prospero samples twice through foreground websrv, rejects a missing PASS
+  oracle, and retains per-run output without committing runtime logs.
