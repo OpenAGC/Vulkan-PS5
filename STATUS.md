@@ -78,11 +78,15 @@ Implemented and host-verified:
 
 Hardware gate still open:
 
-- Prospero command storage and shader executable uploads still use the ICD's
-  host allocator. They must move to OpenAGC flexible GPU-visible allocations,
-  and `vkQueueSubmit` must submit the DCB and complete an EOP label before these
-  paths can execute on FW 5.50.
+- Shader executable uploads and queue submission storage now use OpenAGC
+  flexible GPU-visible allocations. `vkQueueSubmit` copies each recorded DCB
+  into the serialized queue mapping, appends a monotonic EOP `RELEASE_MEM`,
+  submits through OpenAGC, and performs a bounded label wait before signaling
+  Vulkan semaphores and fences. The host backend captures and verifies the
+  submitted packet, including the appended release.
 - Descriptor tables, vertex-buffer tables, push constants, render-target frame
   prologues, and render-pass attachment state are not emitted yet. Unsupported
   user-SGPR requirements fail command-buffer finalization instead of producing
   incomplete packets.
+- FW 5.50 execution and deterministic readback/display evidence have not yet
+  been collected for the Vulkan-owned submission path.

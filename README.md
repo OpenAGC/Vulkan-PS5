@@ -42,8 +42,10 @@ property chains, memory, buffers, images, views, render-pass/framebuffer objects
 command buffers, submission, and fences while failing on any VVL warning/error.
 
 Runtime shader compilation and host-verifiable OpenAGC DCB recording are now
-integrated; real PS5 OpenAGC command submission and VideoOut WSI remain separate
-milestones. Graphics VS/PS and
+integrated. Shader code and submission DCBs use OpenAGC GPU-visible flexible
+memory, while `vkQueueSubmit` appends a monotonic EOP label, submits through
+OpenAGC, and waits with a bounded timeout before host signaling. VideoOut WSI
+and FW 5.50 qualification remain separate milestones. Graphics VS/PS and
 compute CS pipeline creation
 compile SPIR-V at runtime with complete vertex, descriptor/pipeline-layout,
 push-constant, specialization-constant, entry-point, and render-pass color
@@ -51,7 +53,7 @@ context. Geometry and tessellation stage fusion are also wired through pipeline
 creation, including independent specialization data for fused stages, but their
 Vulkan feature bits remain disabled until the resulting pipelines are qualified
 on hardware. Compute dispatch and a no-input triangle draw now emit real
-gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. GPU-visible
-allocation, descriptor/vertex tables, render-target frame state, EOP-backed
-queue submission, and optional sparse, protected, external-handle, multiview,
-YCbCr, and timeline features remain unavailable.
+gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Descriptor and
+vertex tables, render-target frame state, hardware readback/display evidence,
+and optional sparse, protected, external-handle, multiview, YCbCr, and timeline
+features remain unavailable.

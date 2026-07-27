@@ -1,4 +1,5 @@
 #include <vulkan/vulkan.h>
+#include <agc_driver_debug.h>
 #include <agc_pm4.h>
 
 #include "../src/vulkan_ps5_internal.h"
@@ -182,6 +183,31 @@ int main(int argc, char **argv)
     }
     assert(found_dispatch && found_draw);
 
+    VkQueue queue;
+    vkGetDeviceQueue(device, 0, 0, &queue);
+    const VkFenceCreateInfo fence_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+    VkFence fence;
+    assert(vkCreateFence(device, &fence_info, NULL, &fence) == VK_SUCCESS);
+    const VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command,
+    };
+    assert(vkQueueSubmit(queue, 1, &submit_info, fence) == VK_SUCCESS);
+    assert(vkGetFenceStatus(device, fence) == VK_SUCCESS);
+    const AgcCommandBufferSubmit *submitted = agcDriverDebugLastDcbSubmit();
+    assert(submitted && submitted->dword_count > count);
+    const uint32_t *submitted_dwords =
+        (const uint32_t *)(uintptr_t)submitted->command_address;
+    bool found_release = false;
+    for (uint32_t n = count; n < submitted->dword_count; ++n)
+        found_release |= ((submitted_dwords[n] >> 8) & 0xffu) ==
+            AGC_PM4_OP_RELEASE_MEM;
+    assert(found_release);
+
+    vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);

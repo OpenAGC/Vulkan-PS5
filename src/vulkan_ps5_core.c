@@ -2,6 +2,7 @@
 #include <openagc_psbc.h>
 #include <agc_cb.h>
 #include <agc_graphics.h>
+#include <agc_memory.h>
 #include <agc_shader.h>
 
 #include <stdatomic.h>
@@ -69,6 +70,8 @@ typedef struct VkPs5RuntimeShader {
     AgcShaderRecord front_record;
     AgcShaderRecord fused_record;
     AgcRegisterValue fused_registers[64];
+    AgcGpuMemory code_memory;
+    AgcGpuMemory front_code_memory;
     void *code;
     size_t code_size;
     void *front_code;
@@ -132,8 +135,6 @@ typedef struct VkPs5CommandBuffer {
     struct VkPs5CommandBuffer *next;
 } VkPs5CommandBuffer;
 
-#define VK_PS5_DCB_SIZE (64u * 1024u)
-
 uint32_t vk_ps5_command_buffer_dwords(
     VkCommandBuffer command_buffer, const uint32_t **commands) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
@@ -177,7 +178,10 @@ vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
             if (!command || command->state != VK_PS5_COMMAND_EXECUTABLE)
                 return VK_ERROR_INITIALIZATION_FAILED;
             command->state = VK_PS5_COMMAND_PENDING;
+            VkResult result = vk_ps5_queue_submit_dcb(
+                queue, command->dcb_storage, agcCbUsedDwords(&command->dcb));
             command->state = VK_PS5_COMMAND_EXECUTABLE;
+            if (result != VK_SUCCESS) return result;
         }
         for (uint32_t j = 0; j < pSubmits[i].signalSemaphoreCount; ++j) {
             VkPs5Semaphore *semaphore = (VkPs5Semaphore *)pSubmits[i].pSignalSemaphores[j];
@@ -1086,8 +1090,8 @@ static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocato
                           VkPs5Pipeline *pipeline) {
     if (!pipeline) return;
     for (uint32_t i = 0; i < pipeline->stage_count; ++i) {
-        vk_ps5_device_free(device, allocator, pipeline->runtime[i].code);
-        vk_ps5_device_free(device, allocator, pipeline->runtime[i].front_code);
+        agcGpuMemoryFreeFlexible(&pipeline->runtime[i].code_memory);
+        agcGpuMemoryFreeFlexible(&pipeline->runtime[i].front_code_memory);
         openagcPsbcFreeOutput(&pipeline->stages[i]);
     }
     vk_ps5_device_free(device, allocator, pipeline);
@@ -1103,13 +1107,18 @@ static VkResult finalize_runtime_shader(
             output->shader.size - output->metadata.code_offset)
         return VK_ERROR_INITIALIZATION_FAILED;
     runtime->code_size = output->metadata.code_size;
-    runtime->code = vk_ps5_device_alloc(
-        device, allocator, runtime->code_size, 256,
-        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-    if (!runtime->code) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    (void)device;
+    (void)allocator;
+    if (agcGpuMemoryAllocateFlexible(&runtime->code_memory,
+            runtime->code_size, 256u, "vulkan_ps5_shader") != AGC_OK)
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    runtime->code = runtime->code_memory.cpu_address;
     memcpy(runtime->code,
         (const uint8_t *)output->shader.data + output->metadata.code_offset,
         runtime->code_size);
+    if (agcGpuMemoryFlush(&runtime->code_memory, 0,
+            runtime->code_size) != AGC_OK)
+        return VK_ERROR_DEVICE_LOST;
     runtime->binding = (AgcGfx1013ShaderBinding){
         .record = &runtime->record,
         .sh_registers = (const AgcRegisterValue *)(uintptr_t)
@@ -1118,7 +1127,7 @@ static VkResult finalize_runtime_shader(
         .cx_registers = (const AgcRegisterValue *)(uintptr_t)
             runtime->record.cx_registers,
         .num_cx_registers = runtime->record.num_cx_registers,
-        .code_address = (uint64_t)(uintptr_t)runtime->code,
+        .code_address = runtime->code_memory.gpu_address,
     };
     if (output->front_shader.data) {
         if (agcShaderRecordRelocateBinary(&runtime->front_record,
@@ -1130,16 +1139,20 @@ static VkResult finalize_runtime_shader(
                 runtime->front_record.num_sh_registers > 64u)
             return VK_ERROR_INITIALIZATION_FAILED;
         runtime->front_code_size = output->metadata.front_code_size;
-        runtime->front_code = vk_ps5_device_alloc(
-            device, allocator, runtime->front_code_size, 256,
-            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-        if (!runtime->front_code) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        if (agcGpuMemoryAllocateFlexible(&runtime->front_code_memory,
+                runtime->front_code_size, 256u,
+                "vulkan_ps5_shader_front") != AGC_OK)
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        runtime->front_code = runtime->front_code_memory.cpu_address;
         memcpy(runtime->front_code,
             (const uint8_t *)output->front_shader.data +
                 output->metadata.front_code_offset,
             runtime->front_code_size);
-        runtime->record.code = (uint64_t)(uintptr_t)runtime->code;
-        runtime->front_record.code = (uint64_t)(uintptr_t)runtime->front_code;
+        if (agcGpuMemoryFlush(&runtime->front_code_memory, 0,
+                runtime->front_code_size) != AGC_OK)
+            return VK_ERROR_DEVICE_LOST;
+        runtime->record.code = runtime->code_memory.gpu_address;
+        runtime->front_record.code = runtime->front_code_memory.gpu_address;
         if (sceAgcFuseShaderHalves_0200(
                 &runtime->fused_record, &runtime->front_record,
                 &runtime->record, runtime->fused_registers) != AGC_OK)

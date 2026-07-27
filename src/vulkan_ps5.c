@@ -1,7 +1,11 @@
 #include "vulkan_ps5_internal.h"
 
 #include "agc_capabilities.h"
+#include "agc_cb.h"
 #include "agc_error.h"
+#include "agc_graphics.h"
+#include "agc_memory.h"
+#include "agcdriver.h"
 
 #include <stdint.h>
 #include <stdatomic.h>
@@ -33,6 +37,9 @@ struct VkPs5Instance {
 struct VkPs5Queue {
     VK_LOADER_DATA loader_data;
     VkPs5Device *device;
+    AgcGpuMemory submit_memory;
+    atomic_uint_fast32_t next_submission;
+    atomic_flag submit_lock;
 };
 
 struct VkPs5Device {
@@ -153,6 +160,65 @@ VkResult vk_ps5_set_device_loader_data(VkDevice device_handle, void *object) {
 VkDevice vk_ps5_queue_device(VkQueue queue_handle) {
     VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
     return queue ? (VkDevice)queue->device : VK_NULL_HANDLE;
+}
+
+VkResult vk_ps5_queue_submit_dcb(
+    VkQueue queue_handle, const uint32_t *commands, uint32_t dword_count) {
+    VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
+    if (!queue || (!commands && dword_count) ||
+        dword_count > VK_PS5_DCB_SIZE / sizeof(uint32_t) - 8u)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    while (atomic_flag_test_and_set_explicit(
+        &queue->submit_lock, memory_order_acquire)) {}
+    VkResult result = VK_SUCCESS;
+    uint32_t value = (uint32_t)atomic_fetch_add_explicit(
+        &queue->next_submission, 1u, memory_order_relaxed) + 1u;
+    volatile uint32_t *label = (volatile uint32_t *)
+        ((uint8_t *)queue->submit_memory.cpu_address + VK_PS5_DCB_SIZE);
+    *label = 0u;
+
+    SceAgcCb cb;
+    agcCbInit(&cb, queue->submit_memory.cpu_address, VK_PS5_DCB_SIZE);
+    uint32_t *destination = agcCbAllocDwords(&cb, dword_count);
+    if (dword_count && !destination) {
+        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        goto done;
+    }
+    if (dword_count) memcpy(destination, commands,
+                           (size_t)dword_count * sizeof(uint32_t));
+    const AgcGfx1013EopFenceState fence = {
+        .address = queue->submit_memory.gpu_address + VK_PS5_DCB_SIZE,
+        .value = value,
+    };
+    if (agcGfx1013SignalEopFence(&cb, &fence) != AGC_OK) {
+        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        goto done;
+    }
+    uint32_t used_dwords = agcCbUsedDwords(&cb);
+    if (agcGpuMemoryFlush(&queue->submit_memory, 0,
+            VK_PS5_DCB_SIZE + sizeof(uint32_t)) != AGC_OK) {
+        result = VK_ERROR_DEVICE_LOST;
+        goto done;
+    }
+    const AgcCommandBufferSubmit submit = {
+        .command_address = (uintptr_t)queue->submit_memory.gpu_address,
+        .dword_count = used_dwords,
+    };
+    if (sceAgcDriverSubmitDcb(&submit) != AGC_OK) {
+        result = VK_ERROR_DEVICE_LOST;
+        goto done;
+    }
+#if defined(OPENAGC_GENERIC)
+    *label = value;
+#endif
+    if (agcGpuMemoryWait32(&queue->submit_memory, VK_PS5_DCB_SIZE,
+            value, 5000000u) != AGC_OK)
+        result = VK_ERROR_DEVICE_LOST;
+
+done:
+    atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
+    return result;
 }
 
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory_handle) {
@@ -967,6 +1033,19 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
+    atomic_init(&device->queue.next_submission, 0);
+    atomic_flag_clear(&device->queue.submit_lock);
+    if (sce_agc_initialize() != AGC_OK ||
+        sce_agc_initialize_internal_memory() != AGC_OK ||
+        sceAgcDriverNotifyDefaultStates(0) != AGC_OK ||
+        sceAgcDriverSetupAsyncGraphics(1) != AGC_OK ||
+        agcGpuMemoryAllocateFlexible(&device->queue.submit_memory,
+            VK_PS5_DCB_SIZE + sizeof(uint32_t), 256u,
+            "vulkan_ps5_queue") != AGC_OK) {
+        agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
+        ps5_free(pAllocator, device);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     set_loader_magic_value(device);
     set_loader_magic_value(&device->queue);
     *pDevice = (VkDevice)device;
@@ -978,6 +1057,7 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
+    agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
     ps5_free(allocator, device);
 }
 

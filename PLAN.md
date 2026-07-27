@@ -9,9 +9,10 @@
   specialization constants, descriptors, push constants, vertex input, and
   render-pass context.
 - Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
-  compiled compute dispatch and fused-NGG triangle draw. Next, move DCB/code
-  storage to OpenAGC GPU-visible allocations and submit it with EOP completion
-  for FW 5.50 compute/triangle qualification. Geometry/tessellation feature bits
+  compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
+  uploads and bounded EOP-backed OpenAGC queue submission. Next, emit descriptor
+  and render-target state in standalone samples, then collect FW 5.50 compute
+  readback and triangle display evidence. Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 
 ## Summary

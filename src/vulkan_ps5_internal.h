@@ -6,6 +6,9 @@
 #include <vulkan/vk_layer.h>
 
 #include <stddef.h>
+#include <stdint.h>
+
+#define VK_PS5_DCB_SIZE (64u * 1024u)
 
 #if defined(_WIN32)
 #define VK_PS5_EXPORT __declspec(dllexport)
@@ -19,6 +22,8 @@ void vk_ps5_device_free(VkDevice device, const VkAllocationCallbacks *allocator,
 VkResult vk_ps5_set_device_loader_data(VkDevice device, void *object);
 VkDevice vk_ps5_queue_device(VkQueue queue);
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory);
+VkResult vk_ps5_queue_submit_dcb(
+    VkQueue queue, const uint32_t *commands, uint32_t dword_count);
 uint32_t vk_ps5_command_buffer_dwords(
     VkCommandBuffer command_buffer, const uint32_t **commands);
 
