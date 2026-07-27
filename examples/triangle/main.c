@@ -72,10 +72,26 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    const char *device_extensions[] = {
+        VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+    };
+    const VkPhysicalDeviceHostQueryResetFeatures host_reset = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+        .hostQueryReset = VK_TRUE,
+    };
+#endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+        .pNext = &host_reset,
+#endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = device_extensions,
+#endif
     };
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));
 #if defined(VULKAN_PS5_QUERY_SAMPLE)
@@ -85,6 +101,7 @@ int main(void)
         .queryCount = 1,
     };
     VK_CHECK(vkCreateQueryPool(device, &query_info, NULL, &query_pool));
+    vkResetQueryPoolEXT(device, query_pool, 0, 1);
 #endif
 
     const VkImageCreateInfo image_info = {
@@ -277,9 +294,6 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &command_begin));
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
-    vkCmdResetQueryPool(command, query_pool, 0, 1);
-#endif
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,

@@ -76,7 +76,8 @@ and untouched background for both targets.
 `vulkan_ps5_query_example` is a query-enabled build of the deterministic
 triangle workload. It brackets the draw with an occlusion query and requires
 the returned 64-bit sample count and availability bit to match the mapped
-green-pixel oracle exactly. The generic backend intentionally reports an
+green-pixel oracle exactly. It uses `VK_EXT_host_query_reset` so query begin/end
+hardware can be qualified independently from command-reset PM4. The generic backend intentionally reports an
 unavailable zero result because it records but does not execute the stream.
 
 When the console is online, deploy either Prospero ELF through the foreground
@@ -109,6 +110,12 @@ The depth, MRT, and query samples are part of the runner but remain unqualified
 until two FW 5.50 runs produce their complete oracles. The latest
 2026-07-28 retry stopped at the runner's preflight because the console websrv
 at `10.0.1.41:8080` was unreachable; no hardware result was inferred.
+
+The 2026-07-27 UTC `20260727T231245Z` run subsequently qualified depth and MRT
+twice, but the first query submission hung the GPU. The reset-packet audit and
+corrective isolation are recorded in
+`analysis/fw550_depth_mrt_query_qualification_20260727.md`; query qualification
+remains pending.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or

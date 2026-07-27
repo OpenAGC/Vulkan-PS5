@@ -30,8 +30,9 @@
   retrieval, partial results, and availability. A standalone query workload
   cross-checks its 64-bit occlusion result against mapped triangle coverage.
   The planned `VK_EXT_host_query_reset` surface is also implemented and tested.
-  Continue Milestone 3 with repeated FW 5.50 depth/stencil, MRT, and query
-  readback.
+  FW 5.50 has now passed repeated depth and MRT readback; the first query run
+  hung during submission. Continue Milestone 3 with the isolated host-reset
+  query workload, followed by a clean repeated full-suite run.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 

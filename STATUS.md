@@ -109,8 +109,8 @@ Implemented and host-verified:
 - A standalone D32 sample draws overlapping near/far and independent far
   triangles, then validates green/red color decisions plus raw clear/near/far
   depth words. It host-builds, cross-links with the required target runtimes,
-  and is included in the repeated FW 5.50 runner. Hardware qualification is
-  pending; the first deployment attempt found the console FTP service offline.
+  and is included in the repeated FW 5.50 runner. Two FW `0x05500008` runs now
+  pass identical color and raw-depth oracles.
 - Inline render passes and graphics pipelines accept one to eight color
   attachments with matching full-component, blend-disabled state. Begin/end
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
@@ -119,8 +119,7 @@ Implemented and host-verified:
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50
-  runner. Hardware qualification remains pending; the 2026-07-28 runner retry
-  stopped before deployment because the console websrv was unreachable.
+  runner. Two FW `0x05500008` runs now pass identical dual-target oracles.
 - Occlusion query pools now use GPU-visible OpenAGC storage with conservative
   space for 16 render backends. Command reset writes zeroes on the GPU, begin
   and end emit typed OpenAGC ZPASS snapshots, and end publishes a separate EOP
@@ -129,13 +128,19 @@ Implemented and host-verified:
   reset, both snapshots, and availability release. A standalone query-enabled
   triangle requires the 64-bit occlusion result to equal mapped pixel coverage;
   it host-builds and cross-links for Prospero with the required runtimes.
-  Hardware qualification remains pending because the console websrv is still
-  unreachable. Timestamp valid bits remain zero.
+  Hardware qualification remains pending after the first query submission
+  hung the GPU. Timestamp valid bits remain zero.
 - `VK_EXT_host_query_reset` is advertised and accepted during device creation.
   Its feature query reports true, and `vkResetQueryPoolEXT` zeroes and flushes
   exactly the requested GPU-visible query slots. Lifecycle coverage verifies
   extension enumeration, enablement, dispatch lookup, reset, and unavailable
   result semantics.
+- FW `0x05500008` produced two deterministic passes each for depth and MRT in
+  retained run `20260727T231245Z`. The first query submission then hung the GPU.
+  Audit identified an invalid command-reset `WRITE_DATA` configuration; it now
+  uses hardware-proven destination 2 with control `0x00100100`. The query sample
+  uses host reset for the next isolated begin/end test. Query hardware support
+  remains unqualified until that isolated test and a full repeated suite pass.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public

@@ -718,6 +718,7 @@ int main(int argc, char **argv)
                    i + 3 < count && dwords[i + 1] == 0x115u) {
             ++occlusion_snapshots;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_WRITE_DATA) {
+            assert(i + 3 < count && dwords[i + 1] == 0x00100100u);
             found_query_reset = true;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_RELEASE_MEM &&
                    i + 7 < count && dwords[i + 5] == 1u) {

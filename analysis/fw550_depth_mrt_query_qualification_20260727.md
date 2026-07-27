@@ -1,0 +1,35 @@
+# FW 5.50 depth, MRT, and query qualification
+
+Date: 2026-07-27 UTC
+
+Console system software: `0x05500008` (`5.500.008`)
+
+Revisions at the start of the run:
+
+- Vulkan-PS5: `34e3357`
+- OpenAGC: `658164d`
+
+The retained `20260727T231245Z` runner logs prove two consecutive passes for:
+
+- compute: 1,024 deterministic values
+- triangle: 18,432 green pixels
+- indexed-textured: 18,432 opaque pixels and 64+ sampled colors
+- depth: 12,288 near-green pixels, 9,830 independent far-red pixels, and
+  raw D32 counts `43418/12288/9830`
+- MRT: 18,432 green pixels in target 0 and 18,432 magenta pixels in target 1
+
+The first query run initialized OpenAGC and compiled VS/PS, then stopped making
+progress during GPU submission. Websrv timed out after 30 seconds and the PS5
+became unresponsive. This is a failed query hardware gate; it is not counted as
+query qualification.
+
+Audit found that `vkCmdResetQueryPool` used `WRITE_DATA` destination 1, cache
+policy 3, and the single-address bit for a 68-dword clear. The corrected packet
+uses the hardware-sample-proven ME/MEM_GRBM destination 2, cache policy 0,
+address incrementing, and write confirmation (`control = 0x00100100`). To
+isolate the next hardware test from command-reset PM4, the standalone query
+sample now enables `VK_EXT_host_query_reset` and resets its fresh pool through
+`vkResetQueryPoolEXT`. The next run must execute only the query ELF first.
+
+Retained logs are under `examples/qualification-logs/20260727T231245Z-*.log`
+and are ignored by Git.

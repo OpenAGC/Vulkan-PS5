@@ -2637,8 +2637,8 @@ vkCmdResetQueryPool(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n) {
     for (uint32_t i = 0; i < n; ++i) {
         uint64_t address = pool->memory.gpu_address +
             (uint64_t)(f + i) * VK_PS5_QUERY_SLOT_SIZE;
-        if (!sceAgcDcbWriteData(&command->dcb, 1u, 3u, address, zeros,
-                VK_PS5_QUERY_SLOT_SIZE / sizeof(uint32_t), 1u, 1u)) {
+        if (!sceAgcDcbWriteData(&command->dcb, 2u, 0u, address, zeros,
+                VK_PS5_QUERY_SLOT_SIZE / sizeof(uint32_t), 0u, 1u)) {
             command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
             return;
         }
