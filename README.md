@@ -25,6 +25,13 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Prospero builds select `libopenagc_psbc.prospero.a` automatically when cross
+compiling. Final PS5 links require libunwind, libc++abi, and libc++; the
+`ps5-payload-libcxx` recipe in
+`/Users/bizkut/Downloads/PS5/homebrew/pacbrew-repo/libcxx` installs those target
+headers and archives into the payload SDK. Merely having the recipe checkout is
+not sufficient—the package must be built and installed into the SDK prefix.
+
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
 
@@ -38,6 +45,9 @@ submission and VideoOut WSI remain separate milestones. Graphics VS/PS and
 compute CS pipeline creation
 compile SPIR-V at runtime with complete vertex, descriptor/pipeline-layout,
 push-constant, specialization-constant, entry-point, and render-pass color
-context. Geometry/tessellation pipeline wiring, compiled-state emission into
-OpenAGC DCBs, and optional shader, sparse, protected, external-handle,
-multiview, YCbCr, and timeline features remain unavailable.
+context. Geometry and tessellation stage fusion are also wired through pipeline
+creation, including independent specialization data for fused stages, but their
+Vulkan feature bits remain disabled until the resulting pipelines are qualified
+on hardware. Compiled-state emission into OpenAGC DCBs and optional sparse,
+protected, external-handle, multiview, YCbCr, and timeline features remain
+unavailable.

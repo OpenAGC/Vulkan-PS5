@@ -37,10 +37,13 @@ Capability evidence:
 
 Implemented:
 
-- Runtime VS/PS/CS compilation through the reusable `libopenagc_psbc` C API.
+- Runtime VS/PS/CS/GS/tessellation compilation through the reusable
+  `libopenagc_psbc` C API.
 - Pipeline-context translation for vertex input, descriptor-set layouts,
   push-constant ranges, fragment specialization constants, entry points, and
   render-pass color attachment counts.
+- Correct fused-stage selection for VS+GS, VS+TCS, TES NGG, and TES+GS, with
+  independent Vulkan specialization maps for the primary and pre-stage SPIR-V.
 - Owned AGC records and compiler metadata live with the Vulkan pipeline and are
   released deterministically by `vkDestroyPipeline`.
 - A host end-to-end test compiles graphics and compute pipelines alongside the
@@ -52,8 +55,8 @@ Implemented:
 
 Deliberately unavailable before later milestones:
 
-- Geometry/tessellation Vulkan pipeline wiring and OpenAGC DCB shader-state
-  emission. The compiler API already supports their pipeline context.
+- Geometry and tessellation feature advertisement before repeated hardware
+  qualification, and OpenAGC DCB shader-state emission.
 - Real OpenAGC GPU execution from the host command representation.
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.

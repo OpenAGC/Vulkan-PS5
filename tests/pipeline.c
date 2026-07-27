@@ -31,7 +31,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 4);
+    assert(argc == 7);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -57,6 +57,9 @@ int main(int argc, char **argv) {
     VkShaderModule vertex = shader_module(device, argv[1]);
     VkShaderModule fragment = shader_module(device, argv[2]);
     VkShaderModule compute = shader_module(device, argv[3]);
+    VkShaderModule geometry = shader_module(device, argv[4]);
+    VkShaderModule tess_control = shader_module(device, argv[5]);
+    VkShaderModule tess_evaluation = shader_module(device, argv[6]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -136,9 +139,14 @@ int main(int argc, char **argv) {
     float gain = 2.0f;
     const VkSpecializationMapEntry map = {0, 0, sizeof(gain)};
     const VkSpecializationInfo specialization = {1, &map, sizeof(gain), &gain};
+    float scale = 0.75f;
+    const VkSpecializationMapEntry vertex_map = {1, 0, sizeof(scale)};
+    const VkSpecializationInfo vertex_specialization = {
+        1, &vertex_map, sizeof(scale), &scale,
+    };
     const VkPipelineShaderStageCreateInfo stages[] = {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
-         VK_SHADER_STAGE_VERTEX_BIT, vertex, "main", NULL},
+         VK_SHADER_STAGE_VERTEX_BIT, vertex, "main", &vertex_specialization},
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_FRAGMENT_BIT, fragment, "main", &specialization},
     };
@@ -166,6 +174,41 @@ int main(int argc, char **argv) {
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
 
+    const VkPipelineShaderStageCreateInfo geometry_stages[] = {
+        stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_GEOMETRY_BIT, geometry, "main", NULL},
+        stages[1],
+    };
+    VkGraphicsPipelineCreateInfo geometry_info = graphics_info;
+    geometry_info.stageCount = 3;
+    geometry_info.pStages = geometry_stages;
+    VkPipeline geometry_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &geometry_info,
+                                     NULL, &geometry_pipeline) == VK_SUCCESS);
+
+    const VkPipelineShaderStageCreateInfo tessellation_stages[] = {
+        stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, tess_control, "main", NULL},
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, tess_evaluation, "main", NULL},
+        stages[1],
+    };
+    const VkPipelineTessellationStateCreateInfo tessellation_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        .patchControlPoints = 3,
+    };
+    VkGraphicsPipelineCreateInfo tessellation_info = graphics_info;
+    tessellation_info.stageCount = 4;
+    tessellation_info.pStages = tessellation_stages;
+    tessellation_info.pTessellationState = &tessellation_state;
+    VkPipeline tessellation_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &tessellation_info,
+                                     NULL, &tessellation_pipeline) == VK_SUCCESS);
+
+    vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
@@ -174,6 +217,9 @@ int main(int argc, char **argv) {
     vkDestroyDescriptorSetLayout(device, resource_set, NULL);
     vkDestroyDescriptorSetLayout(device, empty_set, NULL);
     vkDestroyShaderModule(device, compute, NULL);
+    vkDestroyShaderModule(device, tess_evaluation, NULL);
+    vkDestroyShaderModule(device, tess_control, NULL);
+    vkDestroyShaderModule(device, geometry, NULL);
     vkDestroyShaderModule(device, fragment, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
     vkDestroyDevice(device, NULL);

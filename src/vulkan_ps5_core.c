@@ -63,7 +63,7 @@ typedef struct VkPs5RenderPass {
 
 typedef struct VkPs5Pipeline {
     uint32_t stage_count;
-    OpenAgcPsbcOutput stages[2];
+    OpenAgcPsbcOutput stages[3];
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -941,44 +941,76 @@ static VkResult psbc_result(OpenAgcPsbcResult result) {
     }
 }
 
+typedef struct PsbcSpecialization {
+    OpenAgcPsbcSpecializationConstant constants[
+        OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS];
+    uint32_t count;
+    const void *data;
+    size_t data_size;
+} PsbcSpecialization;
+
+static VkResult translate_specialization(const VkSpecializationInfo *source,
+                                         PsbcSpecialization *dest) {
+    memset(dest, 0, sizeof(*dest));
+    if (!source) return VK_SUCCESS;
+    if (source->mapEntryCount > OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS ||
+        (source->mapEntryCount && !source->pMapEntries) ||
+        (source->dataSize && !source->pData))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    dest->count = source->mapEntryCount;
+    dest->data = source->pData;
+    dest->data_size = source->dataSize;
+    for (uint32_t i = 0; i < dest->count; ++i) {
+        dest->constants[i].constant_id = source->pMapEntries[i].constantID;
+        dest->constants[i].offset = source->pMapEntries[i].offset;
+        dest->constants[i].size = source->pMapEntries[i].size;
+    }
+    return VK_SUCCESS;
+}
+
 static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
                               OpenAgcPsbcStage psbc_stage,
+                              const VkPipelineShaderStageCreateInfo *pre_stage,
+                              OpenAgcPsbcStage psbc_pre_stage,
                               const OpenAgcPsbcPipelineContext *context,
                               OpenAgcPsbcOutput *output) {
     if (!stage || stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
         !stage->module || !stage->pName)
         return VK_ERROR_INITIALIZATION_FAILED;
+    if (pre_stage &&
+        (pre_stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
+         !pre_stage->module || !pre_stage->pName))
+        return VK_ERROR_INITIALIZATION_FAILED;
     const VkPs5ShaderModule *module = (const VkPs5ShaderModule *)stage->module;
-    OpenAgcPsbcSpecializationConstant constants[
-        OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS];
-    uint32_t constant_count = 0;
-    const void *constant_data = NULL;
-    size_t constant_data_size = 0;
-    if (stage->pSpecializationInfo) {
-        const VkSpecializationInfo *specialization = stage->pSpecializationInfo;
-        if (specialization->mapEntryCount > OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS ||
-            (specialization->mapEntryCount && !specialization->pMapEntries) ||
-            (specialization->dataSize && !specialization->pData))
-            return VK_ERROR_INITIALIZATION_FAILED;
-        constant_count = specialization->mapEntryCount;
-        constant_data = specialization->pData;
-        constant_data_size = specialization->dataSize;
-        for (uint32_t i = 0; i < constant_count; ++i) {
-            constants[i].constant_id = specialization->pMapEntries[i].constantID;
-            constants[i].offset = specialization->pMapEntries[i].offset;
-            constants[i].size = specialization->pMapEntries[i].size;
-        }
-    }
+    const VkPs5ShaderModule *pre_module = pre_stage ?
+        (const VkPs5ShaderModule *)pre_stage->module : NULL;
+    PsbcSpecialization specialization, pre_specialization;
+    VkResult result = translate_specialization(stage->pSpecializationInfo,
+                                                &specialization);
+    if (result != VK_SUCCESS) return result;
+    result = translate_specialization(pre_stage ? pre_stage->pSpecializationInfo : NULL,
+                                      &pre_specialization);
+    if (result != VK_SUCCESS) return result;
     const OpenAgcPsbcCompileInfo info = {
         .api_version = OPENAGC_PSBC_API_VERSION,
         .stage = psbc_stage,
         .spirv = module->code,
         .spirv_size = module->code_size,
         .entry_point = stage->pName,
-        .specialization_constants = constant_count ? constants : NULL,
-        .specialization_constant_count = constant_count,
-        .specialization_data = constant_data,
-        .specialization_data_size = constant_data_size,
+        .pre_stage = psbc_pre_stage,
+        .pre_spirv = pre_module ? pre_module->code : NULL,
+        .pre_spirv_size = pre_module ? pre_module->code_size : 0,
+        .pre_entry_point = pre_stage ? pre_stage->pName : NULL,
+        .pre_specialization_constants = pre_specialization.count ?
+            pre_specialization.constants : NULL,
+        .pre_specialization_constant_count = pre_specialization.count,
+        .pre_specialization_data = pre_specialization.data,
+        .pre_specialization_data_size = pre_specialization.data_size,
+        .specialization_constants = specialization.count ?
+            specialization.constants : NULL,
+        .specialization_constant_count = specialization.count,
+        .specialization_data = specialization.data,
+        .specialization_data_size = specialization.data_size,
         .pipeline = context,
         .optimize = true,
     };
@@ -1017,6 +1049,7 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         VkResult result = compile_stage(&create->stage, OPENAGC_PSBC_STAGE_COMPUTE,
+                                        NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                         &context, &pipeline->stages[0]);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
@@ -1042,13 +1075,29 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (create->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO ||
             !create->layout || !create->renderPass || !create->pVertexInputState)
             return VK_ERROR_INITIALIZATION_FAILED;
-        const VkPipelineShaderStageCreateInfo *vertex = NULL, *fragment = NULL;
+        const VkPipelineShaderStageCreateInfo *vertex = NULL, *tess_control = NULL;
+        const VkPipelineShaderStageCreateInfo *tess_evaluation = NULL;
+        const VkPipelineShaderStageCreateInfo *geometry = NULL, *fragment = NULL;
         for (uint32_t j = 0; j < create->stageCount; ++j) {
-            if (create->pStages[j].stage == VK_SHADER_STAGE_VERTEX_BIT) vertex = &create->pStages[j];
-            else if (create->pStages[j].stage == VK_SHADER_STAGE_FRAGMENT_BIT) fragment = &create->pStages[j];
-            else return VK_ERROR_FEATURE_NOT_PRESENT;
+            const VkPipelineShaderStageCreateInfo *stage = &create->pStages[j];
+            const VkPipelineShaderStageCreateInfo **slot = NULL;
+            switch (stage->stage) {
+            case VK_SHADER_STAGE_VERTEX_BIT: slot = &vertex; break;
+            case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT: slot = &tess_control; break;
+            case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: slot = &tess_evaluation; break;
+            case VK_SHADER_STAGE_GEOMETRY_BIT: slot = &geometry; break;
+            case VK_SHADER_STAGE_FRAGMENT_BIT: slot = &fragment; break;
+            default: return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+            if (*slot) return VK_ERROR_INITIALIZATION_FAILED;
+            *slot = stage;
         }
         if (!vertex || !fragment) return VK_ERROR_FEATURE_NOT_PRESENT;
+        if ((tess_control == NULL) != (tess_evaluation == NULL))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (tess_control && (!create->pTessellationState ||
+            !create->pTessellationState->patchControlPoints))
+            return VK_ERROR_INITIALIZATION_FAILED;
 
         const VkPipelineVertexInputStateCreateInfo *vertex_input = create->pVertexInputState;
         if (vertex_input->vertexAttributeDescriptionCount > OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES)
@@ -1081,29 +1130,64 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
         if (create->subpass >= render_pass->subpass_count)
             return VK_ERROR_INITIALIZATION_FAILED;
-        const OpenAgcPsbcPipelineContext context = {
+        OpenAgcPsbcPipelineContext context = {
             .vertex_attributes = attributes,
             .vertex_attribute_count = vertex_input->vertexAttributeDescriptionCount,
             .descriptor_bindings = layout->bindings,
             .descriptor_binding_count = layout->binding_count,
             .push_constant_size = layout->push_constant_size,
             .color_attachment_count = render_pass->color_attachment_counts[create->subpass],
+            .tessellation_control_points = tess_control ?
+                create->pTessellationState->patchControlPoints : 3,
+            .tessellation_patches = 8,
         };
         VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
-        VkResult result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
-                                        &context, &pipeline->stages[0]);
+        VkResult result = VK_SUCCESS;
+        uint32_t compiled = 0;
+        if (tess_control) {
+            context.enable_ngg = false;
+            result = compile_stage(tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
+                                   vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                   &context, &pipeline->stages[compiled]);
+            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            if (result == VK_SUCCESS) {
+                context.enable_ngg = true;
+                context.wave32 = true;
+                result = compile_stage(
+                    geometry ? geometry : tess_evaluation,
+                    geometry ? OPENAGC_PSBC_STAGE_GEOMETRY :
+                               OPENAGC_PSBC_STAGE_TESS_EVALUATION,
+                    geometry ? tess_evaluation : NULL,
+                    OPENAGC_PSBC_STAGE_TESS_EVALUATION,
+                    &context, &pipeline->stages[compiled]);
+                if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            }
+        } else if (geometry) {
+            context.enable_ngg = true;
+            context.wave32 = true;
+            result = compile_stage(geometry, OPENAGC_PSBC_STAGE_GEOMETRY,
+                                   vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                   &context, &pipeline->stages[compiled]);
+            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+        } else {
+            result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                   NULL, OPENAGC_PSBC_STAGE_VERTEX,
+                                   &context, &pipeline->stages[compiled]);
+            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+        }
         if (result == VK_SUCCESS) {
-            pipeline->stage_count = 1;
+            context.enable_ngg = false;
             result = compile_stage(fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
-                                   &context, &pipeline->stages[1]);
+                                   NULL, OPENAGC_PSBC_STAGE_VERTEX,
+                                   &context, &pipeline->stages[compiled]);
+            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
         }
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
         }
-        pipeline->stage_count = 2;
         pPipelines[i] = (VkPipeline)pipeline;
     }
     return VK_SUCCESS;
