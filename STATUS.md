@@ -60,7 +60,7 @@ Deliberately unavailable before later milestones:
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
 
-## Milestone 3: OpenAGC command emission (in progress)
+## Milestone 3: OpenAGC command emission (compute/triangle qualified)
 
 Implemented and host-verified:
 
@@ -101,7 +101,7 @@ Implemented and host-verified:
   compute and triangle samples now cross-link as Prospero ELFs with the target
   C++ and math runtimes.
 
-Hardware gate still open:
+FW 5.50 compute/triangle hardware gate:
 
 - OpenAGC Prospero initialization now prepares GPU authorization before
   `/dev/gc` access, including the FW 5.50 detached-thread ucred case. The
@@ -120,8 +120,11 @@ Hardware gate still open:
 - Image/sampler descriptor tables, dynamic buffer offsets, vertex-buffer
   tables, push constants, clears, MRT, depth/stencil attachments, and general
   dynamic raster state are not emitted yet.
-- FW 5.50 execution and deterministic readback/display evidence have not yet
-  been collected for the Vulkan-owned submission path.
-- `examples/run_fw550_m3.sh` is the authoritative remaining gate: it runs both
+- On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
+  compute runs with `PASS 1024 deterministic values` and two consecutive
+  triangle runs with `PASS 18432 green pixels`. This qualifies Vulkan-owned
+  shader uploads, OpenAGC DCB emission/submission, descriptor binding, EOP
+  completion, and CPU readback for these two baseline paths.
+- `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs both
   Prospero samples twice through foreground websrv, rejects a missing PASS
   oracle, and retains per-run output without committing runtime logs.

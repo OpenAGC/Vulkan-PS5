@@ -73,6 +73,12 @@ oracles, and retains stdout under `examples/qualification-logs/`:
 PS5_HOST=10.0.1.41 examples/run_fw550_m3.sh
 ```
 
+The 2026-07-27 UTC FW `0x05500008` qualification passed all four runs: both
+compute runs verified 1,024 deterministic values and both triangle runs
+verified exactly 18,432 green pixels. See
+`analysis/fw550_compute_triangle_qualification_20260727.md` for the retained
+revision and artifact evidence.
+
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or
 log destination.

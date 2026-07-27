@@ -8,7 +8,7 @@
   archives and VS/PS/CS/GS/tessellation Vulkan pipeline creation cover fused-stage
   specialization constants, descriptors, push constants, vertex input, and
   render-pass context.
-- Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
+- Milestone 3 compute/triangle qualification is complete: host tests verify OpenAGC DCB emission for a
   compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
   uploads, bounded EOP-backed OpenAGC queue submission, and compute
   uniform/storage-buffer resource tables. The first compute dispatch per
@@ -17,8 +17,10 @@
   triangle readback applications now cross-link for Prospero, and the triangle
   path emits render-target transitions, frame state, and attachment binding.
   OpenAGC now owns the FW 5.50 GPU process-authorization setup used by ordinary
-  Vulkan applications.
-  Next, run both on FW 5.50 and collect deterministic readback evidence.
+  Vulkan applications. Two consecutive FW 5.50 runs of each sample passed:
+  compute verified all 1,024 values and triangle verified exactly 18,432 green
+  pixels per run. Continue Milestone 3 with indexed and textured rendering,
+  depth/stencil, MRT, and queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 
