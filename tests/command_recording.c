@@ -341,7 +341,7 @@ int main(int argc, char **argv)
             .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
         },
         {
-            .format = VK_FORMAT_D32_SFLOAT,
+            .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -412,7 +412,7 @@ int main(int argc, char **argv)
     const VkImageCreateInfo depth_image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT,
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
         .extent = {256, 256, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -448,9 +448,10 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = depth_image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT,
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
         .subresourceRange = {
-            VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1,
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+            0, 1, 0, 1,
         },
     };
     VkImageView depth_view;
@@ -529,8 +530,21 @@ int main(int argc, char **argv)
         .depthTestEnable = VK_TRUE,
         .depthWriteEnable = VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
-        .front = {.compareOp = VK_COMPARE_OP_ALWAYS},
-        .back = {.compareOp = VK_COMPARE_OP_ALWAYS},
+        .stencilTestEnable = VK_TRUE,
+        .front = {
+            .passOp = VK_STENCIL_OP_REPLACE,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .compareMask = 0xffu,
+            .writeMask = 0xffu,
+            .reference = 0x5au,
+        },
+        .back = {
+            .passOp = VK_STENCIL_OP_REPLACE,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .compareMask = 0xffu,
+            .writeMask = 0xffu,
+            .reference = 0x5au,
+        },
     };
     const VkGraphicsPipelineCreateInfo graphics_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -606,7 +620,7 @@ int main(int argc, char **argv)
     assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_color_target = false, found_depth_surface = false;
-    bool found_depth_control = false;
+    bool found_depth_control = false, found_stencil_control = false;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
     for (uint32_t i = 0; i < count; ++i) {
         if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
@@ -636,11 +650,15 @@ int main(int argc, char **argv)
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_DEPTH_CONTROL) {
-            found_depth_control |= dwords[i + 2] == 0x00700716u;
+            found_depth_control |= dwords[i + 2] == 0x00700797u;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_DB_STENCIL_CONTROL) {
+            found_stencil_control |= dwords[i + 2] == 0x00030030u;
         }
     }
     assert(found_dispatch && found_draw && found_frame && found_color_target &&
-           found_depth_surface && found_depth_control);
+           found_depth_surface && found_depth_control && found_stencil_control);
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);

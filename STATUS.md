@@ -104,7 +104,8 @@ Implemented and host-verified:
   Render passes retain an optional depth/stencil attachment, pipeline creation
   translates static compare/write/stencil state, and each draw restores the
   typed DB surface and control after shader binding. The command regression
-  verifies D32 transitions and exact surface/control PM4 emission.
+  uses a combined D32+S8 image and verifies transitions, separate plane
+  addresses, `LESS` depth writes, and front/back `REPLACE 0x5a` stencil PM4.
 - A standalone D32 sample draws overlapping near/far and independent far
   triangles, then validates green/red color decisions plus raw clear/near/far
   depth words. It host-builds, cross-links with the required target runtimes,
