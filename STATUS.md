@@ -79,6 +79,12 @@ Implemented and host-verified:
 - No-input VS/PS triangle bind/draw emits the fused Wave32 NGG state,
   interpolant state, base-vertex/start-instance user SGPRs, and
   `DRAW_INDEX_AUTO` through `agcGfx1013DrawBaselineIndexAuto`.
+- `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
+  retain ordinary Vulkan binding state, encode each pipeline binding into a
+  per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
+  SGPR, and emit OpenAGC's hardware-qualified `DRAW_INDEX_2` path for UINT16
+  and UINT32 indices. Signed vertex offsets and first-instance values use the
+  compiler metadata-selected SGPRs.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -117,8 +123,8 @@ FW 5.50 compute/triangle hardware gate:
 - Vulkan memory type 0 uses flexible write-back GPU memory; type 1 uses
   2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
   destruction delegate to OpenAGC and preserve the advertised heap semantics.
-- Image/sampler descriptor tables, dynamic buffer offsets, vertex-buffer
-  tables, push constants, clears, MRT, depth/stencil attachments, and general
+- Image/sampler descriptor tables, dynamic buffer offsets, push constants,
+  clears, MRT, depth/stencil attachments, and general
   dynamic raster state are not emitted yet.
 - On FW `0x05500008`, `examples/run_fw550_m3.sh` completed two consecutive
   compute runs with `PASS 1024 deterministic values` and two consecutive

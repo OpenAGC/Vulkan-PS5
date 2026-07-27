@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static uint32_t *read_spirv(const char *path, size_t *size)
 {
@@ -82,6 +83,62 @@ int main(int argc, char **argv)
     VkDeviceMemory output_memory;
     assert(vkAllocateMemory(device, &memory_info, NULL, &output_memory) == VK_SUCCESS);
     assert(vkBindBufferMemory(device, output_buffer, output_memory, 0) == VK_SUCCESS);
+    const VkBufferCreateInfo vertex_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 4u * 2u * sizeof(float),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer vertex_buffer;
+    assert(vkCreateBuffer(device, &vertex_buffer_info, NULL,
+                          &vertex_buffer) == VK_SUCCESS);
+    VkMemoryRequirements vertex_requirements;
+    vkGetBufferMemoryRequirements(device, vertex_buffer, &vertex_requirements);
+    VkMemoryAllocateInfo vertex_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = vertex_requirements.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory vertex_memory;
+    assert(vkAllocateMemory(device, &vertex_memory_info, NULL,
+                            &vertex_memory) == VK_SUCCESS);
+    assert(vkBindBufferMemory(device, vertex_buffer, vertex_memory, 0) == VK_SUCCESS);
+    float *vertices;
+    assert(vkMapMemory(device, vertex_memory, 0, VK_WHOLE_SIZE, 0,
+                       (void **)&vertices) == VK_SUCCESS);
+    const float vertex_data[8] = {
+        9.0f, 9.0f,
+        0.0f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,
+    };
+    memcpy(vertices, vertex_data, sizeof(vertex_data));
+    vkUnmapMemory(device, vertex_memory);
+
+    const VkBufferCreateInfo index_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 3u * sizeof(uint16_t),
+        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer index_buffer;
+    assert(vkCreateBuffer(device, &index_buffer_info, NULL,
+                          &index_buffer) == VK_SUCCESS);
+    VkMemoryRequirements index_requirements;
+    vkGetBufferMemoryRequirements(device, index_buffer, &index_requirements);
+    VkMemoryAllocateInfo index_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = index_requirements.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory index_memory;
+    assert(vkAllocateMemory(device, &index_memory_info, NULL,
+                            &index_memory) == VK_SUCCESS);
+    assert(vkBindBufferMemory(device, index_buffer, index_memory, 0) == VK_SUCCESS);
+    uint16_t *indices;
+    assert(vkMapMemory(device, index_memory, 0, VK_WHOLE_SIZE, 0,
+                       (void **)&indices) == VK_SUCCESS);
+    const uint16_t index_data[3] = {1, 2, 3};
+    memcpy(indices, index_data, sizeof(index_data));
+    vkUnmapMemory(device, index_memory);
     const VkDescriptorSetLayoutBinding output_binding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -250,8 +307,22 @@ int main(int argc, char **argv)
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_FRAGMENT_BIT, fragment, "main", NULL},
     };
+    const VkVertexInputBindingDescription vertex_binding = {
+        .binding = 0,
+        .stride = 2u * sizeof(float),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+    const VkVertexInputAttributeDescription vertex_attribute = {
+        .location = 0,
+        .binding = 0,
+        .format = VK_FORMAT_R32G32_SFLOAT,
+    };
     const VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &vertex_binding,
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = &vertex_attribute,
     };
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -344,7 +415,10 @@ int main(int argc, char **argv)
         .renderArea = {{0, 0}, {256, 256}},
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdDraw(command, 3, 1, 0, 0);
+    const VkDeviceSize vertex_offset = 0;
+    vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
+    vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
 
@@ -362,8 +436,11 @@ int main(int argc, char **argv)
             assert(((dwords[i - 3] >> 8) & 0xffu) == AGC_PM4_OP_SET_SH_REG);
             assert(dwords[i - 1] != OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(0));
             found_dispatch = true;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_AUTO) {
-            assert(i + 2 < count && dwords[i + 1] == 3);
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_2) {
+            assert(i + 5 < count && dwords[i + 4] == 3);
+            uint64_t index_address = vk_ps5_memory_gpu_address(index_memory, 0);
+            assert(dwords[i + 2] == ((uint32_t)index_address & ~1u));
+            assert(dwords[i + 3] == (uint32_t)(index_address >> 32));
             found_draw = true;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_CONTEXT_CONTROL) {
             found_frame = true;
@@ -418,6 +495,10 @@ int main(int argc, char **argv)
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     vkDestroyBuffer(device, output_buffer, NULL);
     vkFreeMemory(device, output_memory, NULL);
+    vkDestroyBuffer(device, index_buffer, NULL);
+    vkFreeMemory(device, index_memory, NULL);
+    vkDestroyBuffer(device, vertex_buffer, NULL);
+    vkFreeMemory(device, vertex_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
     return 0;

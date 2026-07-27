@@ -19,7 +19,9 @@
   OpenAGC now owns the FW 5.50 GPU process-authorization setup used by ordinary
   Vulkan applications. Two consecutive FW 5.50 runs of each sample passed:
   compute verified all 1,024 values and triangle verified exactly 18,432 green
-  pixels per run. Continue Milestone 3 with indexed and textured rendering,
+  pixels per run. Host command tests now cover GPU-visible vertex tables and
+  direct UINT16/UINT32 indexed draws. Continue Milestone 3 with indexed-draw
+  hardware readback and textured rendering,
   depth/stencil, MRT, and queries.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
