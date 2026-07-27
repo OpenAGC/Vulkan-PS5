@@ -113,7 +113,7 @@ static void test_allocation_failures(void) {
         .memoryTypeIndex = 0,
     };
     atomic_store(&state.attempts, 0);
-    atomic_store(&state.fail_at, 1);
+    atomic_store(&state.fail_at, 0);
     VkDeviceMemory memory = VK_NULL_HANDLE;
     assert(vkAllocateMemory(device, &info, NULL, &memory) == VK_ERROR_OUT_OF_HOST_MEMORY);
     assert(memory == VK_NULL_HANDLE);

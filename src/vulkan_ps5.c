@@ -52,8 +52,10 @@ struct VkPs5Device {
 };
 
 struct VkPs5Memory {
+    AgcGpuMemory gpu_memory;
     void *data;
     VkDeviceSize size;
+    uint32_t memory_type_index;
 };
 
 static AgcGfx1013Capabilities ps5_capabilities(void) {
@@ -224,6 +226,13 @@ done:
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory_handle) {
     VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
     return memory ? memory->size : 0;
+}
+
+uint64_t vk_ps5_memory_gpu_address(
+    VkDeviceMemory memory_handle, VkDeviceSize offset) {
+    VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
+    if (!memory || offset > memory->size) return 0;
+    return memory->gpu_memory.gpu_address + offset;
 }
 
 static VkResult enumerate_items(uint32_t total, size_t item_size, const void *items,
@@ -1148,14 +1157,21 @@ vkAllocateMemory(VkDevice device_handle, const VkMemoryAllocateInfo *pAllocateIn
     }
     size_t alignment = (size_t)
         capabilities.memory_profiles[pAllocateInfo->memoryTypeIndex].minimum_alignment;
-    memory->data = ps5_alloc(allocator, (size_t)pAllocateInfo->allocationSize, alignment,
-                             VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-    if (!memory->data) {
+    int32_t memory_result = pAllocateInfo->memoryTypeIndex == 0u ?
+        agcGpuMemoryAllocateFlexible(&memory->gpu_memory,
+            (size_t)pAllocateInfo->allocationSize,
+            alignment > 0x4000u ? 0x4000u : alignment,
+            "vulkan_ps5_memory") :
+        agcGpuMemoryAllocateDirectWriteCombined(&memory->gpu_memory,
+            (size_t)pAllocateInfo->allocationSize, alignment);
+    if (memory_result != AGC_OK) {
         ps5_free(allocator, memory);
         atomic_fetch_sub(&device->memory_allocation_count, 1);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
+    memory->data = memory->gpu_memory.cpu_address;
     memory->size = pAllocateInfo->allocationSize;
+    memory->memory_type_index = pAllocateInfo->memoryTypeIndex;
     *pMemory = (VkDeviceMemory)memory;
     return VK_SUCCESS;
 }
@@ -1167,7 +1183,10 @@ vkFreeMemory(VkDevice device_handle, VkDeviceMemory memory_handle,
     VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
     if (!device || !memory) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
-    ps5_free(allocator, memory->data);
+    if (memory->gpu_memory.type == AGC_GPU_MEMORY_TYPE_FLEXIBLE)
+        agcGpuMemoryFreeFlexible(&memory->gpu_memory);
+    else
+        agcGpuMemoryFreeDirect(&memory->gpu_memory);
     ps5_free(allocator, memory);
     atomic_fetch_sub(&device->memory_allocation_count, 1);
 }
@@ -1193,14 +1212,38 @@ VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkFlushMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
                           const VkMappedMemoryRange *pMemoryRanges) {
     (void)device;
-    return memoryRangeCount && !pMemoryRanges ? VK_ERROR_MEMORY_MAP_FAILED : VK_SUCCESS;
+    if (memoryRangeCount && !pMemoryRanges) return VK_ERROR_MEMORY_MAP_FAILED;
+    for (uint32_t i = 0; i < memoryRangeCount; ++i) {
+        VkPs5Memory *memory = (VkPs5Memory *)pMemoryRanges[i].memory;
+        if (!memory || pMemoryRanges[i].offset > memory->size)
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        VkDeviceSize size = pMemoryRanges[i].size == VK_WHOLE_SIZE ?
+            memory->size - pMemoryRanges[i].offset : pMemoryRanges[i].size;
+        if (!size || size > memory->size - pMemoryRanges[i].offset ||
+            agcGpuMemoryFlush(&memory->gpu_memory,
+                (size_t)pMemoryRanges[i].offset, (size_t)size) != AGC_OK)
+            return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkInvalidateMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
                                const VkMappedMemoryRange *pMemoryRanges) {
     (void)device;
-    return memoryRangeCount && !pMemoryRanges ? VK_ERROR_MEMORY_MAP_FAILED : VK_SUCCESS;
+    if (memoryRangeCount && !pMemoryRanges) return VK_ERROR_MEMORY_MAP_FAILED;
+    for (uint32_t i = 0; i < memoryRangeCount; ++i) {
+        VkPs5Memory *memory = (VkPs5Memory *)pMemoryRanges[i].memory;
+        if (!memory || pMemoryRanges[i].offset > memory->size)
+            return VK_ERROR_MEMORY_MAP_FAILED;
+        VkDeviceSize size = pMemoryRanges[i].size == VK_WHOLE_SIZE ?
+            memory->size - pMemoryRanges[i].offset : pMemoryRanges[i].size;
+        if (!size || size > memory->size - pMemoryRanges[i].offset ||
+            agcGpuMemoryInvalidate(&memory->gpu_memory,
+                (size_t)pMemoryRanges[i].offset, (size_t)size) != AGC_OK)
+            return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    return VK_SUCCESS;
 }
 
 typedef struct ProcEntry { const char *name; PFN_vkVoidFunction proc; } ProcEntry;

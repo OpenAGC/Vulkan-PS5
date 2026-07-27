@@ -22,6 +22,7 @@ void vk_ps5_device_free(VkDevice device, const VkAllocationCallbacks *allocator,
 VkResult vk_ps5_set_device_loader_data(VkDevice device, void *object);
 VkDevice vk_ps5_queue_device(VkQueue queue);
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory);
+uint64_t vk_ps5_memory_gpu_address(VkDeviceMemory memory, VkDeviceSize offset);
 VkResult vk_ps5_queue_submit_dcb(
     VkQueue queue, const uint32_t *commands, uint32_t dword_count);
 uint32_t vk_ps5_command_buffer_dwords(

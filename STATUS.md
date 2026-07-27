@@ -11,9 +11,9 @@ Implemented:
   devices, devices, queues, and command buffers.
 - Instance/device/queue lifecycle, device groups, Vulkan 1.1 input/output
   `pNext` chains, external-capability rejection, and protected/sparse rejection.
-- Host-backed memory, buffers, images, views, synchronization, command pools,
-  command buffers, queries, descriptors, render-pass/framebuffer objects, and
-  valid pipeline-cache serialization.
+- OpenAGC-backed GPU-visible memory, buffers and images, plus host-side views,
+  synchronization, command pools, command buffers, queries, descriptors,
+  render-pass/framebuffer objects, and valid pipeline-cache serialization.
 - Thread-safe allocation-count enforcement, custom-allocation failure cleanup,
   and concurrent lifecycle coverage.
 - Loader and Validation Layer tests. The VVL callback treats both warnings and
@@ -84,6 +84,9 @@ Hardware gate still open:
   submits through OpenAGC, and performs a bounded label wait before signaling
   Vulkan semaphores and fences. The host backend captures and verifies the
   submitted packet, including the appended release.
+- Vulkan memory type 0 uses flexible write-back GPU memory; type 1 uses
+  2 MiB-aligned write-combined direct memory. Mapping, flush, invalidate, and
+  destruction delegate to OpenAGC and preserve the advertised heap semantics.
 - Descriptor tables, vertex-buffer tables, push constants, render-target frame
   prologues, and render-pass attachment state are not emitted yet. Unsupported
   user-SGPR requirements fail command-buffer finalization instead of producing

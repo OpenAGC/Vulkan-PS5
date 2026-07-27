@@ -5,7 +5,7 @@ current implementation includes the host-testable Milestone 1 ICD, the
 Milestone 2 runtime-pipeline path, and the first Milestone 3 OpenAGC DCB
 recording path. It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
-device properties, two PS5 memory classes, host-backed resources and
+device properties, two OpenAGC-backed PS5 GPU memory classes and
 synchronization objects, loader dispatch, a static SDK library, and a
 loader-compatible shared library. Features which do not yet have verified
 OpenAGC hardware implementations are deliberately not advertised.
