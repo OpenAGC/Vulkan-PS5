@@ -3,5 +3,13 @@
 include(CMakeFindDependencyMacro)
 find_dependency(VulkanHeaders CONFIG)
 find_dependency(OpenAGC CONFIG)
+find_dependency(Threads)
+if(NOT TARGET OpenAgcPsbc::Compiler)
+  add_library(OpenAgcPsbc::Compiler STATIC IMPORTED)
+  set_target_properties(OpenAgcPsbc::Compiler PROPERTIES
+    IMPORTED_LOCATION "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/libopenagc_psbc.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+    INTERFACE_LINK_LIBRARIES "@OPENAGC_PSBC_RUNTIME_LIBRARIES@")
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/VulkanPS5Targets.cmake")
 check_required_components(VulkanPS5)

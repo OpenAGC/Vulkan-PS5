@@ -1,4 +1,5 @@
 #include "vulkan_ps5_internal.h"
+#include <openagc_psbc.h>
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -43,6 +44,27 @@ typedef struct VkPs5PipelineCache {
     size_t data_size;
     uint8_t data[];
 } VkPs5PipelineCache;
+
+typedef struct VkPs5DescriptorSetLayout {
+    uint32_t binding_count;
+    VkDescriptorSetLayoutBinding bindings[];
+} VkPs5DescriptorSetLayout;
+
+typedef struct VkPs5PipelineLayout {
+    uint32_t binding_count;
+    uint32_t push_constant_size;
+    OpenAgcPsbcDescriptorBinding bindings[];
+} VkPs5PipelineLayout;
+
+typedef struct VkPs5RenderPass {
+    uint32_t subpass_count;
+    uint32_t color_attachment_counts[];
+} VkPs5RenderPass;
+
+typedef struct VkPs5Pipeline {
+    uint32_t stage_count;
+    OpenAgcPsbcOutput stages[2];
+} VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
     VkQueryType type;
@@ -854,15 +876,156 @@ vkMergePipelineCaches(VkDevice device, VkPipelineCache dstCache,
     return srcCacheCount && !pSrcCaches ? VK_ERROR_INITIALIZATION_FAILED : VK_SUCCESS;
 }
 
+static bool psbc_descriptor_type(VkDescriptorType source,
+                                 OpenAgcPsbcDescriptorType *dest) {
+    switch (source) {
+    case VK_DESCRIPTOR_TYPE_SAMPLER:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_SAMPLER; return true;
+    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER; return true;
+    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE; return true;
+    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE; return true;
+    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_UNIFORM_TEXEL_BUFFER; return true;
+    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_STORAGE_TEXEL_BUFFER; return true;
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER; return true;
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER; return true;
+    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+        *dest = OPENAGC_PSBC_DESCRIPTOR_INPUT_ATTACHMENT; return true;
+    default:
+        return false;
+    }
+}
+
+static bool psbc_vertex_format(VkFormat source, OpenAgcPsbcVertexFormat *dest) {
+    switch (source) {
+    case VK_FORMAT_R32_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R32_SFLOAT; return true;
+    case VK_FORMAT_R32G32_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R32G32_SFLOAT; return true;
+    case VK_FORMAT_R32G32B32_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R32G32B32_SFLOAT; return true;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R32G32B32A32_SFLOAT; return true;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R8G8B8A8_UNORM; return true;
+    case VK_FORMAT_R16G16_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R16G16_SFLOAT; return true;
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+        *dest = OPENAGC_PSBC_VERTEX_FORMAT_R16G16B16A16_SFLOAT; return true;
+    default:
+        return false;
+    }
+}
+
+static VkResult psbc_result(OpenAgcPsbcResult result) {
+    switch (result) {
+    case OPENAGC_PSBC_SUCCESS: return VK_SUCCESS;
+    case OPENAGC_PSBC_ERROR_OUT_OF_MEMORY: return VK_ERROR_OUT_OF_HOST_MEMORY;
+    case OPENAGC_PSBC_ERROR_UNSUPPORTED_STAGE:
+    case OPENAGC_PSBC_ERROR_UNSUPPORTED_PIPELINE:
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    case OPENAGC_PSBC_ERROR_INVALID_SPIRV:
+    case OPENAGC_PSBC_ERROR_NIR:
+    case OPENAGC_PSBC_ERROR_ACO:
+        return VK_ERROR_INVALID_SHADER_NV;
+    default:
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+}
+
+static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
+                              OpenAgcPsbcStage psbc_stage,
+                              const OpenAgcPsbcPipelineContext *context,
+                              OpenAgcPsbcOutput *output) {
+    if (!stage || stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
+        !stage->module || !stage->pName)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    const VkPs5ShaderModule *module = (const VkPs5ShaderModule *)stage->module;
+    OpenAgcPsbcSpecializationConstant constants[
+        OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS];
+    uint32_t constant_count = 0;
+    const void *constant_data = NULL;
+    size_t constant_data_size = 0;
+    if (stage->pSpecializationInfo) {
+        const VkSpecializationInfo *specialization = stage->pSpecializationInfo;
+        if (specialization->mapEntryCount > OPENAGC_PSBC_MAX_SPECIALIZATION_CONSTANTS ||
+            (specialization->mapEntryCount && !specialization->pMapEntries) ||
+            (specialization->dataSize && !specialization->pData))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        constant_count = specialization->mapEntryCount;
+        constant_data = specialization->pData;
+        constant_data_size = specialization->dataSize;
+        for (uint32_t i = 0; i < constant_count; ++i) {
+            constants[i].constant_id = specialization->pMapEntries[i].constantID;
+            constants[i].offset = specialization->pMapEntries[i].offset;
+            constants[i].size = specialization->pMapEntries[i].size;
+        }
+    }
+    const OpenAgcPsbcCompileInfo info = {
+        .api_version = OPENAGC_PSBC_API_VERSION,
+        .stage = psbc_stage,
+        .spirv = module->code,
+        .spirv_size = module->code_size,
+        .entry_point = stage->pName,
+        .specialization_constants = constant_count ? constants : NULL,
+        .specialization_constant_count = constant_count,
+        .specialization_data = constant_data,
+        .specialization_data_size = constant_data_size,
+        .pipeline = context,
+        .optimize = true,
+    };
+    return psbc_result(openagcPsbcCompile(&info, output));
+}
+
+static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocator,
+                          VkPs5Pipeline *pipeline) {
+    if (!pipeline) return;
+    for (uint32_t i = 0; i < pipeline->stage_count; ++i)
+        openagcPsbcFreeOutput(&pipeline->stages[i]);
+    vk_ps5_device_free(device, allocator, pipeline);
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
                          uint32_t createInfoCount,
                          const VkComputePipelineCreateInfo *pCreateInfos,
                          const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
-    (void)device; (void)pipelineCache; (void)pCreateInfos; (void)pAllocator;
-    if (pPipelines)
-        for (uint32_t i = 0; i < createInfoCount; ++i) pPipelines[i] = VK_NULL_HANDLE;
-    return VK_ERROR_FEATURE_NOT_PRESENT;
+    (void)pipelineCache;
+    if (!device || !pPipelines || (createInfoCount && !pCreateInfos))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    for (uint32_t i = 0; i < createInfoCount; ++i) pPipelines[i] = VK_NULL_HANDLE;
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        const VkComputePipelineCreateInfo *create = &pCreateInfos[i];
+        if (create->sType != VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO ||
+            create->stage.stage != VK_SHADER_STAGE_COMPUTE_BIT || !create->layout)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        const VkPs5PipelineLayout *layout = (const VkPs5PipelineLayout *)create->layout;
+        const OpenAgcPsbcPipelineContext context = {
+            .descriptor_bindings = layout->bindings,
+            .descriptor_binding_count = layout->binding_count,
+            .push_constant_size = layout->push_constant_size,
+        };
+        VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
+                                                _Alignof(VkPs5Pipeline));
+        if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        VkResult result = compile_stage(&create->stage, OPENAGC_PSBC_STAGE_COMPUTE,
+                                        &context, &pipeline->stages[0]);
+        if (result != VK_SUCCESS) {
+            free_pipeline(device, pAllocator, pipeline);
+            return result;
+        }
+        pipeline->stage_count = 1;
+        pPipelines[i] = (VkPipeline)pipeline;
+    }
+    return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -870,16 +1033,86 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                           uint32_t createInfoCount,
                           const VkGraphicsPipelineCreateInfo *pCreateInfos,
                           const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines) {
-    (void)device; (void)pipelineCache; (void)pCreateInfos; (void)pAllocator;
-    if (pPipelines)
-        for (uint32_t i = 0; i < createInfoCount; ++i) pPipelines[i] = VK_NULL_HANDLE;
-    return VK_ERROR_FEATURE_NOT_PRESENT;
+    (void)pipelineCache;
+    if (!device || !pPipelines || (createInfoCount && !pCreateInfos))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    for (uint32_t i = 0; i < createInfoCount; ++i) pPipelines[i] = VK_NULL_HANDLE;
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        const VkGraphicsPipelineCreateInfo *create = &pCreateInfos[i];
+        if (create->sType != VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO ||
+            !create->layout || !create->renderPass || !create->pVertexInputState)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        const VkPipelineShaderStageCreateInfo *vertex = NULL, *fragment = NULL;
+        for (uint32_t j = 0; j < create->stageCount; ++j) {
+            if (create->pStages[j].stage == VK_SHADER_STAGE_VERTEX_BIT) vertex = &create->pStages[j];
+            else if (create->pStages[j].stage == VK_SHADER_STAGE_FRAGMENT_BIT) fragment = &create->pStages[j];
+            else return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        if (!vertex || !fragment) return VK_ERROR_FEATURE_NOT_PRESENT;
+
+        const VkPipelineVertexInputStateCreateInfo *vertex_input = create->pVertexInputState;
+        if (vertex_input->vertexAttributeDescriptionCount > OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        OpenAgcPsbcVertexAttribute attributes[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
+        for (uint32_t j = 0; j < vertex_input->vertexAttributeDescriptionCount; ++j) {
+            const VkVertexInputAttributeDescription *source =
+                &vertex_input->pVertexAttributeDescriptions[j];
+            uint32_t stride = 0;
+            bool found_binding = false;
+            for (uint32_t k = 0; k < vertex_input->vertexBindingDescriptionCount; ++k) {
+                const VkVertexInputBindingDescription *binding =
+                    &vertex_input->pVertexBindingDescriptions[k];
+                if (binding->binding == source->binding) {
+                    if (binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    stride = binding->stride;
+                    found_binding = true;
+                    break;
+                }
+            }
+            if (!found_binding || !psbc_vertex_format(source->format, &attributes[j].format))
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            attributes[j].location = source->location;
+            attributes[j].binding = source->binding;
+            attributes[j].offset = source->offset;
+            attributes[j].stride = stride;
+        }
+        const VkPs5PipelineLayout *layout = (const VkPs5PipelineLayout *)create->layout;
+        const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
+        if (create->subpass >= render_pass->subpass_count)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        const OpenAgcPsbcPipelineContext context = {
+            .vertex_attributes = attributes,
+            .vertex_attribute_count = vertex_input->vertexAttributeDescriptionCount,
+            .descriptor_bindings = layout->bindings,
+            .descriptor_binding_count = layout->binding_count,
+            .push_constant_size = layout->push_constant_size,
+            .color_attachment_count = render_pass->color_attachment_counts[create->subpass],
+        };
+        VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
+                                                _Alignof(VkPs5Pipeline));
+        if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        VkResult result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                        &context, &pipeline->stages[0]);
+        if (result == VK_SUCCESS) {
+            pipeline->stage_count = 1;
+            result = compile_stage(fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
+                                   &context, &pipeline->stages[1]);
+        }
+        if (result != VK_SUCCESS) {
+            free_pipeline(device, pAllocator, pipeline);
+            return result;
+        }
+        pipeline->stage_count = 2;
+        pPipelines[i] = (VkPipeline)pipeline;
+    }
+    return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkDestroyPipeline(VkDevice device, VkPipeline pipeline,
                   const VkAllocationCallbacks *pAllocator) {
-    if (pipeline) vk_ps5_device_free(device, pAllocator, (void *)pipeline);
+    free_pipeline(device, pAllocator, (VkPs5Pipeline *)pipeline);
 }
 
 #define DEFINE_SIMPLE_CREATE(name, InfoType, HandleType) \
@@ -900,19 +1133,106 @@ name(VkDevice device, HandleType object, const VkAllocationCallbacks *pAllocator
     if (object) vk_ps5_device_free(device, pAllocator, (void *)object); \
 }
 
-DEFINE_SIMPLE_CREATE(vkCreatePipelineLayout, VkPipelineLayoutCreateInfo, VkPipelineLayout)
-DEFINE_SIMPLE_DESTROY(vkDestroyPipelineLayout, VkPipelineLayout)
 DEFINE_SIMPLE_CREATE(vkCreateSampler, VkSamplerCreateInfo, VkSampler)
 DEFINE_SIMPLE_DESTROY(vkDestroySampler, VkSampler)
-DEFINE_SIMPLE_CREATE(vkCreateDescriptorSetLayout, VkDescriptorSetLayoutCreateInfo,
-                     VkDescriptorSetLayout)
-DEFINE_SIMPLE_DESTROY(vkDestroyDescriptorSetLayout, VkDescriptorSetLayout)
 DEFINE_SIMPLE_CREATE(vkCreateFramebuffer, VkFramebufferCreateInfo, VkFramebuffer)
 DEFINE_SIMPLE_DESTROY(vkDestroyFramebuffer, VkFramebuffer)
-DEFINE_SIMPLE_DESTROY(vkDestroyRenderPass, VkRenderPass)
 DEFINE_SIMPLE_CREATE(vkCreateDescriptorUpdateTemplate, VkDescriptorUpdateTemplateCreateInfo,
                      VkDescriptorUpdateTemplate)
 DEFINE_SIMPLE_DESTROY(vkDestroyDescriptorUpdateTemplate, VkDescriptorUpdateTemplate)
+
+VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
+vkCreateDescriptorSetLayout(VkDevice device,
+                            const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+                            const VkAllocationCallbacks *pAllocator,
+                            VkDescriptorSetLayout *pSetLayout) {
+    if (!device || !pCreateInfo || !pSetLayout ||
+        pCreateInfo->sType != VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO ||
+        (pCreateInfo->bindingCount && !pCreateInfo->pBindings))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    size_t size = sizeof(VkPs5DescriptorSetLayout) +
+        (size_t)pCreateInfo->bindingCount * sizeof(VkDescriptorSetLayoutBinding);
+    VkPs5DescriptorSetLayout *layout = alloc_object(device, pAllocator, size,
+                                                     _Alignof(VkPs5DescriptorSetLayout));
+    if (!layout) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    layout->binding_count = pCreateInfo->bindingCount;
+    if (layout->binding_count)
+        memcpy(layout->bindings, pCreateInfo->pBindings,
+               (size_t)layout->binding_count * sizeof(layout->bindings[0]));
+    *pSetLayout = (VkDescriptorSetLayout)layout;
+    return VK_SUCCESS;
+}
+
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkDestroyDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout setLayout,
+                             const VkAllocationCallbacks *pAllocator) {
+    if (setLayout) vk_ps5_device_free(device, pAllocator, (void *)setLayout);
+}
+
+VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
+vkCreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
+                       const VkAllocationCallbacks *pAllocator,
+                       VkPipelineLayout *pPipelineLayout) {
+    if (!device || !pCreateInfo || !pPipelineLayout ||
+        pCreateInfo->sType != VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO ||
+        pCreateInfo->setLayoutCount > OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
+        (pCreateInfo->setLayoutCount && !pCreateInfo->pSetLayouts) ||
+        (pCreateInfo->pushConstantRangeCount && !pCreateInfo->pPushConstantRanges))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t binding_count = 0;
+    for (uint32_t set = 0; set < pCreateInfo->setLayoutCount; ++set) {
+        const VkPs5DescriptorSetLayout *layout =
+            (const VkPs5DescriptorSetLayout *)pCreateInfo->pSetLayouts[set];
+        if (!layout || layout->binding_count >
+            OPENAGC_PSBC_MAX_DESCRIPTOR_BINDINGS - binding_count)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        binding_count += layout->binding_count;
+    }
+    size_t size = sizeof(VkPs5PipelineLayout) +
+        (size_t)binding_count * sizeof(OpenAgcPsbcDescriptorBinding);
+    VkPs5PipelineLayout *pipeline = alloc_object(device, pAllocator, size,
+                                                  _Alignof(VkPs5PipelineLayout));
+    if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    pipeline->binding_count = binding_count;
+    uint32_t index = 0;
+    for (uint32_t set = 0; set < pCreateInfo->setLayoutCount; ++set) {
+        const VkPs5DescriptorSetLayout *layout =
+            (const VkPs5DescriptorSetLayout *)pCreateInfo->pSetLayouts[set];
+        for (uint32_t j = 0; j < layout->binding_count; ++j, ++index) {
+            const VkDescriptorSetLayoutBinding *source = &layout->bindings[j];
+            OpenAgcPsbcDescriptorBinding *dest = &pipeline->bindings[index];
+            if (!source->descriptorCount ||
+                !psbc_descriptor_type(source->descriptorType, &dest->type)) {
+                vk_ps5_device_free(device, pAllocator, pipeline);
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+            dest->set = set;
+            dest->binding = source->binding;
+            dest->array_size = source->descriptorCount;
+        }
+    }
+    for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; ++i) {
+        const VkPushConstantRange *range = &pCreateInfo->pPushConstantRanges[i];
+        if (range->offset > UINT32_MAX - range->size) {
+            vk_ps5_device_free(device, pAllocator, pipeline);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        uint32_t end = range->offset + range->size;
+        if (end > pipeline->push_constant_size) pipeline->push_constant_size = end;
+    }
+    if (pipeline->push_constant_size > 256u) {
+        vk_ps5_device_free(device, pAllocator, pipeline);
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    *pPipelineLayout = (VkPipelineLayout)pipeline;
+    return VK_SUCCESS;
+}
+
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout pipelineLayout,
+                        const VkAllocationCallbacks *pAllocator) {
+    if (pipelineLayout) vk_ps5_device_free(device, pAllocator, (void *)pipelineLayout);
+}
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
@@ -929,11 +1249,24 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                 if (multiview->pViewMasks[i] != 0) return VK_ERROR_FEATURE_NOT_PRESENT;
         }
     }
-    VkPs5Opaque *object = alloc_object(device, pAllocator, sizeof(*object),
-                                        _Alignof(VkPs5Opaque));
-    if (!object) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    *pRenderPass = (VkRenderPass)object;
+    if (pCreateInfo->subpassCount && !pCreateInfo->pSubpasses)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    size_t size = sizeof(VkPs5RenderPass) +
+        (size_t)pCreateInfo->subpassCount * sizeof(uint32_t);
+    VkPs5RenderPass *render_pass = alloc_object(device, pAllocator, size,
+                                                 _Alignof(VkPs5RenderPass));
+    if (!render_pass) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    render_pass->subpass_count = pCreateInfo->subpassCount;
+    for (uint32_t i = 0; i < render_pass->subpass_count; ++i)
+        render_pass->color_attachment_counts[i] = pCreateInfo->pSubpasses[i].colorAttachmentCount;
+    *pRenderPass = (VkRenderPass)render_pass;
     return VK_SUCCESS;
+}
+
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkDestroyRenderPass(VkDevice device, VkRenderPass renderPass,
+                    const VkAllocationCallbacks *pAllocator) {
+    if (renderPass) vk_ps5_device_free(device, pAllocator, (void *)renderPass);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL

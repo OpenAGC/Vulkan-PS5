@@ -3,6 +3,14 @@ project(VulkanPS5 VERSION 0.1.0 LANGUAGES C)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
+find_package(Threads REQUIRED)
+if(PROSPERO)
+  set(OPENAGC_PSBC_RUNTIME_LIBRARIES "unwind;c++abi;c++;Threads::Threads;m")
+elseif(APPLE)
+  set(OPENAGC_PSBC_RUNTIME_LIBRARIES "c++;Threads::Threads;m")
+else()
+  set(OPENAGC_PSBC_RUNTIME_LIBRARIES "stdc++;Threads::Threads;m")
+endif()
 
 set(VULKAN_HEADERS_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../Vulkan-Headers" CACHE PATH
     "Path to a Vulkan-Headers checkout")
@@ -10,6 +18,14 @@ set(OPENAGC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../OpenAGC" CACHE PATH
     "Path to an OpenAGC checkout (required by Prospero consumers)")
 set(OPENAGC_PSBC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../openagc-psbc" CACHE PATH
     "Path to openagc-psbc")
+if(CMAKE_CROSSCOMPILING)
+  set(_OPENAGC_PSBC_DEFAULT_LIBRARY
+    "${OPENAGC_PSBC_ROOT}/libopenagc_psbc.prospero.a")
+else()
+  set(_OPENAGC_PSBC_DEFAULT_LIBRARY "${OPENAGC_PSBC_ROOT}/libopenagc_psbc.a")
+endif()
+set(OPENAGC_PSBC_LIBRARY "${_OPENAGC_PSBC_DEFAULT_LIBRARY}" CACHE FILEPATH
+    "Path to the openagc-psbc runtime compiler archive")
 option(VULKAN_PS5_BUILD_SHARED "Build the loader-compatible host ICD" ON)
 option(VULKAN_PS5_BUILD_TESTS "Build host lifecycle tests" ON)
 
@@ -32,6 +48,18 @@ if(NOT TARGET OpenAGC::openagc)
   add_subdirectory("${OPENAGC_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/openagc"
     EXCLUDE_FROM_ALL)
 endif()
+if(NOT EXISTS "${OPENAGC_PSBC_ROOT}/libopenagc_psbc/openagc_psbc.h")
+  message(FATAL_ERROR "openagc-psbc headers not found; set OPENAGC_PSBC_ROOT")
+endif()
+if(NOT EXISTS "${OPENAGC_PSBC_LIBRARY}")
+  message(FATAL_ERROR
+    "openagc-psbc library not found; build it or set OPENAGC_PSBC_LIBRARY")
+endif()
+add_library(OpenAgcPsbc::Compiler STATIC IMPORTED)
+set_target_properties(OpenAgcPsbc::Compiler PROPERTIES
+  IMPORTED_LOCATION "${OPENAGC_PSBC_LIBRARY}"
+  INTERFACE_INCLUDE_DIRECTORIES "${OPENAGC_PSBC_ROOT}/libopenagc_psbc"
+  INTERFACE_LINK_LIBRARIES "${OPENAGC_PSBC_RUNTIME_LIBRARIES}")
 
 add_library(vulkan_ps5_objects OBJECT
   src/vulkan_ps5.c
@@ -43,7 +71,8 @@ target_include_directories(vulkan_ps5_objects
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-target_link_libraries(vulkan_ps5_objects PRIVATE OpenAGC::openagc)
+target_link_libraries(vulkan_ps5_objects PRIVATE
+  OpenAGC::openagc OpenAgcPsbc::Compiler)
 
 add_library(vulkan_ps5_static STATIC $<TARGET_OBJECTS:vulkan_ps5_objects>)
 add_library(VulkanPS5::ICD ALIAS vulkan_ps5_static)
@@ -54,7 +83,8 @@ target_include_directories(vulkan_ps5_static
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-target_link_libraries(vulkan_ps5_static PUBLIC Vulkan::Headers OpenAGC::openagc)
+target_link_libraries(vulkan_ps5_static PUBLIC
+  Vulkan::Headers OpenAGC::openagc OpenAgcPsbc::Compiler)
 
 if(VULKAN_PS5_BUILD_SHARED)
   add_library(vulkan_ps5_icd SHARED $<TARGET_OBJECTS:vulkan_ps5_objects>)
@@ -64,7 +94,8 @@ if(VULKAN_PS5_BUILD_SHARED)
       "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
       "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
-  target_link_libraries(vulkan_ps5_icd PRIVATE OpenAGC::openagc)
+  target_link_libraries(vulkan_ps5_icd PRIVATE
+    OpenAGC::openagc OpenAgcPsbc::Compiler)
   set(VULKAN_PS5_ICD_LIBRARY_PATH
     "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}vulkan_ps5${CMAKE_SHARED_LIBRARY_SUFFIX}")
   configure_file(vulkan_ps5_icd.json.in vulkan_ps5_icd.json @ONLY)
@@ -72,7 +103,6 @@ endif()
 
 if(VULKAN_PS5_BUILD_TESTS)
   enable_testing()
-  find_package(Threads REQUIRED)
   add_executable(vulkan_ps5_lifecycle_test tests/lifecycle.c)
   target_link_libraries(vulkan_ps5_lifecycle_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.lifecycle COMMAND vulkan_ps5_lifecycle_test)
@@ -80,6 +110,24 @@ if(VULKAN_PS5_BUILD_TESTS)
   target_link_libraries(vulkan_ps5_robustness_test
     PRIVATE vulkan_ps5_static Threads::Threads)
   add_test(NAME vulkan_ps5.robustness COMMAND vulkan_ps5_robustness_test)
+  find_program(GLSLANG_VALIDATOR glslangValidator)
+  if(GLSLANG_VALIDATOR)
+    set(PIPELINE_SHADER_OUTPUTS)
+    foreach(shader pipeline.vert pipeline.frag pipeline.comp)
+      set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
+      add_custom_command(OUTPUT "${output}"
+        COMMAND "${GLSLANG_VALIDATOR}" -V
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests/${shader}" -o "${output}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/${shader}"
+        VERBATIM)
+      list(APPEND PIPELINE_SHADER_OUTPUTS "${output}")
+    endforeach()
+    add_executable(vulkan_ps5_pipeline_test
+      tests/pipeline.c ${PIPELINE_SHADER_OUTPUTS})
+    target_link_libraries(vulkan_ps5_pipeline_test PRIVATE vulkan_ps5_static)
+    add_test(NAME vulkan_ps5.pipeline COMMAND vulkan_ps5_pipeline_test
+      ${PIPELINE_SHADER_OUTPUTS})
+  endif()
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND AND VULKAN_PS5_BUILD_SHARED)
     add_test(NAME vulkan_ps5.entrypoints
@@ -120,6 +168,10 @@ if(VULKAN_PS5_BUILD_SHARED)
   install(TARGETS vulkan_ps5_icd LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES "${OPENAGC_PSBC_LIBRARY}"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR} RENAME libopenagc_psbc.a)
+install(FILES "${OPENAGC_PSBC_ROOT}/libopenagc_psbc/openagc_psbc.h"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 configure_package_config_file(cmake/VulkanPS5Config.cmake.in
   "${CMAKE_CURRENT_BINARY_DIR}/VulkanPS5Config.cmake"

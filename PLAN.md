@@ -1,5 +1,15 @@
 # General-Purpose Vulkan-PS5 ICD
 
+## Progress
+
+- Milestone 1 is complete: host lifecycle, dispatch, conservative gfx1013
+  capabilities, memory/resources, packaging, and loader/VVL tests.
+- Milestone 2 compiler-library foundation is complete: reusable host/Prospero
+  archives and VS/PS/CS Vulkan pipeline creation cover specialization constants,
+  descriptors, push constants, vertex input, and render-pass context.
+- Next: finish GS/tessellation Vulkan pipeline fusion, then begin Milestone 3
+  OpenAGC DCB state emission and FW 5.50 compute/triangle hardware samples.
+
 ## Summary
 
 - Build Vulkan-PS5 as a reusable Vulkan 1.1 implementation for arbitrary PS5 homebrew, libraries, engines, and ports.

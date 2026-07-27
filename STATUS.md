@@ -33,9 +33,27 @@ Capability evidence:
 - Remaining shader-stage limits use conservative gfx10/RADV bounds and do not
   enable the corresponding optional Vulkan features before shader qualification.
 
-Deliberately unavailable before Milestone 2 or later:
+## Milestone 2: runtime shader pipelines
 
-- Graphics and compute pipeline compilation (`VK_ERROR_FEATURE_NOT_PRESENT`).
+Implemented:
+
+- Runtime VS/PS/CS compilation through the reusable `libopenagc_psbc` C API.
+- Pipeline-context translation for vertex input, descriptor-set layouts,
+  push-constant ranges, fragment specialization constants, entry points, and
+  render-pass color attachment counts.
+- Owned AGC records and compiler metadata live with the Vulkan pipeline and are
+  released deterministically by `vkDestroyPipeline`.
+- A host end-to-end test compiles graphics and compute pipelines alongside the
+  loader/Validation Layer test suite. The compiler's direct tests also cover
+  concurrent API use.
+- Host and Prospero compiler archives are selectable with
+  `OPENAGC_PSBC_LIBRARY`; the installed SDK packages the selected archive and
+  header transitively.
+
+Deliberately unavailable before later milestones:
+
+- Geometry/tessellation Vulkan pipeline wiring and OpenAGC DCB shader-state
+  emission. The compiler API already supports their pipeline context.
 - Real OpenAGC GPU execution from the host command representation.
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
