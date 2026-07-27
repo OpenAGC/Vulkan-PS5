@@ -350,7 +350,7 @@ int main(int argc, char **argv)
 
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
-    assert(count > 20);
+    assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_color_target = false;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);

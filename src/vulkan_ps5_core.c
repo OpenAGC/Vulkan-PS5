@@ -159,6 +159,7 @@ typedef struct VkPs5CommandBuffer {
     VkCommandBufferLevel level;
     VkPs5CommandState state;
     VkResult record_error;
+    VkBool32 compute_defaults_emitted;
     VkPs5Pipeline *bound_compute;
     VkPs5Pipeline *bound_graphics;
     VkPs5DescriptorSet *compute_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
@@ -632,6 +633,7 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
     for (VkPs5CommandBuffer *command = pool->buffers; command; command = command->next) {
         command->state = VK_PS5_COMMAND_INITIAL;
         command->record_error = VK_SUCCESS;
+        command->compute_defaults_emitted = VK_FALSE;
         command->bound_compute = NULL;
         command->bound_graphics = NULL;
         command->active_render_pass = NULL;
@@ -720,6 +722,7 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
         return VK_ERROR_INITIALIZATION_FAILED;
     command->state = VK_PS5_COMMAND_RECORDING;
     command->record_error = VK_SUCCESS;
+    command->compute_defaults_emitted = VK_FALSE;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
     command->active_render_pass = NULL;
@@ -753,6 +756,7 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
         return VK_ERROR_INITIALIZATION_FAILED;
     command->state = VK_PS5_COMMAND_INITIAL;
     command->record_error = VK_SUCCESS;
+    command->compute_defaults_emitted = VK_FALSE;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
     command->active_render_pass = NULL;
@@ -2312,6 +2316,17 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
         return;
     }
     const VkPs5RuntimeShader *shader = &pipeline->runtime[0];
+    if (!command->compute_defaults_emitted) {
+        int32_t defaults_result = agcGfx1013ApplyComputeDefaultsV8(
+            &command->dcb, NULL);
+        if (defaults_result != AGC_OK) {
+            command->record_error =
+                defaults_result == AGC_ERROR_BUFFER_TOO_SMALL ?
+                VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        command->compute_defaults_emitted = VK_TRUE;
+    }
     const AgcGfx1013ComputeState state = {
         .record = &shader->record,
         .sh_registers = shader->binding.sh_registers,

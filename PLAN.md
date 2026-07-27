@@ -11,7 +11,9 @@
 - Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
   compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
   uploads, bounded EOP-backed OpenAGC queue submission, and compute
-  uniform/storage-buffer resource tables. Deterministic standalone compute and
+  uniform/storage-buffer resource tables. The first compute dispatch per
+  command buffer also emits the complete OpenAGC gfx1013 compute-default
+  register groups. Deterministic standalone compute and
   triangle readback applications now cross-link for Prospero, and the triangle
   path emits render-target transitions, frame state, and attachment binding.
   OpenAGC now owns the FW 5.50 GPU process-authorization setup used by ordinary

@@ -86,6 +86,10 @@ Implemented and host-verified:
   pipeline compilation, dispatch, fence wait, mapped-memory invalidation, and
   deterministic verification of 1,024 words. It cross-links as a Prospero ELF
   against `libunwind`, `libc++abi`, `libc++`, and `libm`.
+- The first dispatch in each command buffer emits OpenAGC's complete FW
+  5.50-qualified gfx1013 compute-default register groups before compiled
+  pipeline state. Omitting these defaults stalled the hardware stream before
+  its EOP completion write.
 - Render-pass and framebuffer objects now retain real attachment state. An
   inline single-color pass translates Vulkan layouts to OpenAGC transitions,
   emits `agcGfx1013BuildFramePrologue`, binds the image allocation as CB0, and

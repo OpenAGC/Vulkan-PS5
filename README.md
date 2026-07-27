@@ -41,7 +41,9 @@ Applications link `VulkanPS5::ICD` after installing the package, or link
 Configure with `-DVULKAN_PS5_BUILD_EXAMPLES=ON` to build
 `vulkan_ps5_compute_example`. It uses only Vulkan 1.1 APIs, dispatches a runtime
 compiled storage-buffer shader, waits on a fence, invalidates mapped memory,
-and verifies 1,024 deterministic values. A Prospero cross-build produces
+and verifies 1,024 deterministic values. Command recording emits OpenAGC's
+hardware-qualified gfx1013 compute-default groups once before the command
+buffer's first dispatch. A Prospero cross-build produces
 `vulkan_ps5_compute_example.elf`; FW 5.50 execution remains the qualification
 gate. Running it on the generic host backend intentionally reports a mismatch
 because that backend records submissions but does not execute shaders.
