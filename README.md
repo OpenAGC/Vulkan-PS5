@@ -1,8 +1,9 @@
 # Vulkan-PS5
 
 Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
-current implementation includes the host-testable Milestone 1 ICD and the
-first Milestone 2 runtime-pipeline path. It exposes the
+current implementation includes the host-testable Milestone 1 ICD, the
+Milestone 2 runtime-pipeline path, and the first Milestone 3 OpenAGC DCB
+recording path. It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two PS5 memory classes, host-backed resources and
 synchronization objects, loader dispatch, a static SDK library, and a
@@ -40,14 +41,17 @@ and Validation Layers are installed. It exercises instance/device lifecycle,
 property chains, memory, buffers, images, views, render-pass/framebuffer objects,
 command buffers, submission, and fences while failing on any VVL warning/error.
 
-Runtime shader compilation is now integrated; real PS5 OpenAGC command
-submission and VideoOut WSI remain separate milestones. Graphics VS/PS and
+Runtime shader compilation and host-verifiable OpenAGC DCB recording are now
+integrated; real PS5 OpenAGC command submission and VideoOut WSI remain separate
+milestones. Graphics VS/PS and
 compute CS pipeline creation
 compile SPIR-V at runtime with complete vertex, descriptor/pipeline-layout,
 push-constant, specialization-constant, entry-point, and render-pass color
 context. Geometry and tessellation stage fusion are also wired through pipeline
 creation, including independent specialization data for fused stages, but their
 Vulkan feature bits remain disabled until the resulting pipelines are qualified
-on hardware. Compiled-state emission into OpenAGC DCBs and optional sparse,
-protected, external-handle, multiview, YCbCr, and timeline features remain
-unavailable.
+on hardware. Compute dispatch and a no-input triangle draw now emit real
+gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. GPU-visible
+allocation, descriptor/vertex tables, render-target frame state, EOP-backed
+queue submission, and optional sparse, protected, external-handle, multiview,
+YCbCr, and timeline features remain unavailable.

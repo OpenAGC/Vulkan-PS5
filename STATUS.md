@@ -56,7 +56,33 @@ Implemented:
 Deliberately unavailable before later milestones:
 
 - Geometry and tessellation feature advertisement before repeated hardware
-  qualification, and OpenAGC DCB shader-state emission.
-- Real OpenAGC GPU execution from the host command representation.
+  qualification.
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
+
+## Milestone 3: OpenAGC command emission (in progress)
+
+Implemented and host-verified:
+
+- Pipeline creation relocates compiler offset-based records through OpenAGC,
+  uploads executable code to 256-byte-aligned storage, and fuses NGG
+  front/back records with `sceAgcFuseShaderHalves_0200`.
+- Command buffers own resettable 64 KiB OpenAGC DCBs. Compute bind/dispatch
+  emits gfx1013 compute state and `DISPATCH_DIRECT` with the compiler's resolved
+  post-specialization local size.
+- No-input VS/PS triangle bind/draw emits the fused Wave32 NGG state,
+  interpolant state, base-vertex/start-instance user SGPRs, and
+  `DRAW_INDEX_AUTO` through `agcGfx1013DrawBaselineIndexAuto`.
+- The command-recording regression compiles ordinary SPIR-V compute and
+  triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
+
+Hardware gate still open:
+
+- Prospero command storage and shader executable uploads still use the ICD's
+  host allocator. They must move to OpenAGC flexible GPU-visible allocations,
+  and `vkQueueSubmit` must submit the DCB and complete an EOP label before these
+  paths can execute on FW 5.50.
+- Descriptor tables, vertex-buffer tables, push constants, render-target frame
+  prologues, and render-pass attachment state are not emitted yet. Unsupported
+  user-SGPR requirements fail command-buffer finalization instead of producing
+  incomplete packets.

@@ -8,9 +8,11 @@
   archives and VS/PS/CS/GS/tessellation Vulkan pipeline creation cover fused-stage
   specialization constants, descriptors, push constants, vertex input, and
   render-pass context.
-- Next: begin Milestone 3 OpenAGC DCB state emission and FW 5.50
-  compute/triangle hardware samples. Geometry/tessellation feature bits remain
-  disabled until that path is repeatedly hardware-qualified.
+- Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
+  compiled compute dispatch and fused-NGG triangle draw. Next, move DCB/code
+  storage to OpenAGC GPU-visible allocations and submit it with EOP completion
+  for FW 5.50 compute/triangle qualification. Geometry/tessellation feature bits
+  remain disabled until that path is repeatedly hardware-qualified.
 
 ## Summary
 

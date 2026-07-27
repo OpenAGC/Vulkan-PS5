@@ -1,5 +1,8 @@
 #include "vulkan_ps5_internal.h"
 #include <openagc_psbc.h>
+#include <agc_cb.h>
+#include <agc_graphics.h>
+#include <agc_shader.h>
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -61,9 +64,25 @@ typedef struct VkPs5RenderPass {
     uint32_t color_attachment_counts[];
 } VkPs5RenderPass;
 
+typedef struct VkPs5RuntimeShader {
+    AgcShaderRecord record;
+    AgcShaderRecord front_record;
+    AgcShaderRecord fused_record;
+    AgcRegisterValue fused_registers[64];
+    void *code;
+    size_t code_size;
+    void *front_code;
+    size_t front_code_size;
+    AgcGfx1013ShaderBinding binding;
+} VkPs5RuntimeShader;
+
 typedef struct VkPs5Pipeline {
     uint32_t stage_count;
+    VkPipelineBindPoint bind_point;
+    uint32_t primitive_type;
+    OpenAgcPsbcStage stage_types[3];
     OpenAgcPsbcOutput stages[3];
+    VkPs5RuntimeShader runtime[3];
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -104,8 +123,24 @@ typedef struct VkPs5CommandBuffer {
     VkCommandPool pool;
     VkCommandBufferLevel level;
     VkPs5CommandState state;
+    VkResult record_error;
+    VkPs5Pipeline *bound_compute;
+    VkPs5Pipeline *bound_graphics;
+    uint32_t *dcb_storage;
+    size_t dcb_size;
+    SceAgcCb dcb;
     struct VkPs5CommandBuffer *next;
 } VkPs5CommandBuffer;
+
+#define VK_PS5_DCB_SIZE (64u * 1024u)
+
+uint32_t vk_ps5_command_buffer_dwords(
+    VkCommandBuffer command_buffer, const uint32_t **commands) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
+    if (!command || !commands) return 0;
+    *commands = command->dcb_storage;
+    return agcCbUsedDwords(&command->dcb);
+}
 
 static void *alloc_object(VkDevice device, const VkAllocationCallbacks *allocator,
                           size_t size, size_t alignment) {
@@ -477,6 +512,7 @@ vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
     while (pool->buffers) {
         VkPs5CommandBuffer *command = pool->buffers;
         pool->buffers = command->next;
+        vk_ps5_device_free(device, NULL, command->dcb_storage);
         vk_ps5_device_free(device, NULL, command);
     }
     vk_ps5_device_free(device, pAllocator, pool);
@@ -488,8 +524,13 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
     (void)device; (void)flags;
     VkPs5CommandPool *pool = (VkPs5CommandPool *)commandPool;
     if (!pool) return VK_ERROR_INITIALIZATION_FAILED;
-    for (VkPs5CommandBuffer *command = pool->buffers; command; command = command->next)
+    for (VkPs5CommandBuffer *command = pool->buffers; command; command = command->next) {
         command->state = VK_PS5_COMMAND_INITIAL;
+        command->record_error = VK_SUCCESS;
+        command->bound_compute = NULL;
+        command->bound_graphics = NULL;
+        agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
+    }
     return VK_SUCCESS;
 }
 
@@ -520,8 +561,19 @@ vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *pAl
         command->pool = pAllocateInfo->commandPool;
         command->level = pAllocateInfo->level;
         command->state = VK_PS5_COMMAND_INITIAL;
+        command->dcb_size = VK_PS5_DCB_SIZE;
+        command->dcb_storage = vk_ps5_device_alloc(
+            device, NULL, command->dcb_size, 256,
+            VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if (!command->dcb_storage) {
+            vk_ps5_device_free(device, NULL, command);
+            vkFreeCommandBuffers(device, pAllocateInfo->commandPool, i, pCommandBuffers);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        agcCbInit(&command->dcb, command->dcb_storage, command->dcb_size);
         VkResult result = vk_ps5_set_device_loader_data(device, command);
         if (result != VK_SUCCESS) {
+            vk_ps5_device_free(device, NULL, command->dcb_storage);
             vk_ps5_device_free(device, NULL, command);
             vkFreeCommandBuffers(device, pAllocateInfo->commandPool, i, pCommandBuffers);
             return result;
@@ -545,6 +597,7 @@ vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
         while (*link && *link != command) link = &(*link)->next;
         if (*link) {
             *link = command->next;
+            vk_ps5_device_free(device, NULL, command->dcb_storage);
             vk_ps5_device_free(device, NULL, command);
         }
     }
@@ -559,6 +612,10 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
         command->state == VK_PS5_COMMAND_RECORDING || command->state == VK_PS5_COMMAND_PENDING)
         return VK_ERROR_INITIALIZATION_FAILED;
     command->state = VK_PS5_COMMAND_RECORDING;
+    command->record_error = VK_SUCCESS;
+    command->bound_compute = NULL;
+    command->bound_graphics = NULL;
+    agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
 
@@ -567,6 +624,10 @@ vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)commandBuffer;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING)
         return VK_ERROR_INITIALIZATION_FAILED;
+    if (command->record_error != VK_SUCCESS) {
+        command->state = VK_PS5_COMMAND_INITIAL;
+        return command->record_error;
+    }
     command->state = VK_PS5_COMMAND_EXECUTABLE;
     return VK_SUCCESS;
 }
@@ -578,6 +639,10 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     if (!command || command->state == VK_PS5_COMMAND_PENDING)
         return VK_ERROR_INITIALIZATION_FAILED;
     command->state = VK_PS5_COMMAND_INITIAL;
+    command->record_error = VK_SUCCESS;
+    command->bound_compute = NULL;
+    command->bound_graphics = NULL;
+    agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
 
@@ -1020,9 +1085,82 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
 static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocator,
                           VkPs5Pipeline *pipeline) {
     if (!pipeline) return;
-    for (uint32_t i = 0; i < pipeline->stage_count; ++i)
+    for (uint32_t i = 0; i < pipeline->stage_count; ++i) {
+        vk_ps5_device_free(device, allocator, pipeline->runtime[i].code);
+        vk_ps5_device_free(device, allocator, pipeline->runtime[i].front_code);
         openagcPsbcFreeOutput(&pipeline->stages[i]);
+    }
     vk_ps5_device_free(device, allocator, pipeline);
+}
+
+static VkResult finalize_runtime_shader(
+    VkDevice device, const VkAllocationCallbacks *allocator,
+    OpenAgcPsbcOutput *output, VkPs5RuntimeShader *runtime) {
+    if (agcShaderRecordRelocateBinary(&runtime->record,
+            output->shader.data, output->shader.size) != AGC_OK ||
+        output->metadata.code_offset > output->shader.size ||
+        output->metadata.code_size >
+            output->shader.size - output->metadata.code_offset)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    runtime->code_size = output->metadata.code_size;
+    runtime->code = vk_ps5_device_alloc(
+        device, allocator, runtime->code_size, 256,
+        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+    if (!runtime->code) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    memcpy(runtime->code,
+        (const uint8_t *)output->shader.data + output->metadata.code_offset,
+        runtime->code_size);
+    runtime->binding = (AgcGfx1013ShaderBinding){
+        .record = &runtime->record,
+        .sh_registers = (const AgcRegisterValue *)(uintptr_t)
+            runtime->record.sh_registers,
+        .num_sh_registers = runtime->record.num_sh_registers,
+        .cx_registers = (const AgcRegisterValue *)(uintptr_t)
+            runtime->record.cx_registers,
+        .num_cx_registers = runtime->record.num_cx_registers,
+        .code_address = (uint64_t)(uintptr_t)runtime->code,
+    };
+    if (output->front_shader.data) {
+        if (agcShaderRecordRelocateBinary(&runtime->front_record,
+                output->front_shader.data, output->front_shader.size) != AGC_OK ||
+            output->metadata.front_code_offset > output->front_shader.size ||
+            output->metadata.front_code_size >
+                output->front_shader.size - output->metadata.front_code_offset ||
+            (uint32_t)runtime->record.num_sh_registers +
+                runtime->front_record.num_sh_registers > 64u)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        runtime->front_code_size = output->metadata.front_code_size;
+        runtime->front_code = vk_ps5_device_alloc(
+            device, allocator, runtime->front_code_size, 256,
+            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+        if (!runtime->front_code) return VK_ERROR_OUT_OF_HOST_MEMORY;
+        memcpy(runtime->front_code,
+            (const uint8_t *)output->front_shader.data +
+                output->metadata.front_code_offset,
+            runtime->front_code_size);
+        runtime->record.code = (uint64_t)(uintptr_t)runtime->code;
+        runtime->front_record.code = (uint64_t)(uintptr_t)runtime->front_code;
+        if (sceAgcFuseShaderHalves_0200(
+                &runtime->fused_record, &runtime->front_record,
+                &runtime->record, runtime->fused_registers) != AGC_OK)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        runtime->binding.record = &runtime->fused_record;
+        runtime->binding.sh_registers = runtime->fused_registers;
+        runtime->binding.num_sh_registers =
+            runtime->fused_record.num_sh_registers;
+    }
+    return VK_SUCCESS;
+}
+
+static VkResult finalize_pipeline(
+    VkDevice device, const VkAllocationCallbacks *allocator,
+    VkPs5Pipeline *pipeline) {
+    for (uint32_t i = 0; i < pipeline->stage_count; ++i) {
+        VkResult result = finalize_runtime_shader(
+            device, allocator, &pipeline->stages[i], &pipeline->runtime[i]);
+        if (result != VK_SUCCESS) return result;
+    }
+    return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -1056,6 +1194,13 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
             return result;
         }
         pipeline->stage_count = 1;
+        pipeline->bind_point = VK_PIPELINE_BIND_POINT_COMPUTE;
+        pipeline->stage_types[0] = OPENAGC_PSBC_STAGE_COMPUTE;
+        result = finalize_pipeline(device, pAllocator, pipeline);
+        if (result != VK_SUCCESS) {
+            free_pipeline(device, pAllocator, pipeline);
+            return result;
+        }
         pPipelines[i] = (VkPipeline)pipeline;
     }
     return VK_SUCCESS;
@@ -1151,7 +1296,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             result = compile_stage(tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
-            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            if (result == VK_SUCCESS) {
+                pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_TESS_CONTROL;
+                pipeline->stage_count = ++compiled;
+            }
             if (result == VK_SUCCESS) {
                 context.enable_ngg = true;
                 context.wave32 = true;
@@ -1162,7 +1310,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     geometry ? tess_evaluation : NULL,
                     OPENAGC_PSBC_STAGE_TESS_EVALUATION,
                     &context, &pipeline->stages[compiled]);
-                if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+                if (result == VK_SUCCESS) {
+                    pipeline->stage_types[compiled] = geometry ?
+                        OPENAGC_PSBC_STAGE_GEOMETRY :
+                        OPENAGC_PSBC_STAGE_TESS_EVALUATION;
+                    pipeline->stage_count = ++compiled;
+                }
             }
         } else if (geometry) {
             context.enable_ngg = true;
@@ -1170,20 +1323,38 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             result = compile_stage(geometry, OPENAGC_PSBC_STAGE_GEOMETRY,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
-            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            if (result == VK_SUCCESS) {
+                pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_GEOMETRY;
+                pipeline->stage_count = ++compiled;
+            }
         } else {
+            context.enable_ngg = true;
+            context.wave32 = true;
             result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
-            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            if (result == VK_SUCCESS) {
+                pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_VERTEX;
+                pipeline->stage_count = ++compiled;
+            }
         }
         if (result == VK_SUCCESS) {
             context.enable_ngg = false;
             result = compile_stage(fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
-            if (result == VK_SUCCESS) pipeline->stage_count = ++compiled;
+            if (result == VK_SUCCESS) {
+                pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_FRAGMENT;
+                pipeline->stage_count = ++compiled;
+            }
         }
+        if (result != VK_SUCCESS) {
+            free_pipeline(device, pAllocator, pipeline);
+            return result;
+        }
+        pipeline->bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        pipeline->primitive_type = 4u;
+        result = finalize_pipeline(device, pAllocator, pipeline);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
@@ -1563,7 +1734,20 @@ vkCmdExecuteCommands(VkCommandBuffer c, uint32_t n, const VkCommandBuffer *p) {
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
-    IGNORE(c); IGNORE(b); IGNORE(p);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5Pipeline *pipeline = (VkPs5Pipeline *)p;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        !pipeline || pipeline->bind_point != b) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (b == VK_PIPELINE_BIND_POINT_COMPUTE)
+        command->bound_compute = pipeline;
+    else if (b == VK_PIPELINE_BIND_POINT_GRAPHICS)
+        command->bound_graphics = pipeline;
+    else
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindDescriptorSets(VkCommandBuffer c, VkPipelineBindPoint b, VkPipelineLayout l,
@@ -1579,7 +1763,39 @@ vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
-    IGNORE(c); IGNORE(x); IGNORE(y); IGNORE(z);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    VkPs5Pipeline *pipeline = command->bound_compute;
+    if (!pipeline || !x || !y || !z ||
+        pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_COMPUTE) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
+    if (!metadata->local_size_x || !metadata->local_size_y ||
+        !metadata->local_size_z || metadata->user_sgpr_count) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    const VkPs5RuntimeShader *shader = &pipeline->runtime[0];
+    const AgcGfx1013ComputeState state = {
+        .record = &shader->record,
+        .sh_registers = shader->binding.sh_registers,
+        .num_sh_registers = shader->binding.num_sh_registers,
+        .code_address = shader->binding.code_address,
+        .local_size_x = metadata->local_size_x,
+        .local_size_y = metadata->local_size_y,
+        .local_size_z = metadata->local_size_z,
+        .group_count_x = x,
+        .group_count_y = y,
+        .group_count_z = z,
+    };
+    int32_t result = agcGfx1013DispatchCompute(&command->dcb, &state);
+    if (result != AGC_OK)
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatchIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o) {
@@ -1648,7 +1864,63 @@ vkCmdBindVertexBuffers(VkCommandBuffer c, uint32_t f, uint32_t n,
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
-    IGNORE(c); IGNORE(v); IGNORE(i); IGNORE(fv); IGNORE(fi);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    VkPs5Pipeline *pipeline = command->bound_graphics;
+    if (!pipeline || pipeline->stage_count != 2 || !v || !i ||
+        pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_VERTEX ||
+        pipeline->stage_types[1] != OPENAGC_PSBC_STAGE_FRAGMENT) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    AgcRegisterValue user_data[2];
+    uint32_t user_data_count = 0;
+    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
+    for (uint32_t n = 0; n < metadata->user_sgpr_count; ++n) {
+        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
+        uint32_t value;
+        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
+            value = fv;
+        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
+            value = fi;
+        else {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        if (sgpr->dword_count != 1 || user_data_count == 2) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        user_data[user_data_count++] = (AgcRegisterValue){
+            sgpr->register_offset, value,
+        };
+    }
+    if (pipeline->stages[1].metadata.user_sgpr_count) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
+    const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
+    const AgcGfx1013BaselineDrawState draw = {
+        .shaders = {
+            .primitive = primitive->binding,
+            .pixel = pixel->binding,
+            .primitive_back_code_address = primitive->binding.code_address,
+            .primitive_type = pipeline->primitive_type,
+        },
+        .post_bind_sh_registers = user_data,
+        .num_post_bind_sh_registers = user_data_count,
+        .index_type = kAgcIndexSize16,
+        .instance_count = i,
+        .vertex_count = v,
+        .draw_modifier = 0x40000000u,
+    };
+    int32_t result = agcGfx1013DrawBaselineIndexAuto(&command->dcb, &draw);
+    if (result != AGC_OK)
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndexed(VkCommandBuffer c, uint32_t i, uint32_t n, uint32_t f,

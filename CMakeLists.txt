@@ -128,6 +128,22 @@ if(VULKAN_PS5_BUILD_TESTS)
     target_link_libraries(vulkan_ps5_pipeline_test PRIVATE vulkan_ps5_static)
     add_test(NAME vulkan_ps5.pipeline COMMAND vulkan_ps5_pipeline_test
       ${PIPELINE_SHADER_OUTPUTS})
+    set(COMMAND_SHADER_OUTPUTS)
+    foreach(shader command.comp command.vert command.frag)
+      set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
+      add_custom_command(OUTPUT "${output}"
+        COMMAND "${GLSLANG_VALIDATOR}" -V
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests/${shader}" -o "${output}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/${shader}"
+        VERBATIM)
+      list(APPEND COMMAND_SHADER_OUTPUTS "${output}")
+    endforeach()
+    add_executable(vulkan_ps5_command_recording_test tests/command_recording.c)
+    target_sources(vulkan_ps5_command_recording_test PRIVATE ${COMMAND_SHADER_OUTPUTS})
+    target_link_libraries(vulkan_ps5_command_recording_test PRIVATE vulkan_ps5_static)
+    add_test(NAME vulkan_ps5.command_recording
+      COMMAND vulkan_ps5_command_recording_test
+        ${COMMAND_SHADER_OUTPUTS})
   endif()
   find_package(Python3 COMPONENTS Interpreter QUIET)
   if(Python3_Interpreter_FOUND AND VULKAN_PS5_BUILD_SHARED)
