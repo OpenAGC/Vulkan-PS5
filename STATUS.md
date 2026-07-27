@@ -81,6 +81,11 @@ Implemented and host-verified:
   `DRAW_INDEX_AUTO` through `agcGfx1013DrawBaselineIndexAuto`.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
+- A standalone, application-neutral compute sample now exercises the public
+  Vulkan path end to end: storage-buffer allocation and descriptors, runtime
+  pipeline compilation, dispatch, fence wait, mapped-memory invalidation, and
+  deterministic verification of 1,024 words. It cross-links as a Prospero ELF
+  against `libunwind`, `libc++abi`, `libc++`, and `libm`.
 
 Hardware gate still open:
 

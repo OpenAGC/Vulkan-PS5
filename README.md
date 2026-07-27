@@ -27,14 +27,24 @@ ctest --test-dir build --output-on-failure
 ```
 
 Prospero builds select `libopenagc_psbc.prospero.a` automatically when cross
-compiling. Final PS5 links require libunwind, libc++abi, and libc++; the
-`ps5-payload-libcxx` recipe in
-`/Users/bizkut/Downloads/PS5/homebrew/pacbrew-repo/libcxx` installs those target
-headers and archives into the payload SDK. Merely having the recipe checkout is
-not sufficient—the package must be built and installed into the SDK prefix.
+compiling. Final PS5 links require `libunwind`, `libc++abi`, `libc++`, and
+`libm`. The `ps5-payload-libcxx` and `ps5-payload-openlibm` recipes in
+`/Users/bizkut/Downloads/PS5/homebrew/pacbrew-repo` install those target headers
+and archives into the payload SDK. Merely having the recipe checkout is not
+sufficient—the packages must be built and installed into the SDK prefix.
 
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
+
+## Standalone compute sample
+
+Configure with `-DVULKAN_PS5_BUILD_EXAMPLES=ON` to build
+`vulkan_ps5_compute_example`. It uses only Vulkan 1.1 APIs, dispatches a runtime
+compiled storage-buffer shader, waits on a fence, invalidates mapped memory,
+and verifies 1,024 deterministic values. A Prospero cross-build produces
+`vulkan_ps5_compute_example.elf`; FW 5.50 execution remains the qualification
+gate. Running it on the generic host backend intentionally reports a mismatch
+because that backend records submissions but does not execute shaders.
 
 The Khronos validation test is enabled automatically when the host Vulkan loader
 and Validation Layers are installed. It exercises instance/device lifecycle,

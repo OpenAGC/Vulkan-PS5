@@ -11,9 +11,10 @@
 - Milestone 3 is in progress: host tests verify OpenAGC DCB emission for a
   compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
   uploads, bounded EOP-backed OpenAGC queue submission, and compute
-  uniform/storage-buffer resource tables. Next, add deterministic standalone
-  compute readback, emit render-target state, then collect FW 5.50 compute
-  readback and triangle display evidence. Geometry/tessellation feature bits
+  uniform/storage-buffer resource tables. A deterministic standalone compute
+  readback application now cross-links for Prospero. Next, run it on FW 5.50,
+  emit render-target state, then collect triangle display evidence.
+  Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 
 ## Summary

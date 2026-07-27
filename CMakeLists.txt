@@ -28,6 +28,7 @@ set(OPENAGC_PSBC_LIBRARY "${_OPENAGC_PSBC_DEFAULT_LIBRARY}" CACHE FILEPATH
     "Path to the openagc-psbc runtime compiler archive")
 option(VULKAN_PS5_BUILD_SHARED "Build the loader-compatible host ICD" ON)
 option(VULKAN_PS5_BUILD_TESTS "Build host lifecycle tests" ON)
+option(VULKAN_PS5_BUILD_EXAMPLES "Build standalone Vulkan examples" ON)
 
 if(NOT EXISTS "${VULKAN_HEADERS_ROOT}/include/vulkan/vulkan_core.h")
   message(FATAL_ERROR "Vulkan-Headers not found; set VULKAN_HEADERS_ROOT")
@@ -176,6 +177,30 @@ if(VULKAN_PS5_BUILD_TESTS)
         "VK_ICD_FILENAMES=${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_icd.json;VK_LAYER_PATH=${VULKAN_VALIDATION_LAYER_MANIFEST_DIR};DYLD_LIBRARY_PATH=${VULKAN_VALIDATION_LAYER_LIBRARY_DIR}")
     endif()
   endif()
+endif()
+
+if(VULKAN_PS5_BUILD_EXAMPLES)
+  find_program(VULKAN_PS5_GLSLANG_VALIDATOR glslangValidator REQUIRED)
+  set(VULKAN_PS5_COMPUTE_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
+  add_custom_command(OUTPUT "${VULKAN_PS5_COMPUTE_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_compute_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/compute.comp"
+      -o "${VULKAN_PS5_COMPUTE_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/compute.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_compute_example
+    examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  if(CMAKE_CROSSCOMPILING)
+    set_target_properties(vulkan_ps5_compute_example PROPERTIES SUFFIX ".elf")
+  endif()
+  target_compile_features(vulkan_ps5_compute_example PRIVATE c_std_11)
+  target_compile_options(vulkan_ps5_compute_example PRIVATE
+    -Wall -Wextra -Wpedantic)
+  target_include_directories(vulkan_ps5_compute_example PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}")
+  target_link_libraries(vulkan_ps5_compute_example PRIVATE vulkan_ps5_static)
 endif()
 
 install(TARGETS vulkan_ps5_static EXPORT VulkanPS5Targets
