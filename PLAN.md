@@ -1,0 +1,85 @@
+# General-Purpose Vulkan-PS5 ICD
+
+## Summary
+
+- Build Vulkan-PS5 as a reusable Vulkan 1.1 implementation for arbitrary PS5 homebrew, libraries, engines, and ports.
+- Use OpenAGC as the hardware abstraction for `/dev/gc`, gfx1013 PM4, descriptors, submission, synchronization, and VideoOut. Do not duplicate those low-level facilities inside the ICD.
+- Convert `openagc-psbc` into a runtime SPIR-V compiler library usable by every Vulkan application.
+- Keep the implementation application-neutral and standards-based. Eden is a demanding compatibility workload and development guide, not a special backend or architectural dependency.
+- Target FW 5.50 first, with FW 3.20 added after the primary path is stable.
+
+## Public Architecture and Interfaces
+
+### Reusable SDK
+
+- Produce:
+  - `libvulkan_ps5.a` for statically linked PS5 applications.
+  - A loader-compatible host shared library for VVL and development.
+  - A relocatable `VulkanPS5::ICD` CMake package.
+  - Standard `vkGetInstanceProcAddr`, `vkGetDeviceProcAddr`, and Vulkan entrypoints.
+  - Standalone compute, triangle, textured-cube, depth, and swapchain examples.
+- Consumers use ordinary Vulkan headers and APIs. No Eden-specific types, entrypoints, descriptor conventions, shader ABI, or synchronization behavior enter the public interface.
+- Dependency locations remain configurable for Vulkan-Headers, OpenAGC, and openagc-psbc. The PS5 SDK package exports transitive OpenAGC/system-library requirements.
+
+### OpenAGC and shader compiler
+
+- Add a reusable `libopenagc_psbc.a` API for host and Prospero. It accepts SPIR-V stages, entry points, specialization constants, vertex input, descriptor/pipeline layouts, and push constants; it returns AGC shader records, executable code, register state, resource-table mappings, and user-SGPR metadata.
+- Compile shaders during pipeline creation because vertex layouts, tessellation, and geometry/NGG fusion require complete pipeline context.
+- Extend OpenAGC with application-neutral helpers for raster state, topology, line state, depth bias, blend constants, stencil masks/references, queries, generalized transitions, copies, blits, resolves, clears, mip/layer layouts, and missing gfx1013 formats.
+- Keep kernel ioctls, PM4 encodings, firmware profiles, and GPU register details behind OpenAGC APIs.
+
+## Vulkan-PS5 Implementation
+
+### Core driver
+
+- Reuse Vulkan-PS4's API-neutral dispatch, object, allocator, descriptor, render-pass, pipeline-cache, and test patterns, but replace all PS4/GNM structures and commands with `VkPs5*` objects and OpenAGC operations.
+- Implement the complete Vulkan 1.1 entrypoint surface, including pNext handling, memory-requirements/bind v2 calls, descriptor update templates, device groups, pipeline caches, queries, and legal unsupported responses for sparse or protected features.
+- Report one gfx1013 physical device and an initial universal graphics/compute/transfer queue family. Add a separate async-compute family only after ACE submission is hardware-qualified.
+- Derive physical-device features, limits, memory properties, and format support from actual gfx1013/OpenAGC capabilities. Never advertise placeholders solely to satisfy a particular application.
+- Support normal uncompressed, depth/stencil, and BC formats first. Report ASTC, ETC, or unqualified formats unsupported until conversion or native support is validated.
+
+### Resources, commands, and synchronization
+
+- Use GPU-visible flexible memory for normal Vulkan allocations and direct write-combined memory for scanout. Support mapping, coherent flush/invalidate semantics, alignment, VMA block suballocation, allocation limits, and deterministic cleanup.
+- Represent buffers and images with OpenAGC descriptors and complete mip, layer, aspect, and layout metadata.
+- Record Vulkan commands into OpenAGC DCBs. Use DMA for buffer transfers, OpenAGC transitions for barriers, and internal compute/graphics shaders for image operations without a direct packet path.
+- Implement render passes, dynamic rendering-equivalent internal behavior, MRT, depth/stencil, clears, resolves, indirect draws, geometry, tessellation, compute, occlusion/timestamp queries, and pipeline statistics where supported.
+- Implement binary fences and semaphores with GPU-visible labels and `RELEASE_MEM` EOP writes. Serialize queues with monotonic submission values and make host waits bounded and thread-safe.
+- Keep timeline semaphores, sparse resources, transform feedback, descriptor indexing, and advanced optional extensions disabled until their complete semantics are implemented.
+
+### Extensions and WSI
+
+- Implement broadly useful initial extensions:
+  - `VK_KHR_surface`
+  - `VK_KHR_swapchain`
+  - `VK_EXT_headless_surface`
+  - `VK_KHR_driver_properties`
+  - `VK_KHR_sampler_mirror_clamp_to_edge`
+  - `VK_KHR_shader_float_controls`
+  - `VK_EXT_vertex_attribute_divisor`
+  - `VK_EXT_host_query_reset`
+  - Required Vulkan 1.1 maintenance/property dependencies
+- Treat a headless surface as the standard PS5 VideoOut surface, allowing any Vulkan application to create a swapchain without a platform-specific Vulkan header.
+- Back swapchains with VideoOut-compatible triple-buffered direct memory. Guarantee FIFO presentation and advertise other modes only after hardware validation.
+- Isolate the FW 5.50 credential setup, VideoOut registration patch, equeue handling, buffer registration, flip, patch restoration, and teardown inside the WSI platform module.
+- Present only after the submission's GPU completion value is reached, using OpenAGC's EOP/flip facilities.
+
+## Compatibility and Delivery Milestones
+
+1. Host ICD lifecycle, loader dispatch, physical-device properties, memory, and VVL-clean object tests.
+2. Runtime SPIR-V library for VS/PS/CS/GS/tessellation, descriptors, specialization constants, and push constants.
+3. FW 5.50 standalone compute, indexed triangle, textured rendering, depth/stencil, MRT, query, geometry, and tessellation samples.
+4. General VideoOut-backed Vulkan swapchain sample sustaining at least 1,800 frames with correct acquire/submit/present synchronization and clean teardown.
+5. Reusable SDK package consumed by a separate, minimal PS5 homebrew project without source-tree-relative includes.
+6. Eden compatibility profile: pass Eden's mandatory extension, feature, limit, format, queue, VMA, shader-pipeline, and presentation checks without application-specific driver behavior.
+7. Run `../2048.nro` through `eden-ps5`, followed by broader applications and engines to prevent the implementation from overfitting to Eden.
+
+## Test Plan and Assumptions
+
+- Preserve the existing passing OpenAGC, openagc-psbc, and Vulkan-PS4 baselines.
+- Add unit tests for allocation failure, pNext chains, descriptors, specialization constants, render passes, queries, synchronization, pipeline caches, swapchain recreation, and concurrent queue/API use.
+- Run Vulkan Validation Layers with zero errors or warnings across standalone graphics, compute, transfer, and WSI applications.
+- Add targeted Vulkan CTS/deqp coverage for every advertised Vulkan 1.1 feature and extension. Report a non-conformant conformance version until qualification supports a stronger claim.
+- Require deterministic GPU readback and repeated FW 5.50 runs before advertising each hardware feature.
+- Eden-specific source changes are limited to PS5 surface creation, build/link integration, and locating the statically linked Vulkan entrypoint. Eden's renderer continues using standard Vulkan.
+- Other applications may either link `libvulkan_ps5.a` directly or consume the exported CMake package; they do not depend on Eden.
