@@ -195,6 +195,21 @@ control points and the image remained black. This excludes downstream
 rasterization and localizes the correction to HS offchip stores or the matching
 TES offchip address/layout ABI. No retry was attempted.
 
+OpenAGC commit `6406c9b` corrects the resulting ring-capacity mismatch. The old
+public profile allocated one 8K-dword (32 KiB) offchip buffer and programmed
+`VGT_HS_OFFCHIP_PARAM = 0`, despite gfx1013 being able to retain four offchip
+workgroups per CU across four shader engines, two shader arrays per engine, and
+five CUs per array. The new application-neutral profile provisions all 160
+buffers in a 5 MiB offchip ring, programs the encoded buffer count as `159`,
+and uses Mesa's 120 KiB (`0x1e000`) factor-ring size. OpenAGC now rejects a
+ring whose storage is smaller than its encoded buffering/granularity profile.
+Both Vulkan host configurations pass all seven tests, the Prospero build passes
+and links with `-lunwind -lc++abi -lc++ -lm`, and the resulting tessellation ELF
+has SHA-256
+`316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
+This candidate still requires a fresh-console, single bounded hardware run;
+the driver does not treat the nondeterministic offchip path as qualified yet.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

@@ -84,3 +84,16 @@ launch work. TES nevertheless copied zero for every component of all three
 offchip control points, and the image remained black. This rules out
 rasterization and localizes the remaining defect to HS offchip stores or the
 matching TES offchip address/layout ABI. The runner did not retry it.
+
+OpenAGC commit `6406c9b` replaces the single-buffer offchip profile behind that
+failure. The previous state allocated one 8K-dword (32 KiB) offchip buffer and
+encoded `VGT_HS_OFFCHIP_PARAM = 0`; the corrected gfx1013 profile provisions
+four workgroups per CU across four shader engines, two shader arrays per engine,
+and five CUs per array. That yields 160 buffers in a 5 MiB offchip ring and an
+encoded buffer count of `159`, alongside Mesa's `0x1e000` factor-ring size.
+OpenAGC also rejects any ring storage smaller than the encoded profile. Both
+seven-test host configurations and the Prospero build pass, and the ELF links
+with `-lunwind -lc++abi -lc++ -lm`. The current candidate has SHA-256
+`316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
+It has not yet run on hardware: one bounded run requires a fresh explicit
+console-availability signal, and no automatic retry is permitted.

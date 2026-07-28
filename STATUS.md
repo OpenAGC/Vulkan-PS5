@@ -211,6 +211,18 @@ Implemented and host-verified:
   copied zero for all three offchip control-point positions and the image was
   black. The remaining fault is before rasterization, in HS offchip stores or
   the matching TES offchip address/layout ABI. No retry was attempted.
+  Inspection of the gfx10.3 offchip-ring profile then found that OpenAGC had
+  allocated only one 8K-dword (32 KiB) buffer and encoded buffer count zero.
+  OpenAGC commit `6406c9b` now provisions four workgroups per CU across the
+  four-engine, two-array, five-CU topology: 160 buffers, a 5 MiB offchip ring,
+  `VGT_HS_OFFCHIP_PARAM = 159`, and Mesa's `0x1e000` factor-ring size. Its
+  validation rejects storage smaller than the encoded buffering/granularity
+  profile. Both Vulkan host configurations pass all seven tests and the
+  Prospero build links with `-lunwind -lc++abi -lc++ -lm`; candidate ELF
+  SHA-256 is
+  `316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
+  Hardware qualification is pending one bounded run after a fresh explicit
+  console-availability signal; no feature-stability claim is made yet.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

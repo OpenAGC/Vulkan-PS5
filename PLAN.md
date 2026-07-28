@@ -107,6 +107,18 @@
   The remaining defect is therefore localized before rasterization, to the HS
   offchip stores or the matching TES offchip address/layout ABI. No retry was
   attempted.
+  OpenAGC commit `6406c9b` corrects a capacity mismatch discovered in that
+  path: the previous profile exposed one 8K-dword (32 KiB) offchip buffer with
+  `VGT_HS_OFFCHIP_PARAM = 0`, while the gfx1013 topology and Mesa policy require
+  four resident offchip workgroups per CU across four shader engines, two
+  shader arrays per engine, and five CUs per array. The replacement profile
+  uses 160 buffers, a 5 MiB offchip ring, encoded buffer count `159`, and a
+  `0x1e000` factor ring. OpenAGC validation now rejects size/profile mismatch.
+  Both Vulkan host configurations pass all seven tests, the Prospero build
+  passes with `-lunwind -lc++abi -lc++ -lm`, and candidate ELF SHA-256 is
+  `316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
+  One bounded FW 5.50 run is pending a fresh console-availability signal; the
+  repeated gate remains required before the feature is considered stable.
 
 ## Summary
 
