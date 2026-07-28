@@ -132,8 +132,11 @@ Implemented and host-verified:
   allocation at draw time, while the ICD had bound the compiler record with a
   zero `SPI_SHADER_PGM_RSRC2_HS.LDS_SIZE`. openagc-psbc API v6 now reports the
   required byte count and the ICD passes it to OpenAGC's typed tessellation
-  binder. Host command tests require a nonzero encoded allocation. This next
-  candidate has not been launched on hardware.
+  binder. Host command tests require a nonzero encoded allocation. Its first
+  bounded FW 5.500.008 run returned safely, left etaHEN websrv responsive, and
+  produced a zeroed target (`20260728T023553Z-tessellation-run1.log`). No retry
+  was attempted. Hull LDS allocation alone therefore did not fix the restored
+  VS-to-TCS-to-TES dataflow, and this candidate remains unqualified.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

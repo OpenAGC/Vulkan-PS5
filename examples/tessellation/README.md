@@ -24,3 +24,11 @@ The first bounded run of the restored candidate on FW 5.500.008 returned
 normally, left the console responsive, and produced a zeroed target
 (`20260728T015236Z-tessellation-run1.log`). This is a safe negative result, not
 qualification; the runner did not retry it.
+
+Linking the separately compiled TCS and TES interfaces produced the same safe
+zeroed result (`20260728T020700Z-tessellation-run1.log`). A subsequent candidate
+also encoded the compiler-reported hull LDS allocation in
+`SPI_SHADER_PGM_RSRC2_HS`, but its one bounded run again returned a zeroed target
+(`20260728T023553Z-tessellation-run1.log`) while etaHEN websrv remained
+responsive. Neither failure was retried, and `tessellationShader` remains
+disabled.

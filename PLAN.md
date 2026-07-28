@@ -46,7 +46,10 @@
   twice on FW 5.500.008 with exactly 7200 pixels, completing standalone geometry
   and basic tessellation hardware qualification. Geometry can now advance
   through its standard feature-request path; tessellation stays disabled until
-  patch-output reads are fixed and hardware-qualified as well.
+  patch-output reads are fixed and hardware-qualified as well. Linked
+  TCS/TES interfaces and a nonzero hull-LDS allocation have each been exercised
+  by one bounded FW 5.500.008 run; both returned safely but produced a zeroed
+  target, so neither candidate was retried or qualified.
 
 ## Summary
 

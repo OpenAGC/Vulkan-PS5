@@ -96,8 +96,10 @@ The next host-qualified correction uses openagc-psbc API v6 to carry RADV's
 pipeline-specific hull LDS byte requirement into OpenAGC. The tessellation
 binder encodes that allocation in `SPI_SHADER_PGM_RSRC2_HS`, enabling the
 separate LS-front/HS-back memory path used when a TCS reads VS outputs. This
-state is covered by command-recording tests but has not been launched on
-hardware yet.
+state is covered by command-recording tests. Its first bounded FW 5.500.008 run
+returned normally and left etaHEN websrv responsive, but the target was still
+zeroed (`20260728T023553Z-tessellation-run1.log`). The runner did not retry it;
+hull LDS allocation alone therefore does not qualify patch-output reads.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
