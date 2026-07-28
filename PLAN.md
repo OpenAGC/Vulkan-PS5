@@ -93,7 +93,13 @@
   passing and failing logs are identical until the image oracle, exposing
   nondeterminism after TCS execution in the offchip-to-TES/raster path.
   `tessellationShader` exposure must remain unqualified until that path is
-  corrected and the repeated gate passes again.
+  corrected and the repeated gate passes again. The next materially distinct
+  diagnostic extends the same standard storage buffer into TES. A uniquely
+  selected tessellated vertex records a TES marker and copies all three
+  offchip control points, separating missing TES launch, bad offchip reads,
+  and downstream rasterization. Both host configurations pass all seven tests,
+  host execution reaches the expected no-GPU oracle, and the Prospero build
+  passes. Its ELF awaits one bounded run after a fresh console signal.
 
 ## Summary
 

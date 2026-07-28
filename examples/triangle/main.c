@@ -26,7 +26,12 @@ typedef struct TessellationHullProbe {
     uint32_t position[3][4];
     uint32_t executed[3];
     uint32_t padding;
+    uint32_t tes_executed;
+    uint32_t tes_padding[3];
+    uint32_t tes_position[3][4];
 } TessellationHullProbe;
+_Static_assert(sizeof(TessellationHullProbe) == 128u,
+    "tessellation probe must match the std430 shader layout");
 #endif
 
 #define VK_CHECK(expression) do { \
@@ -228,7 +233,8 @@ int main(void)
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+        .stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+            VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
     };
     const VkDescriptorSetLayoutCreateInfo hull_probe_set_layout_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -568,10 +574,26 @@ int main(void)
         },
         .executed = {0x48530000u, 0x48530001u, 0x48530002u},
         .padding = 0xcdcdcdcdu,
+        .tes_executed = 0x54455300u,
+        .tes_padding = {0xcdcdcdcdu, 0xcdcdcdcdu, 0xcdcdcdcdu},
+        .tes_position = {
+            {0xbf400000u, 0xbf400000u, 0u, 0x3f800000u},
+            {0x3f400000u, 0xbf400000u, 0u, 0x3f800000u},
+            {0u, 0x3f400000u, 0u, 0x3f800000u},
+        },
     };
     const TessellationHullProbe *hull_probe = hull_probe_mapped;
-    int hull_probe_ok = memcmp(hull_probe, &expected_hull_probe,
-        sizeof(*hull_probe)) == 0;
+    int hull_probe_ok = memcmp(hull_probe->position,
+            expected_hull_probe.position, sizeof(hull_probe->position)) == 0 &&
+        memcmp(hull_probe->executed, expected_hull_probe.executed,
+            sizeof(hull_probe->executed)) == 0 &&
+        hull_probe->padding == expected_hull_probe.padding;
+    int tes_probe_ok =
+        hull_probe->tes_executed == expected_hull_probe.tes_executed &&
+        memcmp(hull_probe->tes_padding, expected_hull_probe.tes_padding,
+            sizeof(hull_probe->tes_padding)) == 0 &&
+        memcmp(hull_probe->tes_position, expected_hull_probe.tes_position,
+            sizeof(hull_probe->tes_position)) == 0;
     printf("tessellation: hull probe %s executed=%08x,%08x,%08x\n",
         hull_probe_ok ? "PASS" : "FAIL",
         hull_probe->executed[0], hull_probe->executed[1],
@@ -582,6 +604,14 @@ int main(void)
             hull_probe->position[probe_vertex][1],
             hull_probe->position[probe_vertex][2],
             hull_probe->position[probe_vertex][3]);
+    printf("tessellation: TES probe %s executed=%08x\n",
+        tes_probe_ok ? "PASS" : "FAIL", hull_probe->tes_executed);
+    for (uint32_t probe_vertex = 0; probe_vertex < 3u; ++probe_vertex)
+        printf("tessellation: TES position%u=%08x,%08x,%08x,%08x\n",
+            probe_vertex, hull_probe->tes_position[probe_vertex][0],
+            hull_probe->tes_position[probe_vertex][1],
+            hull_probe->tes_position[probe_vertex][2],
+            hull_probe->tes_position[probe_vertex][3]);
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
@@ -615,7 +645,7 @@ int main(void)
 #endif
     if (!image_ok
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
-        || !hull_probe_ok
+        || !hull_probe_ok || !tes_probe_ok
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \

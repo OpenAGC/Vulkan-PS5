@@ -4,6 +4,10 @@ layout(vertices = 3) out;
 layout(set = 0, binding = 0, std430) buffer HullProbe {
     vec4 position[3];
     uint executed[3];
+    uint padding;
+    uint tes_executed;
+    uint tes_padding[3];
+    vec4 tes_position[3];
 } hull_probe;
 
 void main()

@@ -69,3 +69,12 @@ returned normally, the console remained responsive, and it was not retried.
 The result localizes the remaining nondeterminism after TCS execution, in the
 offchip-to-TES/raster path; feature exposure is not stable until that path is
 corrected and the repeated gate passes again.
+
+The current diagnostic extends the same standard storage buffer to TES. The
+unique tessellated vertex with `gl_TessCoord.x` equal to one writes marker
+`0x54455300` and copies all three offchip control-point positions. Its oracle
+therefore distinguishes a missing TES launch, incorrect offchip reads, and a
+downstream raster failure. Both host configurations and the Prospero build
+pass. The candidate ELF has SHA-256
+`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e` and
+awaits one bounded hardware run after a fresh console-availability signal.

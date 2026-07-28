@@ -177,6 +177,18 @@ The result exposes nondeterminism after TCS execution in the
 offchip-to-TES/raster path, so public feature exposure is not considered stable
 until that path is corrected and the repeated hardware gate passes again.
 
+The next diagnostic keeps the interface application-neutral by extending the
+existing storage-buffer binding to TES. The tessellated vertex with
+`gl_TessCoord.x` equal to one writes marker `0x54455300` and copies all three
+offchip control-point positions. A missing marker identifies TES launch or
+factor-ring state, a marker with incorrect positions identifies offchip reads,
+and a passing TES probe with a zero image identifies rasterization. Both host
+configurations pass all seven tests, host execution reaches the expected
+no-GPU oracle, and the Prospero ELF links with `-lunwind`, `-lc++abi`, `-lc++`,
+and `-lm`. Its SHA-256 is
+`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`;
+it awaits one bounded hardware run after a fresh console signal.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

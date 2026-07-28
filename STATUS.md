@@ -197,7 +197,15 @@ Implemented and host-verified:
   and the console remained responsive; no retry was attempted. The log matches
   the preceding pass until the final image oracle, so the remaining defect is
   nondeterministic state or ordering after TCS execution. Feature exposure is
-  unqualified again pending a correction and a repeated passing gate.
+  unqualified again pending a correction and a repeated passing gate. The next
+  standard Vulkan diagnostic makes TES write marker `0x54455300` and all three
+  offchip input positions into the existing storage buffer from the unique
+  `gl_TessCoord.x == 1` vertex. This separates TES launch/factor-ring state,
+  offchip reads, and rasterization. Both seven-test host configurations, host
+  pipeline/command execution through the expected no-GPU oracle, and the
+  Prospero build pass. Candidate ELF SHA-256 is
+  `b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`;
+  it awaits one bounded hardware run after a fresh console signal.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
