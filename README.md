@@ -11,6 +11,9 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties and conservative shader-float-controls
 support reduce the live count to 28.
+A deterministic mirror-clamp readback probe and bounded FW 5.50 runner are
+prepared, but `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until the
+exact gfx1013 address mode passes that hardware gate.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and

@@ -12,10 +12,18 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
+#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+#define SAMPLE_NAME "mirror_clamp"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE
+#else
+#define SAMPLE_NAME "indexed_textured"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#endif
+
 #define VK_CHECK(expression) do { \
     VkResult check_result = (expression); \
     if (check_result != VK_SUCCESS) { \
-        printf("indexed_textured: %s failed (%d)\n", #expression, check_result); \
+        printf(SAMPLE_NAME ": %s failed (%d)\n", #expression, check_result); \
         return 1; \
     } \
 } while (0)
@@ -175,12 +183,21 @@ int main(void)
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &texture_range));
 
+#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+    const Vertex vertices[4] = {
+        {{9.0f, 9.0f}, {-0.5f, -0.5f}},
+        {{-0.75f, -0.75f}, {-0.5f, -0.5f}},
+        {{ 0.75f, -0.75f}, {-0.5f, -0.5f}},
+        {{ 0.00f,  0.75f}, {-0.5f, -0.5f}},
+    };
+#else
     const Vertex vertices[4] = {
         {{9.0f, 9.0f}, {0.5f, 0.5f}},
         {{-0.75f, -0.75f}, {0.0f, 0.0f}},
         {{ 0.75f, -0.75f}, {1.0f, 0.0f}},
         {{ 0.00f,  0.75f}, {0.5f, 1.0f}},
     };
+#endif
     const uint16_t indices[3] = {1, 2, 3};
     VkBuffer vertex_buffer, index_buffer;
     VkDeviceMemory vertex_memory, index_memory;
@@ -217,9 +234,9 @@ int main(void)
         .magFilter = VK_FILTER_LINEAR,
         .minFilter = VK_FILTER_LINEAR,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeU = SAMPLE_ADDRESS_MODE,
+        .addressModeV = SAMPLE_ADDRESS_MODE,
+        .addressModeW = SAMPLE_ADDRESS_MODE,
     };
     VkSampler sampler;
     VK_CHECK(vkCreateSampler(device, &sampler_info, NULL, &sampler));
@@ -482,6 +499,21 @@ int main(void)
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
     int status = 0;
+#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+    const uint32_t red = center & 0xffu;
+    const uint32_t green = (center >> 8u) & 0xffu;
+    const uint32_t blue = (center >> 16u) & 0xffu;
+    if (covered < 16000u || covered > 21000u || opaque != covered ||
+        center == 0xff0000ffu || red < 112u || red > 144u ||
+        green < 112u || green > 144u || blue < 112u || blue > 144u ||
+        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("mirror_clamp: mismatch covered=%u opaque=%u colors=%u center=%08x\n",
+            covered, opaque, distinct_count, center);
+        status = 1;
+    } else {
+        printf("mirror_clamp: PASS %u pixels center=%08x\n", covered, center);
+    }
+#else
     if (covered < 16000u || covered > 21000u || opaque != covered ||
         distinct_count < 16u || center == 0u || pixels[0] != 0u ||
         pixels[TARGET_WIDTH - 1u] != 0u) {
@@ -492,6 +524,7 @@ int main(void)
         printf("indexed_textured: PASS %u pixels %u+ colors\n",
             covered, distinct_count);
     }
+#endif
 
     vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, command_pool, NULL);

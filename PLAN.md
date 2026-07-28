@@ -256,6 +256,17 @@
   separately qualified. Lifecycle and VVL tests cover enumeration,
   Properties2 output, and device enablement. The live profile is 28 gaps: two
   extensions and 26 features.
+  The next extension gate is prepared without changing public capabilities:
+  `vulkan_ps5_mirror_clamp_probe` samples a deliberately out-of-range
+  coordinate and distinguishes gfx1013 mirror-once from ordinary edge clamp
+  by deterministic readback. `run_fw550_mirror_clamp.sh` permits exactly one
+  launch after a fresh console signal, scopes crash/warning checks and cleanup
+  to the launched PID, and requires post-run process absence and websrv
+  responsiveness. Its safety harness passes, as do all 13 host tests and the
+  Prospero build. Candidate SHA-256 is
+  `8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`;
+  `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until that candidate
+  passes one bounded FW 5.50 run.
 
 ## Summary
 

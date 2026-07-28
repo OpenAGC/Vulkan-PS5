@@ -129,6 +129,10 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/system_exit_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.system_exit_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.mirror_clamp_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/mirror_clamp_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.mirror_clamp_runner PROPERTIES TIMEOUT 15)
     add_test(NAME vulkan_ps5.package_relocation
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_relocation.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
@@ -376,6 +380,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/indexed_textured/main.c
     "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
     "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}")
+  add_executable(vulkan_ps5_mirror_clamp_probe
+    examples/indexed_textured/main.c
+    "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
+    "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_mirror_clamp_probe PRIVATE
+    VULKAN_PS5_MIRROR_CLAMP_PROBE=1)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
@@ -385,7 +395,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_mrt_example vulkan_ps5_query_example
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
       vulkan_ps5_query_idle_probe
-      vulkan_ps5_indexed_textured_example
+      vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
@@ -396,7 +406,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_swapchain_example
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
-      vulkan_ps5_indexed_textured_example)
+      vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE

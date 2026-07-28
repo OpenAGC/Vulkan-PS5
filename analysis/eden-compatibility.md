@@ -24,6 +24,14 @@ build/vulkan_ps5_eden_profile_test --strict
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
 | PS5 surface | A standard surface must be supplied by the PS5 frontend | Eden currently has no Prospero surface/build integration and treats headless as no surface | Gap outside ICD |
 
+The sampler mirror-clamp contract has a hardware candidate but is not counted
+as supported yet. `vulkan_ps5_mirror_clamp_probe` samples `(-0.5, -0.5)` and
+requires the mirror-once gray texel instead of the red edge-clamp texel. The
+one-shot runner has host-tested clean and crash paths, exact-PID cleanup, and
+bounded warning handling. The Prospero candidate SHA-256 is
+`8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`.
+One fresh-console FW 5.50 run is still required before enumeration.
+
 The automated probe currently reports:
 
 ```text
@@ -58,7 +66,9 @@ does not turn a failed requirement into support.
 1. Complete the two remaining mandatory extension contracts: sampler mirror
    clamp and vertex divisors with real sampler/pipeline semantics. The
    query-only driver/float-control contracts are complete and tested; float
-   execution-mode capabilities remain conservatively false.
+   execution-mode capabilities remain conservatively false. The mirror-clamp
+   hardware probe and bounded runner are prepared; public enumeration awaits
+   its single FW 5.50 qualification run.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths.
