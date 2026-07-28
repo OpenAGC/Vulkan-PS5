@@ -36,4 +36,6 @@ disabled.
 The next candidate corrects the remaining gfx10.3 hull-LDS packing detail:
 allocation is rounded to 1024 bytes before being encoded in 512-byte register
 units, making every legal field value even. Host command tests enforce that
-invariant; this candidate has not yet been launched on hardware.
+invariant. Its one bounded FW 5.500.008 run returned safely and left etaHEN
+websrv responsive, but produced another zeroed target
+(`20260728T024632Z-tessellation-run1.log`). It was not retried.

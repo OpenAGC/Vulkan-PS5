@@ -51,7 +51,9 @@
   by one bounded FW 5.500.008 run; both returned safely but produced a zeroed
   target, so neither candidate was retried or qualified. The next local
   candidate corrects gfx10.3's two-step 1024-byte-allocation/512-byte-encoding
-  rule and awaits its own single bounded hardware gate.
+  rule. Its single bounded run also returned safely with a zeroed target, so it
+  was not retried and tessellation feature exposure remains blocked on the
+  separate LS-front/HS-back dataflow.
 
 ## Summary
 

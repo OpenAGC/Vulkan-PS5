@@ -142,7 +142,10 @@ Implemented and host-verified:
   earlier OpenAGC patch rounded directly to 512 bytes and could therefore emit
   an illegal odd field value. OpenAGC now performs the two-step rounding, and
   the Vulkan command regression requires a nonzero even encoding. This
-  corrected candidate has not been launched on hardware.
+  corrected candidate returned safely from one bounded FW 5.500.008 run and
+  left etaHEN websrv responsive, but its target was still zeroed
+  (`20260728T024632Z-tessellation-run1.log`). No retry was attempted. Correct
+  LDS rounding is retained, but it is not the remaining VS-to-TCS dataflow fix.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
