@@ -155,6 +155,7 @@ typedef struct VkPs5Pipeline {
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
     AgcGfx1013ColorBlendState color_blend;
+    AgcGfx1013PolygonMode polygon_mode;
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
@@ -720,6 +721,27 @@ static bool logic_operation(VkLogicOp source, AgcGfx1013LogicOp *destination)
     case VK_LOGIC_OP_NAND: *destination = AGC_GFX1013_LOGIC_NAND; break;
     case VK_LOGIC_OP_SET: *destination = AGC_GFX1013_LOGIC_SET; break;
     default: return false;
+    }
+    return true;
+}
+
+static bool polygon_mode(
+    VkPolygonMode source, AgcGfx1013PolygonMode *destination)
+{
+    if (!destination)
+        return false;
+    switch (source) {
+    case VK_POLYGON_MODE_FILL:
+        *destination = AGC_GFX1013_POLYGON_MODE_FILL;
+        break;
+    case VK_POLYGON_MODE_LINE:
+        *destination = AGC_GFX1013_POLYGON_MODE_LINE;
+        break;
+    case VK_POLYGON_MODE_POINT:
+        *destination = AGC_GFX1013_POLYGON_MODE_POINT;
+        break;
+    default:
+        return false;
     }
     return true;
 }
@@ -1975,8 +1997,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             create->pMultisampleState;
         const VkPipelineColorBlendStateCreateInfo *blend =
             create->pColorBlendState;
+        AgcGfx1013PolygonMode translated_polygon_mode;
         if (raster->rasterizerDiscardEnable ||
-            raster->polygonMode != VK_POLYGON_MODE_FILL ||
+            !polygon_mode(raster->polygonMode, &translated_polygon_mode) ||
             raster->cullMode != VK_CULL_MODE_NONE ||
             raster->lineWidth != 1.0f ||
             multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
@@ -2173,6 +2196,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         pipeline->vertex_binding_mask = vertex_binding_mask;
         pipeline->color_blend = color_blend;
+        pipeline->polygon_mode = translated_polygon_mode;
         pipeline->depth_bias = (AgcGfx1013DepthBiasState){
             .constant_factor = raster->depthBiasConstantFactor,
             .clamp = raster->depthBiasClamp,
@@ -3795,10 +3819,16 @@ static bool record_color_blend(
     return false;
 }
 
-static bool record_depth_bias(
+static bool record_raster_state(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     AgcGfx1013FrameState *frame)
 {
+    int32_t result = agcGfx1013ApplyPolygonMode(
+        frame, pipeline->polygon_mode);
+    if (result != AGC_OK) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return false;
+    }
     if (!pipeline->depth_bias_enable)
         return true;
     AgcGfx1013DepthBiasState state = pipeline->depth_bias;
@@ -3815,7 +3845,7 @@ static bool record_depth_bias(
             AGC_GFX1013_DEPTH_FORMAT_S8_UINT)
         return true;
     state.format = command->depth_surface_state.format;
-    int32_t result = agcGfx1013SetDepthBiasState(&command->dcb, &state);
+    result = agcGfx1013SetDepthBiasState(&command->dcb, &state);
     if (result == AGC_OK)
         return true;
     command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
@@ -3930,7 +3960,7 @@ static void record_tessellation_draw(
         .draw_modifier = 0x40000000u,
     };
     if (!record_color_blend(command, pipeline) ||
-        !record_depth_bias(command, pipeline, &draw_frame))
+        !record_raster_state(command, pipeline, &draw_frame))
         return;
     int32_t draw_result = agcGfx1013SetTessellationRings(
         &command->dcb, pipeline->tessellation);
@@ -4071,7 +4101,7 @@ static void record_graphics_draw(
         return;
     }
     if (!record_color_blend(command, pipeline) ||
-        !record_depth_bias(command, pipeline, &prepared.frame))
+        !record_raster_state(command, pipeline, &prepared.frame))
         return;
     int32_t result;
     if (indexed) {
@@ -4212,7 +4242,7 @@ static void record_graphics_indirect(
         draw.index_buffer_count = (uint32_t)(available / element_size);
     }
     if (!record_color_blend(command, pipeline) ||
-        !record_depth_bias(command, pipeline, &prepared.frame))
+        !record_raster_state(command, pipeline, &prepared.frame))
         return;
     uint32_t packet_count = expand_draw_index ? draw_count : 1u;
     for (uint32_t n = 0u; n < packet_count; ++n) {

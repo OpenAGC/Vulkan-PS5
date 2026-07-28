@@ -539,6 +539,7 @@ vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
 static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
     features->depthClamp = VK_TRUE;
+    features->fillModeNonSolid = VK_TRUE;
     features->geometryShader = VK_TRUE;
     features->occlusionQueryPrecise = VK_TRUE;
     features->tessellationShader = VK_TRUE;

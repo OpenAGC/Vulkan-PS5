@@ -765,6 +765,21 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &static_bias_info, NULL,
                                      &static_bias_pipeline) == VK_SUCCESS);
+    VkPipelineRasterizationStateCreateInfo non_solid_raster = rasterization;
+    non_solid_raster.depthBiasEnable = VK_FALSE;
+    non_solid_raster.polygonMode = VK_POLYGON_MODE_LINE;
+    VkGraphicsPipelineCreateInfo non_solid_info = graphics_info;
+    non_solid_info.pRasterizationState = &non_solid_raster;
+    non_solid_info.pDynamicState = NULL;
+    VkPipeline line_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &non_solid_info, NULL,
+                                     &line_pipeline) == VK_SUCCESS);
+    non_solid_raster.polygonMode = VK_POLYGON_MODE_POINT;
+    VkPipeline point_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &non_solid_info, NULL,
+                                     &point_pipeline) == VK_SUCCESS);
     VkPipelineColorBlendStateCreateInfo logic_blend = blend;
     logic_blend.logicOpEnable = VK_TRUE;
     logic_blend.logicOp = VK_LOGIC_OP_XOR;
@@ -896,6 +911,12 @@ int main(int argc, char **argv)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       logic_pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      line_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      point_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
@@ -992,6 +1013,7 @@ int main(int argc, char **argv)
     bool found_depth_control = false, found_stencil_control = false;
     bool found_depth_bias_format = false, found_depth_bias_values = false;
     bool found_depth_bias_enable = false;
+    bool found_line_polygon_mode = false, found_point_polygon_mode = false;
     bool found_vulkan_clip_control = false, found_depth_clamp = false;
     bool found_vulkan_depth_transform = false;
     uint32_t occlusion_snapshots = 0;
@@ -1108,6 +1130,8 @@ int main(int argc, char **argv)
             found_depth_bias_enable |=
                 (dwords[i + 2] & AGC_GFX1013_DEPTH_BIAS_RASTER_MODE) ==
                     AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
+            found_line_polygon_mode |= dwords[i + 2] == 0x00000128u;
+            found_point_polygon_mode |= dwords[i + 2] == 0x00000008u;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_PA_CL_CLIP_CNTL) {
             found_vulkan_clip_control |=
@@ -1180,7 +1204,8 @@ int main(int argc, char **argv)
            found_independent_blend && found_blend_mask &&
            found_blend_constants && found_logic_op &&
            found_depth_bias_format && found_depth_bias_values &&
-           found_depth_bias_enable &&
+           found_depth_bias_enable && found_line_polygon_mode &&
+           found_point_polygon_mode &&
            found_vulkan_clip_control && found_depth_clamp &&
            found_vulkan_depth_transform &&
            found_depth_surface && found_depth_control && found_stencil_control &&
@@ -1228,6 +1253,8 @@ int main(int argc, char **argv)
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
+    vkDestroyPipeline(device, point_pipeline, NULL);
+    vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, logic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);

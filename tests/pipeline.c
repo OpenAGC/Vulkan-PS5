@@ -217,6 +217,26 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    VkPipelineRasterizationStateCreateInfo non_solid_raster = rasterization;
+    VkGraphicsPipelineCreateInfo non_solid_info = graphics_info;
+    non_solid_info.pRasterizationState = &non_solid_raster;
+    non_solid_raster.polygonMode = VK_POLYGON_MODE_LINE;
+    VkPipeline line_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &non_solid_info, NULL,
+                                     &line_pipeline) == VK_SUCCESS);
+    non_solid_raster.polygonMode = VK_POLYGON_MODE_POINT;
+    VkPipeline point_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &non_solid_info, NULL,
+                                     &point_pipeline) == VK_SUCCESS);
+    non_solid_raster.polygonMode = VK_POLYGON_MODE_FILL_RECTANGLE_NV;
+    VkPipeline invalid_polygon_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &non_solid_info, NULL,
+                                     &invalid_polygon_pipeline) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_polygon_pipeline == VK_NULL_HANDLE);
     VkPipelineColorBlendStateCreateInfo invalid_logic_blend = blend;
     invalid_logic_blend.logicOp = (VkLogicOp)VK_LOGIC_OP_MAX_ENUM;
     VkGraphicsPipelineCreateInfo invalid_logic_info = graphics_info;
@@ -318,6 +338,8 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, instance_pipeline, NULL);
+    vkDestroyPipeline(device, point_pipeline, NULL);
+    vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);

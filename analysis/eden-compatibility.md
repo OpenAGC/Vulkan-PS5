@@ -52,11 +52,11 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=24 limits=0 queues=0 total=26
+eden-profile: extensions=2 features=23 limits=0 queues=0 total=25
 ```
 
-The 24 feature gaps are `depthBiasClamp`,
-`drawIndirectFirstInstance`, `dualSrcBlend`, `fillModeNonSolid`,
+The 23 feature gaps are `depthBiasClamp`,
+`drawIndirectFirstInstance`, `dualSrcBlend`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `independentBlend`, `largePoints`,
 `logicOp`, `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
 `samplerAnisotropy`, `sampleRateShading`,
@@ -146,6 +146,24 @@ known single `amount=0x4000` baseline VM warning. Legacy and Features2 queries
 now report `depthClamp`; both device-create paths accept a normal request. The
 post-promotion Prospero ELF is
 `bcbfa074bb504ceabf352e6ecbdb1f45f112dfef70faea057d41a1eb82a9c947`.
+
+The `fillModeNonSolid` contract is implemented and hardware-qualified for
+one-pixel lines and points. Vulkan line and point polygon modes map through
+OpenAGC's typed raster helper, which owns the exact gfx1013 dual-mode and
+front/back primitive encodings while preserving depth-bias and other raster
+state. Pipeline tests accept both core modes and reject the unsupported NV
+rectangle mode; command tests require exact `PA_SU_SC_MODE_CNTL` values `0x128`
+and `0x008`. The bounded FW 5.50 probe rendered a 230-pixel green wireframe and
+exactly three red points with empty interiors, completed matching SystemService
+self-exit, left no process, and produced only the known single `amount=0x4000`
+baseline VM warning. The initial internal-path ELF SHA-256 was
+`47a15536779e194f56bb20bb8a841a92fc0ebcaf05247f4c9fab95bc1ec988e1`.
+Legacy and Features2 queries now report the feature, and both device-create
+paths accept a normal request. `wideLines` and `largePoints` remain separate,
+unsupported capabilities. The rebuilt public-path probe queried and requested
+the advertised feature, reproduced the exact 230/3 oracle and clean lifecycle,
+and has Prospero ELF SHA-256
+`fd2dd48dddd46cd2519bd06fb5b9dacb6bc394658a1efc9d626b2258c9cdeeb3`.
 
 ## Runtime compatibility
 

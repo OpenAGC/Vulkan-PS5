@@ -337,6 +337,22 @@ Implemented and host-verified:
   accepted through legacy and Features2 paths. The post-promotion Prospero ELF
   SHA-256 is
   `bcbfa074bb504ceabf352e6ecbdb1f45f112dfef70faea057d41a1eb82a9c947`.
+- Fill, line, and point polygon modes use OpenAGC's typed gfx1013 raster helper
+  on baseline, indexed, indirect, geometry, and tessellation draws. Exact host
+  regressions require `PA_SU_SC_MODE_CNTL` values `0x128` for line and `0x008`
+  for point while preserving depth-bias state; the unsupported NV rectangle
+  mode is rejected. The bounded FW 5.50 probe rendered 230 green wireframe
+  pixels and exactly three red point pixels with empty interiors, completed
+  matching SystemService self-exit, left no process, and produced only the
+  known single `amount=0x4000` baseline VM warning. The initial internal-path
+  ELF SHA-256 was
+  `47a15536779e194f56bb20bb8a841a92fc0ebcaf05247f4c9fab95bc1ec988e1`.
+  `fillModeNonSolid` is advertised and accepted through legacy and Features2
+  paths; `wideLines` and `largePoints` remain false. Both 25-test host suites
+  and the Prospero build pass. The rebuilt public-path probe queried and
+  requested the advertised feature, reproduced the exact 230/3 oracle and
+  clean lifecycle, and has ELF SHA-256
+  `fd2dd48dddd46cd2519bd06fb5b9dacb6bc394658a1efc9d626b2258c9cdeeb3`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled

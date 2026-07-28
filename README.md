@@ -643,6 +643,11 @@ The original depth sample now uses 0.25/0.75 shader depth so its established
 oracle remains unchanged under correct Vulkan clip space. The corrected FW 5.50
 gate passed exact color, raw D32, and stencil oracles with a matching self-exit;
 `depthClamp` is advertised and accepted through legacy and Features2 paths.
+Line and point polygon modes are also accepted through OpenAGC's typed gfx1013
+raster state. The bounded `vulkan_ps5_fill_mode_non_solid_probe` draws a green
+wireframe and three separate red points, rejecting filled interiors; its FW
+5.50 gate passed and `fillModeNonSolid` is advertised. This does not advertise
+`wideLines` or `largePoints`, so the supported width and point size remain 1.0.
 Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
