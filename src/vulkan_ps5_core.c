@@ -2835,6 +2835,31 @@ static uint64_t descriptor_table_gpu_address(const VkPs5DescriptorSet *set)
 #endif
 }
 
+static VkResult encode_buffer_descriptor(
+    const VkPs5DescriptorValue *value, void *destination)
+{
+    if (!value || !value->buffer.buffer)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
+    if (!buffer->memory || value->buffer.offset >= buffer->size)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    VkDeviceSize available = buffer->size - value->buffer.offset;
+    VkDeviceSize range = value->buffer.range == VK_WHOLE_SIZE ?
+        available : value->buffer.range;
+    if (!range || range > available || range / 4u > UINT32_MAX)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (buffer->memory_offset > UINT64_MAX - value->buffer.offset)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
+        buffer->memory_offset + value->buffer.offset);
+    AgcGfx1013BufferDescriptor descriptor;
+    if (agcGfx1013BufferDescriptorEncode(&descriptor, address, 4u,
+            (uint32_t)(range / 4u)) != AGC_OK)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    memcpy(destination, &descriptor, sizeof(descriptor));
+    return VK_SUCCESS;
+}
+
 static VkResult prepare_compute_resource_tables(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     AgcGfx1013ResourceTableBinding *tables, uint32_t *table_count)
@@ -2875,26 +2900,11 @@ static VkResult prepare_compute_resource_tables(
                 !psbc_descriptor_type(layout_type, &psbc_type) ||
                 psbc_type != mapping->type || !value->buffer.buffer)
                 return VK_ERROR_INITIALIZATION_FAILED;
-            VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
-            if (!buffer->memory || value->buffer.offset >= buffer->size)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            VkDeviceSize available = buffer->size - value->buffer.offset;
-            VkDeviceSize range = value->buffer.range == VK_WHOLE_SIZE ?
-                available : value->buffer.range;
-            if (!range || range > available || range / 4u > UINT32_MAX)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            if (buffer->memory_offset > UINT64_MAX - value->buffer.offset)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
-                buffer->memory_offset + value->buffer.offset);
-            AgcGfx1013BufferDescriptor descriptor;
-            if (agcGfx1013BufferDescriptorEncode(&descriptor, address, 4u,
-                    (uint32_t)(range / 4u)) != AGC_OK)
-                return VK_ERROR_INITIALIZATION_FAILED;
             size_t offset = mapping->byte_offset +
                 (size_t)array * mapping->byte_stride;
-            memcpy((uint8_t *)set->table_memory.cpu_address + offset,
-                &descriptor, sizeof(descriptor));
+            VkResult encode_result = encode_buffer_descriptor(value,
+                (uint8_t *)set->table_memory.cpu_address + offset);
+            if (encode_result != VK_SUCCESS) return encode_result;
         }
         used_sets[mapping->set] = true;
     }
@@ -2973,7 +2983,10 @@ static VkResult prepare_graphics_descriptor_tables(
         const OpenAgcPsbcDescriptorMapping *mapping =
             &metadata->descriptor_mappings[i];
         size_t descriptor_size;
-        if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER)
+        if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
+            mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER)
+            descriptor_size = sizeof(AgcGfx1013BufferDescriptor);
+        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER)
             descriptor_size = sizeof(AgcGfx1013CombinedImageSamplerDescriptor);
         else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE)
             descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
@@ -3003,7 +3016,12 @@ static VkResult prepare_graphics_descriptor_tables(
                 (size_t)array * mapping->byte_stride;
             void *destination =
                 (uint8_t *)set->table_memory.cpu_address + offset;
-            if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER) {
+            if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
+                mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER) {
+                VkResult encode_result = encode_buffer_descriptor(
+                    value, destination);
+                if (encode_result != VK_SUCCESS) return encode_result;
+            } else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER) {
                 VkPs5Sampler *sampler =
                     (VkPs5Sampler *)value->image.sampler;
                 if (!sampler) return VK_ERROR_INITIALIZATION_FAILED;

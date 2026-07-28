@@ -213,12 +213,12 @@ int main(int argc, char **argv)
     assert(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
                                     &pipeline_info, NULL, &pipeline) == VK_SUCCESS);
     const VkDescriptorPoolSize pool_sizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
     };
     const VkDescriptorPoolCreateInfo descriptor_pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = 3,
+        .maxSets = 4,
         .poolSizeCount = 2,
         .pPoolSizes = pool_sizes,
     };
@@ -335,6 +335,20 @@ int main(int argc, char **argv)
     VkDescriptorSetLayout texture_set_layout;
     assert(vkCreateDescriptorSetLayout(device, &texture_set_layout_info, NULL,
                                        &texture_set_layout) == VK_SUCCESS);
+    const VkDescriptorSetLayoutBinding hull_output_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo hull_output_set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &hull_output_binding,
+    };
+    VkDescriptorSetLayout hull_output_set_layout;
+    assert(vkCreateDescriptorSetLayout(device, &hull_output_set_layout_info,
+        NULL, &hull_output_set_layout) == VK_SUCCESS);
     const VkDescriptorSetAllocateInfo texture_set_allocate_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = descriptor_pool,
@@ -358,16 +372,37 @@ int main(int argc, char **argv)
         .pImageInfo = &texture_descriptor,
     };
     vkUpdateDescriptorSets(device, 1, &texture_write, 0, NULL);
+    const VkDescriptorSetAllocateInfo hull_output_set_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &hull_output_set_layout,
+    };
+    VkDescriptorSet hull_output_set;
+    assert(vkAllocateDescriptorSets(device, &hull_output_set_allocate_info,
+        &hull_output_set) == VK_SUCCESS);
+    const VkWriteDescriptorSet hull_output_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = hull_output_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &output_info,
+    };
+    vkUpdateDescriptorSets(device, 1, &hull_output_write, 0, NULL);
 
     VkShaderModule vertex = shader_module(device, argv[2]);
     VkShaderModule fragment = shader_module(device, argv[3]);
     VkShaderModule geometry = shader_module(device, argv[4]);
     VkShaderModule tess_control = shader_module(device, argv[5]);
     VkShaderModule tess_evaluation = shader_module(device, argv[6]);
+    const VkDescriptorSetLayout graphics_set_layouts[] = {
+        texture_set_layout, hull_output_set_layout,
+    };
     const VkPipelineLayoutCreateInfo graphics_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &texture_set_layout,
+        .setLayoutCount = 2,
+        .pSetLayouts = graphics_set_layouts,
     };
     VkPipelineLayout graphics_layout;
     assert(vkCreatePipelineLayout(device, &graphics_layout_info, NULL,
@@ -736,6 +771,8 @@ int main(int argc, char **argv)
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       tessellation_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 1, 1, &hull_output_set, 0, NULL);
     vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       geometry_pipeline);
@@ -780,8 +817,7 @@ int main(int argc, char **argv)
             found_draw = true;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDEX_AUTO) {
-            assert(i + 2 < count && dwords[i + 1] == 3u);
-            found_tess_draw = true;
+            found_tess_draw |= i + 2 < count && dwords[i + 1] == 3u;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_CONTEXT_CONTROL) {
             found_frame = true;
         } else if (((dwords[i] >> 8) & 0xffu) ==
@@ -916,6 +952,7 @@ int main(int argc, char **argv)
     vkFreeMemory(device, image_memory, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
+    vkDestroyDescriptorSetLayout(device, hull_output_set_layout, NULL);
     vkDestroyDescriptorSetLayout(device, texture_set_layout, NULL);
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);

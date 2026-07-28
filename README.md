@@ -242,10 +242,13 @@ tessellation uses device-owned OpenAGC rings registered through the FW driver
 and restores typed depth/stencil state after binding. Both optional Vulkan
 feature bits remain disabled until their standalone pipelines are repeatedly
 qualified on hardware. Compute dispatch and a no-input triangle draw now emit real
-gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Compute
-uniform/storage-buffer descriptor sets are stored through standard Vulkan
-updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler
-selected user-SGPR immediately before dispatch. Indexed draws bind standard
+gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences.
+Uniform/storage-buffer descriptor sets are stored through standard Vulkan
+updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler-
+selected user-SGPR immediately before compute dispatch or graphics draws.
+Graphics buffer descriptors are covered by a TCS command-recording test so the
+tessellation qualification workload can use a standard storage-buffer oracle.
+Indexed draws bind standard
 Vulkan vertex/index buffers, build per-draw GPU-visible gfx1013 vertex tables,
 and emit `DRAW_INDEX_2` for UINT16 or UINT32 indices. Combined and separate
 sampled-image/sampler descriptors for linear RGBA8/BGRA8 images are encoded

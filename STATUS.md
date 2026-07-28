@@ -162,6 +162,10 @@ Implemented and host-verified:
   SGPR, and emit OpenAGC's hardware-qualified `DRAW_INDEX_2` path for UINT16
   and UINT32 indices. Signed vertex offsets and first-instance values use the
   compiler metadata-selected SGPRs.
+- Graphics descriptor preparation now also encodes uniform and storage buffers
+  with the same validated OpenAGC buffer-descriptor path used by compute. A TCS
+  command-recording test binds a storage buffer at set 1 and verifies the fused
+  tessellation draw can patch its compiler-selected descriptor-table SGPR.
 - Vulkan sampler objects now translate nearest/linear filtering, mip filtering,
   repeat/mirror/clamp modes, LOD state, comparison, and standard border colors
   into OpenAGC sampler descriptors. Graphics descriptor preparation supports

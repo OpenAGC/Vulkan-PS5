@@ -62,7 +62,10 @@
   pass. Its one bounded FW 5.50 run returned safely and left websrv responsive,
   but produced a zeroed target (`20260728T030535Z-tessellation-run1.log`). It
   was not retried. The next investigation is downstream of the fixed HS LDS
-  loads: offchip ring configuration, HS stores, and TES consumption.
+  loads: offchip ring configuration, HS stores, and TES consumption. Graphics
+  uniform/storage-buffer descriptor encoding is now shared with compute and
+  host-tested through a TCS binding, enabling a standard Vulkan hull-output
+  readback oracle for the next materially distinct hardware candidate.
 
 ## Summary
 
