@@ -60,16 +60,20 @@ The geometry shader shrinks the input triangle by one half in each dimension,
 so its mapped-memory oracle expects roughly one quarter of the ordinary
 triangle coverage and cannot pass through a vertex-only path accidentally. The
 host command regression records an indexed draw with the fused VS+GS primitive
-record; its Prospero output is `vulkan_ps5_geometry_example.elf`. The driver
-continues to report `geometryShader = VK_FALSE` until the ELF passes twice on
-FW 5.50.
+record; its Prospero output is `vulkan_ps5_geometry_example.elf`. Two
+independent FW 5.50 launches each produced exactly 4608 green pixels. The
+driver continues to report `geometryShader = VK_FALSE` until the standard
+feature-request path is enabled and rerun.
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
 distinct mapped-memory coverage oracle exercises the shared factor/offchip
 rings, ring descriptor table, fused Wave32 LS+HS and TES+NGG records, and
-`DRAW_INDEX_AUTO`. Its Prospero ELF also cross-links with the required target
-runtimes; `tessellationShader` remains false until two FW 5.50 passes.
+`DRAW_INDEX_AUTO`. A safe first FW 5.50 launch returned a black target and
+identified missing command-buffer ring programming; the corrected recorder
+now emits OpenAGC's typed ring setup before the draw. Its Prospero ELF also
+cross-links with the required target runtimes; `tessellationShader` remains
+false until the corrected path passes twice.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

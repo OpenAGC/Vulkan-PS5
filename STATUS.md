@@ -85,18 +85,21 @@ Implemented and host-verified:
   pointer without claiming support for nonzero push constants. The command
   regression performs a successful indexed geometry draw and verifies its PM4.
   A standalone mapped-readback ELF shrinks the triangle in the geometry stage,
-  giving it a distinct coverage oracle. Host tests and the Prospero cross-link
-  pass; two FW 5.50 runs remain required before advertising `geometryShader`.
+  giving it a distinct coverage oracle. Two independent FW 5.50 runs produced
+  exactly 4608 green pixels. The core feature remains disabled until the
+  standard feature-request path is enabled and rerun.
 - Tessellation pipelines require standard `PATCH_LIST` input and compile the
   fused LS+HS stage in Wave32 alongside TES+NGG and PS. The device lazily owns
   one 256-byte-aligned factor ring, offchip ring, and descriptor table, builds
   and flushes them through OpenAGC, and registers the factor ring through the
   FW driver before recording. Draws patch ring/layout/continuation addresses,
   bind per-stage resource tables and user SGPRs, restore typed depth/stencil
-  state, and emit OpenAGC's tessellation `DRAW_INDEX_AUTO`. The host command
-  regression verifies both the draw and `VGT_TF_PARAM`; the standalone ELF has
-  a distinct TES-scaled readback oracle and cross-links for Prospero. Two FW
-  5.50 passes remain required before advertising `tessellationShader`.
+  state, and emit OpenAGC's tessellation `DRAW_INDEX_AUTO`. The first FW 5.50
+  attempt returned safely with a black target and exposed a missing DCB ring
+  programming call. Recording now emits OpenAGC's typed tessellation-ring
+  setup before the draw, and the host regression requires all four ring UC
+  registers plus `VGT_TF_PARAM`. The corrected ELF still requires two FW 5.50
+  passes before advertising `tessellationShader`.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

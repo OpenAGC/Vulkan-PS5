@@ -3315,8 +3315,10 @@ static void record_tessellation_draw(
         .vertex_count = element_count,
         .draw_modifier = 0x40000000u,
     };
-    int32_t draw_result = agcGfx1013DrawTessIndexAuto(
-        &command->dcb, &draw);
+    int32_t draw_result = agcGfx1013SetTessellationRings(
+        &command->dcb, pipeline->tessellation);
+    if (draw_result == AGC_OK)
+        draw_result = agcGfx1013DrawTessIndexAuto(&command->dcb, &draw);
     if (draw_result != AGC_OK)
         command->record_error = draw_result == AGC_ERROR_BUFFER_TOO_SMALL ?
             VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;

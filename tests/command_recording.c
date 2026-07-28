@@ -712,6 +712,8 @@ int main(int argc, char **argv)
     assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_tess_draw = false, found_tess_context = false;
+    bool found_tess_ring_size = false, found_tess_offchip = false;
+    bool found_tess_ring_base = false, found_tess_ring_base_hi = false;
     bool found_color_target = false, found_color_target_1 = false;
     bool found_dual_export = false, found_depth_surface = false;
     bool found_depth_control = false, found_stencil_control = false;
@@ -770,6 +772,24 @@ int main(int argc, char **argv)
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_PARAM) {
             found_tess_context |= dwords[i + 2] == 0x61u;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_TF_RING_SIZE) {
+            found_tess_ring_size |= dwords[i + 2] ==
+                AGC_GFX1013_TESS_FACTOR_RING_SIZE / 4u;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_HS_OFFCHIP_PARAM) {
+            found_tess_offchip |= dwords[i + 2] ==
+                AGC_GFX1013_TESS_OFFCHIP_PARAM;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE) {
+            found_tess_ring_base = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE_HI) {
+            found_tess_ring_base_hi = true;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_EVENT_WRITE &&
                    i + 3 < count && dwords[i + 1] == 0x115u) {
             ++occlusion_snapshots;
@@ -782,7 +802,9 @@ int main(int argc, char **argv)
         }
     }
     assert(found_dispatch && found_draw && found_tess_draw &&
-           found_tess_context && found_frame && found_color_target &&
+           found_tess_context && found_tess_ring_size &&
+           found_tess_offchip && found_tess_ring_base &&
+           found_tess_ring_base_hi && found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
