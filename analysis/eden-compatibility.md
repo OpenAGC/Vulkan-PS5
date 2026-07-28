@@ -17,8 +17,8 @@ build/vulkan_ps5_eden_profile_test --strict
 | Requirement | Eden requirement | Current evidence | State |
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
-| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All four are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 15 mandatory feature bits are true | 14 gaps |
+| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
+| Core/Features2 | 29 mandatory feature bits | 16 mandatory feature bits are true | 13 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,15 +63,15 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=14 limits=0 queues=0 total=14
+eden-profile: extensions=0 features=13 limits=0 queues=0 total=13
 ```
 
-The 14 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
+The 13 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
 `imageCubeArray`, `multiViewport`, `robustBufferAccess`,
 `sampleRateShading`, `shaderClipDistance`, `shaderCullDistance`,
 `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
-`shaderDemoteToHelperInvocation`, `variablePointers`, and
+`variablePointers`, and
 `variablePointersStorageBuffer`.
 
 These bits must only be enabled as their complete Vulkan and shader semantics
@@ -220,6 +220,23 @@ process. Target-only klogs contained only the known single `amount=0x4000`
 baseline VM warning. The public-path Prospero ELF SHA-256 is
 `25db7763fd45e5494067dbcf83ed16884fcfe9a6b93958b2a9d3f3e4a63fb109`.
 
+The `shaderDemoteToHelperInvocation` contract is implemented and
+hardware-qualified. `VK_EXT_shader_demote_to_helper_invocation` is enumerated,
+Features2 reports the feature, and device creation accepts both the extension
+and feature request. The fragment probe demotes every even-X lane, checks that
+all 32,768 such invocations suppress framebuffer output, and makes surviving
+lanes depend on the demoted helper value through `dFdx`. The exact derivative
+oracle is confined to a 64-by-64 region within one rasterized primitive; this
+avoids treating the implementation-dependent helper set along the clipped
+fullscreen triangle's internal seam as a language failure. Both 28/28 host
+suites, runner safety coverage, and the complete Prospero build pass. The
+internal gate (`20260728T122309Z-shader-demote-run1.log`) and final public
+extension/Features2 gate (`20260728T122623Z-shader-demote-run1.log`) each
+reported exact `green=2048 blue=30720 demoted=32768`, matching SystemService
+self-exit, no stale process, and only the known single `amount=0x4000` baseline
+warning. The public Prospero ELF SHA-256 is
+`f9980eb6bcf1dbf96bc587fae7dd2e43be84dddfa2a8b13ac6ce6ba22e4d7327`.
+
 ## Runtime compatibility
 
 | Area | Current evidence | State |
@@ -250,7 +267,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    semantics and the core feature contract are implemented, host-tested, and
    hardware-qualified by paired bilinear/16x filtering readback on FW 5.50.
    Typed OpenAGC topology/primitive-size state and exact readback have also
-   qualified `largePoints` and static/dynamic `wideLines`.
+   qualified `largePoints`, static/dynamic `wideLines`, and fragment demote
+   with post-demote derivative participation.
    Indirect draw recording is no longer a stub. Compiler metadata includes
    DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
    packets. The earlier submission fault was the zero-initialized non-indexed

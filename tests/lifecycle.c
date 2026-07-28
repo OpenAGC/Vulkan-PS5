@@ -98,8 +98,8 @@ int main(void) {
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 6);
-    VkExtensionProperties extensions[6];
+    assert(extension_count == 7);
+    VkExtensionProperties extensions[7];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
@@ -108,6 +108,7 @@ int main(void) {
     VkBool32 has_driver_properties = VK_FALSE;
     VkBool32 has_sampler_mirror_clamp = VK_FALSE;
     VkBool32 has_shader_float_controls = VK_FALSE;
+    VkBool32 has_shader_demote = VK_FALSE;
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
             VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
@@ -121,10 +122,12 @@ int main(void) {
             VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) == 0;
         has_shader_float_controls |= strcmp(extensions[i].extensionName,
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME) == 0;
+        has_shader_demote |= strcmp(extensions[i].extensionName,
+            VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME) == 0;
     }
     assert(has_host_query_reset && has_vertex_divisor && has_swapchain &&
            has_driver_properties && has_sampler_mirror_clamp &&
-           has_shader_float_controls);
+           has_shader_float_controls && has_shader_demote);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -139,14 +142,20 @@ int main(void) {
     };
     VkPhysicalDeviceHostQueryResetFeatures host_query_reset = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+    };
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT demote_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
         .pNext = &divisor_features,
     };
+    host_query_reset.pNext = &demote_features;
     VkPhysicalDeviceFeatures2 features2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &host_query_reset,
     };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
+    assert(demote_features.shaderDemoteToHelperInvocation == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
     assert(features11.shaderDrawParameters == VK_TRUE);
@@ -255,7 +264,7 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 5,
+        .enabledExtensionCount = 6,
         .ppEnabledExtensionNames =
             (const char *const[]){
                 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
@@ -263,6 +272,7 @@ int main(void) {
                 VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
                 VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
                 VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+                VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
             },
     };
     VkPhysicalDeviceHostQueryResetFeatures enabled_host_query_reset = {
@@ -272,9 +282,15 @@ int main(void) {
     VkPhysicalDeviceVertexAttributeDivisorFeatures enabled_divisor = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
-        .pNext = &enabled_host_query_reset,
         .vertexAttributeInstanceRateDivisor = VK_TRUE,
     };
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT enabled_demote = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
+        .pNext = &enabled_host_query_reset,
+        .shaderDemoteToHelperInvocation = VK_TRUE,
+    };
+    enabled_divisor.pNext = &enabled_demote;
     VkPhysicalDeviceFeatures2 enabled_features2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &enabled_divisor,

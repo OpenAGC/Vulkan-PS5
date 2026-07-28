@@ -388,6 +388,22 @@ Implemented and host-verified:
   through legacy and Features2 paths. The public run left PID 120 absent; ELF
   SHA-256 is
   `25db7763fd45e5494067dbcf83ed16884fcfe9a6b93958b2a9d3f3e4a63fb109`.
+- `VK_EXT_shader_demote_to_helper_invocation` is now enumerated and accepted;
+  Features2 reports and device creation accepts
+  `shaderDemoteToHelperInvocation`. The standalone fragment probe demotes all
+  even-X lanes, proves exactly 32,768 framebuffer writes are suppressed, and
+  uses the demoted helper value in `dFdx` for an exact 2,048-pixel green oracle
+  inside one rasterized primitive. A first fullscreen diagnostic exposed 64
+  derivative-control pixels on the clipped oversized-triangle seam, so the
+  qualified oracle was restricted away from the implementation-dependent
+  primitive-boundary helper set rather than accepting a hardware-specific
+  count. Both 28/28 normal and ASAN/UBSAN suites pass; the full Prospero build
+  links `-lunwind -lc++abi -lc++ -lm`. The internal and final public FW 5.50
+  gates passed exact `green=2048 blue=30720 demoted=32768`, clean matching
+  SystemService self-exit, exact-PID absence, and only the known single
+  `amount=0x4000` baseline warning. Public log
+  `20260728T122623Z-shader-demote-run1.log`; ELF SHA-256 is
+  `f9980eb6bcf1dbf96bc587fae7dd2e43be84dddfa2a8b13ac6ce6ba22e4d7327`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled

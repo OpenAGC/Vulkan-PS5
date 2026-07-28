@@ -11,6 +11,10 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
+The current profile has 13 hard feature gaps. The latest closure is
+`VK_EXT_shader_demote_to_helper_invocation`: the FW 5.50 gate proves suppressed
+framebuffer writes and continued helper-lane participation in `dFdx` through
+the normal extension/Features2 enable path.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.
@@ -679,6 +683,11 @@ granularity `0.125`; the bounded FW 5.50 probe deterministically qualified
 support static and `VK_DYNAMIC_STATE_LINE_WIDTH` state. `wideLines` is exposed
 through both feature paths with range `[1, 64]` and granularity `0.125`; its
 bounded FW 5.50 probe qualified exact 8-, 16-, and 32-pixel line coverage.
+`VK_EXT_shader_demote_to_helper_invocation` is enumerated, reports
+`shaderDemoteToHelperInvocation = VK_TRUE`, and accepts a normal device request.
+Its bounded shader gate demotes every even-X invocation, requires exactly
+32,768 suppressed writes, and verifies 2,048 surviving pixels whose derivative
+depends on the post-demote helper value; the public FW 5.50 run passed.
 Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC

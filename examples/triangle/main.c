@@ -4,7 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+#include "vulkan_ps5_demote_frag_spv.h"
+#include "vulkan_ps5_demote_vert_spv.h"
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_demote_frag_spv
+#define vulkan_ps5_triangle_vert_spv vulkan_ps5_demote_vert_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "shader_demote"
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
 #include "vulkan_ps5_wide_lines_vert_spv.h"
 #include "vulkan_ps5_non_solid_frag_spv.h"
 #define vulkan_ps5_triangle_frag_spv vulkan_ps5_non_solid_frag_spv
@@ -134,7 +141,21 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT demote_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 supported_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &demote_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &supported_features);
+    if (!demote_features.shaderDemoteToHelperInvocation) {
+        printf("shader_demote: shaderDemoteToHelperInvocation is not supported\n");
+        return 1;
+    }
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.wideLines) {
@@ -212,7 +233,17 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+    const char *device_extensions[] = {
+        VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
+    };
+    const VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT
+        enabled_demote = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
+            .shaderDemoteToHelperInvocation = VK_TRUE,
+        };
+#elif defined(VULKAN_PS5_QUERY_SAMPLE)
     const char *device_extensions[] = {
         VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
     };
@@ -223,7 +254,9 @@ int main(void)
 #endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+        .pNext = &enabled_demote,
+#elif defined(VULKAN_PS5_QUERY_SAMPLE)
         .pNext = &host_reset,
 #endif
         .queueCreateInfoCount = 1,
@@ -237,7 +270,7 @@ int main(void)
     defined(VULKAN_PS5_QUERY_SAMPLE)
         .pEnabledFeatures = &enabled_features,
 #endif
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || defined(VULKAN_PS5_QUERY_SAMPLE)
         .enabledExtensionCount = 1,
         .ppEnabledExtensionNames = device_extensions,
 #endif
@@ -712,12 +745,19 @@ int main(void)
 
     const uint32_t *pixels = mapped;
     uint32_t green_count = 0;
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || \
+    defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     uint32_t red_count = 0;
 #endif
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+    uint32_t demoted_count = 0;
+    uint32_t red_positions[64];
+    uint32_t red_position_count = 0;
+#endif
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || \
+    defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     uint32_t blue_count = 0;
 #endif
@@ -736,16 +776,27 @@ int main(void)
 #else
         if (pixels[i] == GREEN_RGBA8)
             ++green_count;
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || \
+    defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
-        else if (pixels[i] == RED_RGBA8)
+        else if (pixels[i] == RED_RGBA8) {
             ++red_count;
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+            if (red_position_count < 64u)
+                red_positions[red_position_count++] = i;
 #endif
-#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+        }
+#endif
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || \
+    defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         else if (pixels[i] == 0xffff0000u)
             ++blue_count;
+#endif
+#if defined(VULKAN_PS5_DEMOTE_PROBE)
+        else if (pixels[i] == 0u)
+            ++demoted_count;
 #endif
         else if (pixels[i] != 0u)
             ++unexpected_count;
@@ -839,6 +890,12 @@ int main(void)
         pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
             (TARGET_WIDTH * 3u) / 4u] == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_DEMOTE_PROBE)
+    image_ok = green_count == 2048u && red_count == 0u &&
+        blue_count == 30720u && demoted_count == 32768u &&
+        unexpected_count == 0u && center == 0u &&
+        pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+            TARGET_WIDTH / 2u + 1u] == 0xffff0000u;
 #elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
     image_ok = green_count == 1024u && red_count == 2048u &&
         blue_count == 4096u && unexpected_count == 0u &&
@@ -882,6 +939,14 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: mismatch line=%u point=%u unexpected=%u center=%08x\n",
             green_count, red_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_DEMOTE_PROBE)
+        printf("shader_demote: mismatch green=%u red=%u blue=%u demoted=%u unexpected=%u center=%08x\n",
+            green_count, red_count, blue_count, demoted_count,
+            unexpected_count, center);
+        for (uint32_t i = 0; i < red_position_count; ++i)
+            printf("shader_demote: red_pixel x=%u y=%u\n",
+                red_positions[i] % TARGET_WIDTH,
+                red_positions[i] / TARGET_WIDTH);
 #elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
         printf("wide_lines: mismatch width8=%u width16=%u width32=%u unexpected=%u center=%08x\n",
             green_count, red_count, blue_count, unexpected_count, center);
@@ -911,6 +976,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: PASS line=%u point=%u center=%08x\n",
             green_count, red_count, center);
+#elif defined(VULKAN_PS5_DEMOTE_PROBE)
+        printf("shader_demote: PASS green=%u blue=%u demoted=%u center=%08x\n",
+            green_count, blue_count, demoted_count, center);
 #elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
         printf("wide_lines: PASS width8=%u width16=%u width32=%u center=%08x\n",
             green_count, red_count, blue_count, center);
@@ -959,6 +1027,7 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
+     defined(VULKAN_PS5_DEMOTE_PROBE) || \
      defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
      defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
      defined(VULKAN_PS5_LARGE_POINTS_PROBE))

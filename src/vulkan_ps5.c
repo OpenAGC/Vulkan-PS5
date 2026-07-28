@@ -289,6 +289,8 @@ static const VkExtensionProperties device_extensions[] = {
       VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
     { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
       VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_SPEC_VERSION },
+    { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
+      VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_SPEC_VERSION },
     { VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
       VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION },
     { VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
@@ -902,6 +904,10 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceHostQueryResetFeatures *)next)->hostQueryReset =
                 VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT:
+            ((VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT *)next)
+                ->shaderDemoteToHelperInvocation = VK_TRUE;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
             VkPhysicalDeviceVertexAttributeDivisorFeatures *divisor =
                 (VkPhysicalDeviceVertexAttributeDivisorFeatures *)next;
@@ -1090,6 +1096,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                 return VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT:
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
             const VkPhysicalDeviceVertexAttributeDivisorFeatures *f =
