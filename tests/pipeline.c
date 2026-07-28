@@ -211,6 +211,55 @@ int main(int argc, char **argv) {
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
 
+    const VkVertexInputBindingDescription instance_bindings[] = {
+        {0, 8, VK_VERTEX_INPUT_RATE_VERTEX},
+        {1, 12, VK_VERTEX_INPUT_RATE_INSTANCE},
+    };
+    const VkVertexInputAttributeDescription instance_attributes[] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, 0},
+        {1, 1, VK_FORMAT_R32G32B32_SFLOAT, 0},
+    };
+    const VkVertexInputBindingDivisorDescriptionEXT divisor = {
+        .binding = 1,
+        .divisor = 2,
+    };
+    const VkPipelineVertexInputDivisorStateCreateInfoEXT divisor_state = {
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT,
+        .vertexBindingDivisorCount = 1,
+        .pVertexBindingDivisors = &divisor,
+    };
+    const VkPipelineVertexInputStateCreateInfo instance_vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = &divisor_state,
+        .vertexBindingDescriptionCount = 2,
+        .pVertexBindingDescriptions = instance_bindings,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = instance_attributes,
+    };
+    VkGraphicsPipelineCreateInfo instanced_graphics_info = graphics_info;
+    instanced_graphics_info.pVertexInputState = &instance_vertex_input;
+    VkPipeline instance_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &instanced_graphics_info,
+                                     NULL, &instance_pipeline) == VK_SUCCESS);
+
+    VkVertexInputBindingDivisorDescriptionEXT zero_divisor = divisor;
+    zero_divisor.divisor = 0;
+    VkPipelineVertexInputDivisorStateCreateInfoEXT zero_divisor_state =
+        divisor_state;
+    zero_divisor_state.pVertexBindingDivisors = &zero_divisor;
+    VkPipelineVertexInputStateCreateInfo zero_vertex_input =
+        instance_vertex_input;
+    zero_vertex_input.pNext = &zero_divisor_state;
+    VkGraphicsPipelineCreateInfo zero_info = graphics_info;
+    zero_info.pVertexInputState = &zero_vertex_input;
+    VkPipeline rejected_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &zero_info,
+                                     NULL, &rejected_pipeline) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(rejected_pipeline == VK_NULL_HANDLE);
+
     const VkPipelineShaderStageCreateInfo geometry_stages[] = {
         stages[0],
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
@@ -251,6 +300,7 @@ int main(int argc, char **argv) {
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
+    vkDestroyPipeline(device, instance_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);

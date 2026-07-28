@@ -267,6 +267,15 @@
   `8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`;
   `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until that candidate
   passes one bounded FW 5.50 run.
+  The other remaining extension now has its application-neutral compiler and
+  pipeline foundation. openagc-psbc API v8 carries vertex/instance input rate
+  and a per-attribute divisor into RADV's gfx1013 input lowering; Vulkan-PS5
+  consumes `VkPipelineVertexInputDivisorStateCreateInfoEXT`, applies the
+  default divisor of one to instance bindings, rejects zero divisors while the
+  zero-divisor feature is disabled, and supplies base instance at draw time.
+  Compiler tests, the Vulkan pipeline test, all 13 host tests, and both
+  Prospero builds pass. Public extension properties, features, and enumeration
+  remain disabled until deterministic hardware readback qualifies the path.
 
 ## Summary
 

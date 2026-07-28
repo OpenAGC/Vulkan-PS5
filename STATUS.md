@@ -537,3 +537,12 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   `8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`.
   The extension remains unadvertised pending a fresh explicit `ps5 up` and
   one bounded hardware run.
+- openagc-psbc API v8 and Vulkan pipeline creation now carry instance-rate
+  vertex attributes and nonzero per-binding divisors through RADV's gfx1013
+  vertex-input lowering. Unlisted instance bindings correctly default to
+  divisor one; duplicate, missing, vertex-rate, and zero-divisor entries are
+  rejected rather than silently miscompiled. The compiler regression verifies
+  the start-instance SGPR, and the Vulkan pipeline regression compiles divisor
+  two and rejects zero. The full 13-test host suite, openagc-psbc host tests,
+  and both Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains
+  unadvertised until deterministic hardware readback qualifies it.

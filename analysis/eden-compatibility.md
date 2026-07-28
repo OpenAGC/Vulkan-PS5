@@ -32,6 +32,14 @@ bounded warning handling. The Prospero candidate SHA-256 is
 `8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`.
 One fresh-console FW 5.50 run is still required before enumeration.
 
+The vertex-divisor software contract is also implemented but not yet
+advertised. openagc-psbc API v8 passes input rate and divisor state into RADV's
+gfx1013 lowering, and Vulkan pipeline creation consumes
+`VkPipelineVertexInputDivisorStateCreateInfoEXT` with divisor-one defaults and
+nonzero-divisor validation. Compiler and pipeline regressions pass on host and
+both components build for Prospero. A deterministic hardware readback probe,
+followed by extension properties/features and enumeration, is still required.
+
 The automated probe currently reports:
 
 ```text
@@ -68,7 +76,9 @@ does not turn a failed requirement into support.
    query-only driver/float-control contracts are complete and tested; float
    execution-mode capabilities remain conservatively false. The mirror-clamp
    hardware probe and bounded runner are prepared; public enumeration awaits
-   its single FW 5.50 qualification run.
+   its single FW 5.50 qualification run. Vertex-divisor compiler and pipeline
+   semantics are host-complete; their readback gate and public query contract
+   remain.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths.

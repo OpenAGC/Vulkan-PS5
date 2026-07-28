@@ -1871,17 +1871,53 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return VK_ERROR_FEATURE_NOT_PRESENT;
         uint32_t vertex_binding_mask = 0u;
         uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS] = {0};
+        VkVertexInputRate vertex_rates[VK_PS5_MAX_VERTEX_BINDINGS] = {0};
+        uint32_t vertex_divisors[VK_PS5_MAX_VERTEX_BINDINGS] = {0};
         for (uint32_t j = 0;
              j < vertex_input->vertexBindingDescriptionCount; ++j) {
             const VkVertexInputBindingDescription *binding =
                 &vertex_input->pVertexBindingDescriptions[j];
             if (binding->binding >= VK_PS5_MAX_VERTEX_BINDINGS ||
-                binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX ||
+                (binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX &&
+                 binding->inputRate != VK_VERTEX_INPUT_RATE_INSTANCE) ||
                 binding->stride == 0u || binding->stride > 2048u ||
                 (vertex_binding_mask & (1u << binding->binding)))
                 return VK_ERROR_FEATURE_NOT_PRESENT;
             vertex_binding_mask |= 1u << binding->binding;
             vertex_strides[binding->binding] = binding->stride;
+            vertex_rates[binding->binding] = binding->inputRate;
+            vertex_divisors[binding->binding] =
+                binding->inputRate == VK_VERTEX_INPUT_RATE_INSTANCE ? 1u : 0u;
+        }
+        const VkPipelineVertexInputDivisorStateCreateInfoEXT *divisor_state = NULL;
+        for (const VkBaseInStructure *next =
+                 (const VkBaseInStructure *)vertex_input->pNext;
+             next; next = next->pNext) {
+            if (next->sType ==
+                    VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT) {
+                if (divisor_state)
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                divisor_state =
+                    (const VkPipelineVertexInputDivisorStateCreateInfoEXT *)next;
+            }
+        }
+        uint32_t divisor_binding_mask = 0u;
+        if (divisor_state &&
+            (divisor_state->vertexBindingDivisorCount &&
+             !divisor_state->pVertexBindingDivisors))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        for (uint32_t j = 0;
+             divisor_state && j < divisor_state->vertexBindingDivisorCount; ++j) {
+            const VkVertexInputBindingDivisorDescriptionEXT *divisor =
+                &divisor_state->pVertexBindingDivisors[j];
+            if (divisor->binding >= VK_PS5_MAX_VERTEX_BINDINGS ||
+                !(vertex_binding_mask & (1u << divisor->binding)) ||
+                vertex_rates[divisor->binding] != VK_VERTEX_INPUT_RATE_INSTANCE ||
+                divisor->divisor == 0u ||
+                (divisor_binding_mask & (1u << divisor->binding)))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            divisor_binding_mask |= 1u << divisor->binding;
+            vertex_divisors[divisor->binding] = divisor->divisor;
         }
         OpenAgcPsbcVertexAttribute attributes[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
         for (uint32_t j = 0; j < vertex_input->vertexAttributeDescriptionCount; ++j) {
@@ -1893,8 +1929,6 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 const VkVertexInputBindingDescription *binding =
                     &vertex_input->pVertexBindingDescriptions[k];
                 if (binding->binding == source->binding) {
-                    if (binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX)
-                        return VK_ERROR_FEATURE_NOT_PRESENT;
                     stride = binding->stride;
                     found_binding = true;
                     break;
@@ -1906,6 +1940,11 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             attributes[j].binding = source->binding;
             attributes[j].offset = source->offset;
             attributes[j].stride = stride;
+            attributes[j].input_rate =
+                vertex_rates[source->binding] == VK_VERTEX_INPUT_RATE_INSTANCE ?
+                OPENAGC_PSBC_VERTEX_INPUT_RATE_INSTANCE :
+                OPENAGC_PSBC_VERTEX_INPUT_RATE_VERTEX;
+            attributes[j].divisor = vertex_divisors[source->binding];
         }
         const VkPs5PipelineLayout *layout = (const VkPs5PipelineLayout *)create->layout;
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;

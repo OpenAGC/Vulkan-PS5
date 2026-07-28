@@ -14,6 +14,9 @@ support reduce the live count to 28.
 A deterministic mirror-clamp readback probe and bounded FW 5.50 runner are
 prepared, but `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until the
 exact gfx1013 address mode passes that hardware gate.
+The runtime compiler and graphics-pipeline path also accept instance-rate
+vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
+the extension remains hidden pending a deterministic hardware readback gate.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
