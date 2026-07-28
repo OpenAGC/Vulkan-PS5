@@ -146,6 +146,16 @@ Implemented and host-verified:
   left etaHEN websrv responsive, but its target was still zeroed
   (`20260728T024632Z-tessellation-run1.log`). No retry was attempted. Correct
   LDS rounding is retained, but it is not the remaining VS-to-TCS dataflow fix.
+  Generated-code inspection then showed that the separately compiled HS back
+  retained RADV's monolithic same-invocation temporary-VGPR path and compiled
+  unavailable VS values as zero. openagc-psbc now disables that path in both
+  halves, requires all TCS per-vertex inputs to lower to LDS, and rejects a
+  surviving input intrinsic. The resulting HS ACO reads LDS and stores those
+  values offchip, while TES ACO performs the expected coherent ring loads.
+  Nevertheless, its one bounded FW 5.500.008 run again returned safely with a
+  zeroed target (`20260728T030535Z-tessellation-run1.log`); websrv remained
+  responsive and no retry was attempted. The remaining fault is downstream of
+  the corrected HS input path.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

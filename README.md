@@ -119,8 +119,12 @@ made the TCS write zero positions to the offchip ring. openagc-psbc now forces
 both halves through the common LDS ABI and rejects compilation if an HS input
 survives lowering. Host inspection confirms the HS loads are `load_shared`, all
 seven ICD tests pass, and the Prospero ELF links with `-lunwind -lc++abi -lc++
--lm`. This candidate has not been uploaded or launched; a fresh bounded run is
-required before any second run or feature advertisement.
+-lm`. Its one bounded FW 5.500.008 run returned normally and left etaHEN
+websrv responsive, but the target remained zeroed
+(`20260728T030535Z-tessellation-run1.log`). It was not retried. Correct
+LS-to-HS LDS dataflow is retained, but the remaining failure is downstream in
+HS offchip storage, tessellation ring state, or TES consumption; feature
+advertisement remains disabled.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

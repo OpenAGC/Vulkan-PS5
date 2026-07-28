@@ -59,8 +59,10 @@
   input positions. openagc-psbc now disables that shortcut in both halves,
   lowers the TCS inputs to shared LDS loads, and rejects surviving per-vertex
   HS inputs. Host compiler tests, all seven ICD tests, and the Prospero build
-  pass. The corrected candidate is deliberately not hardware-qualified yet;
-  its next action is one bounded FW 5.50 run after a fresh console-up signal.
+  pass. Its one bounded FW 5.50 run returned safely and left websrv responsive,
+  but produced a zeroed target (`20260728T030535Z-tessellation-run1.log`). It
+  was not retried. The next investigation is downstream of the fixed HS LDS
+  loads: offchip ring configuration, HS stores, and TES consumption.
 
 ## Summary
 
