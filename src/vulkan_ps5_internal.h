@@ -35,5 +35,7 @@ uint32_t vk_ps5_command_buffer_indirect_descriptor_table(
     VkCommandBuffer command_buffer);
 uint32_t vk_ps5_command_buffer_indirect_descriptor_entry(
     VkCommandBuffer command_buffer, uint32_t set);
+uint32_t vk_ps5_command_buffer_indirect_descriptor_register(
+    VkCommandBuffer command_buffer);
 
 #endif

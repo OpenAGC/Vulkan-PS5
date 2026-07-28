@@ -144,11 +144,13 @@ ACO inspection showed that the separately compiled HS uses its indirect
 descriptor-set-table pointer in `s14`. openagc-psbc API v7 now reports that
 indirect pointer distinctly from ordinary direct set pointers, and the ICD
 allocates a GPU-visible array of bound-set low addresses and writes the array
-address to the compiler-selected register before drawing. The command test
-requires the pointer, its bound set-1 entry, and its PM4 register value all to
-be nonzero. Both seven-test host configurations pass and the Prospero link
+address to the compiler-selected register before drawing. The ICD rejects the
+table or any bound-set pointer outside gfx1013's `0x2_xxxxxxxx` aperture. The
+command test requires the pointer and bound set-1 entry to be nonzero and
+matches the exact compiler-selected register/value pair in PM4. Both seven-test
+host configurations pass and the Prospero link
 includes `-lunwind -lc++abi -lc++ -lm`. The corrected ELF has SHA-256
-`6f356b0ed9eb4c243feefc281bb6074f198fa356c4a9204068b503f919a4af61` and
+`9be96734ae5b1643d9b1f408101cc345bb0bb7291491ed8fbdc989ab974285cc` and
 has not been launched on hardware.
 
 Run the advanced stages one at a time. The default is one run so a new packet

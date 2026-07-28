@@ -169,10 +169,12 @@ Implemented and host-verified:
   pointer for the separately compiled HS. openagc-psbc API v7 now exports that
   SGPR kind, and the ICD builds a GPU-visible low-address table of bound set
   pointers and programs the reported register before the draw. The host
-  command regression requires a nonzero table pointer, a nonzero set-1 entry,
-  and the matching PM4 write. Both seven-test host configurations pass and the
+  command regression requires a nonzero table pointer and set-1 entry, verifies
+  the exact compiler-selected PM4 register/value pair, and rejects pointers
+  outside the gfx1013 `0x2_xxxxxxxx` aperture. Both seven-test host
+  configurations pass and the
   Prospero ELF links with `-lunwind -lc++abi -lc++ -lm`; corrected ELF SHA-256
-  is `6f356b0ed9eb4c243feefc281bb6074f198fa356c4a9204068b503f919a4af61`.
+  is `9be96734ae5b1643d9b1f408101cc345bb0bb7291491ed8fbdc989ab974285cc`.
   It awaits one bounded run after a fresh console-availability signal.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a

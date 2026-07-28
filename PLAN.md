@@ -73,7 +73,8 @@
   data read at unmapped `0x2_00000000`. Kernel evidence and ACO agree that the
   HS indirect descriptor-set-table SGPR was zero. openagc-psbc API v7 now
   exposes that ABI and the ICD supplies a GPU-visible set-pointer table; host
-  tests prove the table address and bound entry reach PM4. The materially
+  tests prove the exact SGPR/table-address pair reaches PM4 and reject pointers
+  outside gfx1013's `0x2_xxxxxxxx` aperture. The materially
   distinct corrected ELF awaits one bounded run after a fresh console
   availability signal.
 
