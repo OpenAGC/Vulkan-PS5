@@ -30,6 +30,9 @@ address incrementing, and write confirmation (`control = 0x00100100`). To
 isolate the next hardware test from command-reset PM4, the standalone query
 sample now enables `VK_EXT_host_query_reset` and resets its fresh pool through
 `vkResetQueryPoolEXT`. The next run must execute only the query ELF first.
+The rebuilt sample prints stages immediately before and after `vkQueueSubmit`,
+after fence completion, and after query-result retrieval so another timeout can
+be localized without inference.
 
 Retained logs are under `examples/qualification-logs/20260727T231245Z-*.log`
 and are ignored by Git.

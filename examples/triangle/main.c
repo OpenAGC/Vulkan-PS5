@@ -323,8 +323,17 @@ int main(void)
         .commandBufferCount = 1,
         .pCommandBuffers = &command,
     };
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    printf("query: stage submit\n");
+#endif
     VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, fence));
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    printf("query: stage submitted\n");
+#endif
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
+#if defined(VULKAN_PS5_QUERY_SAMPLE)
+    printf("query: stage fence\n");
+#endif
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &mapped_range));
 
     const uint32_t *pixels = mapped;
@@ -344,6 +353,9 @@ int main(void)
     VkResult query_result = vkGetQueryPoolResults(device, query_pool, 0, 1,
         sizeof(query_data), query_data, sizeof(query_data),
         VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    printf("query: stage result=%d samples=%llu available=%llu\n",
+        query_result, (unsigned long long)query_data[0],
+        (unsigned long long)query_data[1]);
 #endif
     if (green_count < 16000u || green_count > 21000u ||
         unexpected_count != 0u || center != GREEN_RGBA8 ||
