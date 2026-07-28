@@ -500,3 +500,23 @@ Implemented and verified:
   `20260728T070752Z-package-consumer-target.klog`.
 
 This closes Milestone 5 at the reusable static SDK/package scope.
+
+## Milestone 6: Eden compatibility profile (in progress)
+
+Initial audit at `../eden-ps5` revision `39763e7321`:
+
+- Eden requires Vulkan 1.1, four device extensions, 29 feature bits, four
+  explicit minimum limits, a graphics/present queue, and swapchain support.
+- Vulkan-PS5 passes Vulkan 1.1, all four limits, the universal queue shape,
+  `VK_KHR_swapchain`, `geometryShader`, `tessellationShader`, and
+  `hostQueryReset`.
+- The hard startup baseline is four missing extensions and 26 missing feature
+  bits. `vulkan_ps5_eden_profile_test` reports every name and a stable category
+  summary; its normal reporting mode is registered with CTest and `--strict`
+  remains nonzero until the profile is actually complete.
+- Runtime audit also identifies missing Eden VMA-pattern coverage, a 19-format
+  subset with no BC/D24/storage-image support, and the still-missing Prospero
+  surface/build/static-entrypoint integration in Eden itself.
+- `analysis/eden-compatibility.md` records the evidence, prevents Eden's
+  continue-after-unsuitable behavior from being mistaken for support, and
+  defines the application-neutral implementation order.

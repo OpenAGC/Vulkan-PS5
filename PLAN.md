@@ -241,6 +241,14 @@
   contained only the proven raw-ELF warning. Evidence is retained at
   `20260728T070752Z-package-consumer.log` and
   `20260728T070752Z-package-consumer-target.klog`. This closes Milestone 5.
+  Milestone 6 now has an automated Eden suitability baseline derived from
+  `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
+  the universal queue, swapchain, geometry, tessellation, and host query reset
+  pass. Four mandatory extensions and 26 mandatory features remain, for 30
+  hard startup gaps. The reporting probe names each gap and supports a strict
+  nonzero mode for closure. The accompanying matrix also records the runtime
+  VMA, format, shader, presentation, and allowed Eden-integration work without
+  weakening or special-casing Eden's requirements.
 
 ## Summary
 

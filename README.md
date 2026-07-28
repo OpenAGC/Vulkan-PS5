@@ -6,6 +6,9 @@ Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3 OpenAGC
 DCB path, and the hardware-qualified Milestone 4 headless-surface/swapchain
 path. Milestone 5 also qualifies the relocatable SDK package through a separate
 standard-Vulkan consumer on both host and FW 5.50.
+Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
+`vulkan_ps5.eden_profile_report` test; the initial Eden suitability baseline is
+30 hard gaps rather than an application-specific bypass.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
