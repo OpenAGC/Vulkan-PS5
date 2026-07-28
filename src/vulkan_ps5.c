@@ -560,6 +560,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->shaderCullDistance = VK_TRUE;
     features->shaderImageGatherExtended = VK_TRUE;
     features->tessellationShader = VK_TRUE;
+    features->vertexPipelineStoresAndAtomics = VK_TRUE;
     features->wideLines = VK_TRUE;
 }
 

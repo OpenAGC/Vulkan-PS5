@@ -3949,7 +3949,7 @@ static void record_tessellation_draw(
     AgcGfx1013ResourceTableBinding
         hull_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
     AgcGfx1013ResourceTableBinding
-        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
     AgcGfx1013ResourceTableBinding
         pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
     uint32_t hull_table_count = 0u;
@@ -3962,7 +3962,7 @@ static void record_tessellation_draw(
         &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result == VK_SUCCESS)
         result = prepare_graphics_stage_user_data(
-            command, pipeline, 1u, false, false, first_element, 0,
+            command, pipeline, 1u, true, false, first_element, 0,
             first_instance, false, NULL, NULL, NULL,
             primitive_tables, &primitive_table_count,
             user_data, &user_data_count,
@@ -3981,8 +3981,8 @@ static void record_tessellation_draw(
     descriptor_count = 0u;
     if (result == VK_SUCCESS)
         result = prepare_graphics_descriptor_tables(command, pipeline, 1u,
-            primitive_tables, &descriptor_count);
-    primitive_table_count = descriptor_count;
+            &primitive_tables[primitive_table_count], &descriptor_count);
+    primitive_table_count += descriptor_count;
     descriptor_count = 0u;
     if (result == VK_SUCCESS)
         result = prepare_graphics_descriptor_tables(command, pipeline, 2u,

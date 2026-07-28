@@ -11,10 +11,13 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
-The current profile has 9 hard feature gaps. The latest closure is core
-`fragmentStoresAndAtomics`: the FW 5.50 gate proves 18,432 fragment-stage SSBO
-stores and 18,432 atomic increments through the normal legacy
-feature-query/device-enable path.
+The current profile has 8 hard feature gaps. The latest closure is core
+`vertexPipelineStoresAndAtomics`: one combined VS/TCS/TES/GS pipeline proves
+an exact atomic marker and direct SSBO store from every applicable
+pre-fragment stage. The final FW 5.50 gate rendered exactly 7,200 green pixels
+through the normal legacy feature-query/device-enable path. Its public-path
+Prospero ELF SHA-256 is
+`e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.

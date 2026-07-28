@@ -413,6 +413,19 @@
 6. Eden compatibility profile: pass Eden's mandatory extension, feature, limit, format, queue, VMA, shader-pipeline, and presentation checks without application-specific driver behavior.
 7. Run `../2048.nro` through `eden-ps5`, followed by broader applications and engines to prevent the implementation from overfitting to Eden.
 
+### Milestone 6 current progress
+
+- `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined
+  VS/TCS/TES/GS pipeline. The fused primitive recorder now permits and
+  preserves its vertex resource table before descriptor-set tables. Both
+  33/33 host suites, the full Prospero build, and repeated public FW 5.50 gates
+  pass the exact eight-marker and 7,200-green-pixel oracle. Evidence is
+  retained in `20260728T133417Z-vertex-pipeline-stores-atomics-run1.log` and
+  `20260728T133515Z-vertex-pipeline-stores-atomics-run1.log`; the public ELF
+  SHA-256 is
+  `e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
+- The live Eden compatibility profile is now eight feature gaps.
+
 ## Test Plan and Assumptions
 
 - Preserve the existing passing OpenAGC, openagc-psbc, and Vulkan-PS4 baselines.

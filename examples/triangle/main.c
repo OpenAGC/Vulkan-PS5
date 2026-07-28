@@ -4,7 +4,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+#include "vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv.h"
+#include "vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv.h"
+#include "vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv.h"
+#include "vulkan_ps5_vertex_pipeline_stores_atomics_geom_spv.h"
+#include "vulkan_ps5_triangle_frag_spv.h"
+#define vulkan_ps5_triangle_vert_spv \
+    vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "vertex_pipeline_stores_atomics"
+#elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
 #include "vulkan_ps5_cull_distance_vert_spv.h"
 #include "vulkan_ps5_triangle_frag_spv.h"
 #define vulkan_ps5_triangle_vert_spv vulkan_ps5_cull_distance_vert_spv
@@ -82,6 +92,15 @@ _Static_assert(sizeof(TessellationHullProbe) == 128u,
     "tessellation probe must match the std430 shader layout");
 #endif
 
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+typedef struct VertexPipelineStageProbe {
+    uint32_t atomic_markers[4];
+    uint32_t store_markers[4];
+} VertexPipelineStageProbe;
+_Static_assert(sizeof(VertexPipelineStageProbe) == 32u,
+    "vertex-pipeline probe must match the std430 shader layout");
+#endif
+
 #define VK_CHECK(expression) do { \
     VkResult check_result = (expression); \
     if (check_result != VK_SUCCESS) { \
@@ -115,7 +134,17 @@ int main(void)
     VkRenderPass render_pass;
     VkFramebuffer framebuffer;
     VkShaderModule vertex_shader;
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    VkShaderModule tess_control_shader;
+    VkShaderModule tess_evaluation_shader;
+    VkShaderModule geometry_shader;
+    VkBuffer stage_probe_buffer;
+    VkDeviceMemory stage_probe_memory;
+    VkDescriptorSetLayout stage_probe_set_layout;
+    VkDescriptorPool stage_probe_descriptor_pool;
+    VkDescriptorSet stage_probe_descriptor_set;
+    void *stage_probe_mapped;
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     VkShaderModule tess_control_shader;
     VkShaderModule tess_evaluation_shader;
     VkBuffer hull_probe_buffer;
@@ -153,7 +182,21 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_DEMOTE_PROBE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.geometryShader ||
+        !supported_features.tessellationShader ||
+        !supported_features.vertexPipelineStoresAndAtomics) {
+        printf("vertex_pipeline_stores_atomics: prerequisite stages are unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .geometryShader = VK_TRUE,
+        .tessellationShader = VK_TRUE,
+        .vertexPipelineStoresAndAtomics = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_DEMOTE_PROBE)
     VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT demote_features = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
@@ -294,6 +337,7 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
     defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
     defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
@@ -365,7 +409,91 @@ int main(void)
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &mapped_range));
 
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    const VkBufferCreateInfo stage_probe_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(VertexPipelineStageProbe),
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VK_CHECK(vkCreateBuffer(device, &stage_probe_buffer_info, NULL,
+        &stage_probe_buffer));
+    VkMemoryRequirements stage_probe_requirements;
+    vkGetBufferMemoryRequirements(device, stage_probe_buffer,
+        &stage_probe_requirements);
+    uint32_t stage_probe_memory_type = find_host_visible_memory_type(
+        physical, stage_probe_requirements.memoryTypeBits);
+    if (stage_probe_memory_type == UINT32_MAX) {
+        printf("vertex_pipeline_stores_atomics: no host-visible probe memory type\n");
+        return 1;
+    }
+    const VkMemoryAllocateInfo stage_probe_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = stage_probe_requirements.size,
+        .memoryTypeIndex = stage_probe_memory_type,
+    };
+    VK_CHECK(vkAllocateMemory(device, &stage_probe_memory_info, NULL,
+        &stage_probe_memory));
+    VK_CHECK(vkBindBufferMemory(device, stage_probe_buffer,
+        stage_probe_memory, 0));
+    VK_CHECK(vkMapMemory(device, stage_probe_memory, 0,
+        stage_probe_requirements.size, 0, &stage_probe_mapped));
+    memset(stage_probe_mapped, 0, (size_t)stage_probe_requirements.size);
+    const VkMappedMemoryRange stage_probe_range = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = stage_probe_memory,
+        .size = stage_probe_requirements.size,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &stage_probe_range));
+    const VkDescriptorSetLayoutBinding stage_probe_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+            VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+            VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+            VK_SHADER_STAGE_GEOMETRY_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo stage_probe_set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &stage_probe_binding,
+    };
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &stage_probe_set_layout_info,
+        NULL, &stage_probe_set_layout));
+    const VkDescriptorPoolSize stage_probe_pool_size = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+    };
+    const VkDescriptorPoolCreateInfo stage_probe_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &stage_probe_pool_size,
+    };
+    VK_CHECK(vkCreateDescriptorPool(device, &stage_probe_pool_info, NULL,
+        &stage_probe_descriptor_pool));
+    const VkDescriptorSetAllocateInfo stage_probe_set_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = stage_probe_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &stage_probe_set_layout,
+    };
+    VK_CHECK(vkAllocateDescriptorSets(device, &stage_probe_set_allocate_info,
+        &stage_probe_descriptor_set));
+    const VkDescriptorBufferInfo stage_probe_descriptor_buffer = {
+        .buffer = stage_probe_buffer,
+        .range = sizeof(VertexPipelineStageProbe),
+    };
+    const VkWriteDescriptorSet stage_probe_descriptor_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = stage_probe_descriptor_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &stage_probe_descriptor_buffer,
+    };
+    vkUpdateDescriptorSets(device, 1, &stage_probe_descriptor_write, 0, NULL);
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     const VkBufferCreateInfo hull_probe_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizeof(TessellationHullProbe),
@@ -506,7 +634,23 @@ int main(void)
         .codeSize = sizeof(vulkan_ps5_triangle_frag_spv),
         .pCode = vulkan_ps5_triangle_frag_spv,
     };
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    const VkShaderModuleCreateInfo tess_control_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv),
+        .pCode = vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv,
+    };
+    const VkShaderModuleCreateInfo tess_evaluation_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv),
+        .pCode = vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv,
+    };
+    const VkShaderModuleCreateInfo geometry_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_vertex_pipeline_stores_atomics_geom_spv),
+        .pCode = vulkan_ps5_vertex_pipeline_stores_atomics_geom_spv,
+    };
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     const VkShaderModuleCreateInfo tess_control_shader_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(vulkan_ps5_tess_control_spv),
@@ -528,7 +672,15 @@ int main(void)
         device, &vertex_shader_info, NULL, &vertex_shader));
     VK_CHECK(vkCreateShaderModule(
         device, &fragment_shader_info, NULL, &fragment_shader));
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    VK_CHECK(vkCreateShaderModule(
+        device, &tess_control_shader_info, NULL, &tess_control_shader));
+    VK_CHECK(vkCreateShaderModule(
+        device, &tess_evaluation_shader_info, NULL,
+        &tess_evaluation_shader));
+    VK_CHECK(vkCreateShaderModule(
+        device, &geometry_shader_info, NULL, &geometry_shader));
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     VK_CHECK(vkCreateShaderModule(
         device, &tess_control_shader_info, NULL, &tess_control_shader));
     VK_CHECK(vkCreateShaderModule(
@@ -540,7 +692,10 @@ int main(void)
 #endif
     const VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+        .setLayoutCount = 1,
+        .pSetLayouts = &stage_probe_set_layout,
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .setLayoutCount = 1,
         .pSetLayouts = &hull_probe_set_layout,
 #endif
@@ -554,7 +709,26 @@ int main(void)
             .module = vertex_shader,
             .pName = "main",
         },
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+            .module = tess_control_shader,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            .module = tess_evaluation_shader,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
+            .module = geometry_shader,
+            .pName = "main",
+        },
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
@@ -587,7 +761,8 @@ int main(void)
     };
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
 #elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
         .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
@@ -597,7 +772,8 @@ int main(void)
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 #endif
     };
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     const VkPipelineTessellationStateCreateInfo tessellation_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
         .patchControlPoints = 3,
@@ -653,7 +829,8 @@ int main(void)
         .pStages = stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &input_assembly,
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .pTessellationState = &tessellation_state,
 #endif
         .pViewportState = &viewport_state,
@@ -730,7 +907,10 @@ int main(void)
     vkCmdSetLineWidth(command, 32.0f);
     vkCmdDraw(command, 2, 1, 4, 0);
 #else
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline_layout, 0, 1, &stage_probe_descriptor_set, 0, NULL);
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &hull_probe_descriptor_set, 0, NULL);
 #endif
@@ -777,7 +957,9 @@ int main(void)
     printf("query: stage fence\n");
 #endif
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &mapped_range));
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &stage_probe_range));
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &hull_probe_range));
 #endif
 
@@ -855,7 +1037,19 @@ int main(void)
     uint32_t clip_right = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         (TARGET_WIDTH * 9u) / 16u];
 #endif
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    const VertexPipelineStageProbe expected_stage_probe = {
+        .atomic_markers = {
+            0xa7010001u, 0xa7020002u, 0xa7030003u, 0xa7040004u,
+        },
+        .store_markers = {
+            0x57010001u, 0x57020002u, 0x57030003u, 0x57040004u,
+        },
+    };
+    const VertexPipelineStageProbe *stage_probe = stage_probe_mapped;
+    int stage_probe_ok = memcmp(stage_probe, &expected_stage_probe,
+        sizeof(expected_stage_probe)) == 0;
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     const TessellationHullProbe expected_hull_probe = {
         .position = {
             {0xbf400000u, 0xbf400000u, 0u, 0x3f800000u},
@@ -925,6 +1119,10 @@ int main(void)
         unexpected_count == 0u && center == LOGIC_XOR_RGBA8 &&
         pixels[0] == LOGIC_BACKGROUND_RGBA8 &&
         pixels[TARGET_WIDTH - 1u] == LOGIC_BACKGROUND_RGBA8;
+#elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    image_ok = green_count == 7200u && unexpected_count == 0u &&
+        center == GREEN_RGBA8 && pixels[0] == 0u &&
+        pixels[TARGET_WIDTH - 1u] == 0u;
 #elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     image_ok = green_count >= 6000u && green_count <= 8500u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
@@ -971,6 +1169,9 @@ int main(void)
 #endif
 #endif
     if (!image_ok
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+        || !stage_probe_ok
+#endif
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         || !hull_probe_ok || !tes_probe_ok
 #endif
@@ -991,6 +1192,13 @@ int main(void)
         printf("query: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
             query_result, (unsigned long long)query_data[0],
             (unsigned long long)query_data[1], green_count, unexpected_count);
+#elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+        printf("vertex_pipeline_stores_atomics: mismatch green=%u unexpected=%u atomic=%08x,%08x,%08x,%08x stores=%08x,%08x,%08x,%08x\n",
+            green_count, unexpected_count,
+            stage_probe->atomic_markers[0], stage_probe->atomic_markers[1],
+            stage_probe->atomic_markers[2], stage_probe->atomic_markers[3],
+            stage_probe->store_markers[0], stage_probe->store_markers[1],
+            stage_probe->store_markers[2], stage_probe->store_markers[3]);
 #elif defined(VULKAN_PS5_LOGIC_OP_PROBE)
         printf("logic_op: mismatch xor=%u background=%u unexpected=%u center=%08x\n",
             green_count, background_count, unexpected_count, center);
@@ -1034,6 +1242,9 @@ int main(void)
 #elif defined(VULKAN_PS5_QUERY_SAMPLE)
         printf("query: PASS samples=%llu green=%u\n",
             (unsigned long long)query_data[0], green_count);
+#elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+        printf("vertex_pipeline_stores_atomics: PASS green=%u stages=VS,TCS,TES,GS atomic=4 stores=4\n",
+            green_count);
 #elif defined(VULKAN_PS5_LOGIC_OP_PROBE)
         printf("logic_op: PASS xor=%u background=%u center=%08x\n",
             green_count, background_count, center);
@@ -1072,7 +1283,13 @@ int main(void)
 #endif
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    vkDestroyDescriptorPool(device, stage_probe_descriptor_pool, NULL);
+    vkDestroyDescriptorSetLayout(device, stage_probe_set_layout, NULL);
+    vkUnmapMemory(device, stage_probe_memory);
+    vkDestroyBuffer(device, stage_probe_buffer, NULL);
+    vkFreeMemory(device, stage_probe_memory, NULL);
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkDestroyDescriptorPool(device, hull_probe_descriptor_pool, NULL);
     vkDestroyDescriptorSetLayout(device, hull_probe_set_layout, NULL);
     vkUnmapMemory(device, hull_probe_memory);
@@ -1080,7 +1297,11 @@ int main(void)
     vkFreeMemory(device, hull_probe_memory, NULL);
 #endif
     vkDestroyShaderModule(device, fragment_shader, NULL);
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+    vkDestroyShaderModule(device, geometry_shader, NULL);
+    vkDestroyShaderModule(device, tess_evaluation_shader, NULL);
+    vkDestroyShaderModule(device, tess_control_shader, NULL);
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkDestroyShaderModule(device, tess_evaluation_shader, NULL);
     vkDestroyShaderModule(device, tess_control_shader, NULL);
 #elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
@@ -1096,7 +1317,8 @@ int main(void)
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
-    (defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
+    (defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
+     defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
      defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_DEMOTE_PROBE) || \

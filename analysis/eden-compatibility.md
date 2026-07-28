@@ -63,13 +63,12 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=9 limits=0 queues=0 total=9
+eden-profile: extensions=0 features=8 limits=0 queues=0 total=8
 ```
 
-The 9 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
+The 8 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
 `robustBufferAccess`,
 `sampleRateShading`, `shaderStorageImageWriteWithoutFormat`,
-`vertexPipelineStoresAndAtomics`,
 `variablePointers`, and
 `variablePointersStorageBuffer`.
 
@@ -289,6 +288,23 @@ reported exact `covered=18432 atomic=18432 stores=18432 marker=51a7c0de`,
 matching SystemService self-exit, no stale process, and only the known single
 `amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
 `ecbd369db08ae5d7dd80fb66da45d282ef5134ca3d4c614940d1a86e5a2da985`.
+
+The core `vertexPipelineStoresAndAtomics` contract is implemented and
+hardware-qualified for the supported SSBO storage path. A combined
+VS/TCS/TES/GS pipeline performs one atomic exchange and one direct store from
+each applicable pre-fragment stage, then validates eight exact mapped-memory
+markers and an exact 7,200-pixel green framebuffer. Supporting fused
+TES-to-GS executables required the application-neutral tessellation recorder
+to accept a primitive-stage vertex resource table and preserve it ahead of
+descriptor-set tables. Both 33/33 normal and ASAN/UBSAN host suites, runner
+safety coverage, and the complete Prospero build pass. Two final public legacy
+query/request gates
+(`20260728T133417Z-vertex-pipeline-stores-atomics-run1.log` and
+`20260728T133515Z-vertex-pipeline-stores-atomics-run1.log`) each reported
+exact `green=7200 stages=VS,TCS,TES,GS atomic=4 stores=4`, matching
+SystemService self-exit, no stale process, and only the known single
+`amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
+`e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
 
 ## Runtime compatibility
 

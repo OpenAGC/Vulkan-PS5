@@ -220,6 +220,11 @@ if(VULKAN_PS5_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.fragment_stores_atomics_runner PROPERTIES
       TIMEOUT 15)
+    add_test(NAME vulkan_ps5.vertex_pipeline_stores_atomics_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/vertex_pipeline_stores_atomics_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.vertex_pipeline_stores_atomics_runner PROPERTIES
+      TIMEOUT 15)
     add_test(NAME vulkan_ps5.ps5debug_process_identity
       COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
@@ -362,6 +367,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_tess_control_spv.h")
   set(VULKAN_PS5_TESS_EVALUATION_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_tess_evaluation_spv.h")
+  set(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv.h")
+  set(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_CONTROL_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv.h")
+  set(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_EVALUATION_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv.h")
+  set(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_GEOMETRY_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_vertex_pipeline_stores_atomics_geom_spv.h")
   add_custom_command(OUTPUT "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
       --vn vulkan_ps5_triangle_vert_spv
@@ -455,6 +468,42 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/tessellation/tessellation.tese"
     VERBATIM)
+  add_custom_command(
+    OUTPUT "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.vert"
+      -o "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_VERTEX_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.vert"
+    VERBATIM)
+  add_custom_command(
+    OUTPUT "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_CONTROL_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.tesc"
+      -o "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_CONTROL_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.tesc"
+    VERBATIM)
+  add_custom_command(
+    OUTPUT "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_EVALUATION_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.tese"
+      -o "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_EVALUATION_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.tese"
+    VERBATIM)
+  add_custom_command(
+    OUTPUT "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_GEOMETRY_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_vertex_pipeline_stores_atomics_geom_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.geom"
+      -o "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_GEOMETRY_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/vertex_pipeline_stores_atomics/stores_atomics.geom"
+    VERBATIM)
   add_executable(vulkan_ps5_triangle_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -516,6 +565,15 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_TESS_EVALUATION_HEADER}")
   target_compile_definitions(vulkan_ps5_tessellation_example
     PRIVATE VULKAN_PS5_TESSELLATION_SAMPLE=1)
+  add_executable(vulkan_ps5_vertex_pipeline_stores_atomics_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
+    "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_VERTEX_HEADER}"
+    "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_CONTROL_HEADER}"
+    "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_EVALUATION_HEADER}"
+    "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_GEOMETRY_HEADER}")
+  target_compile_definitions(vulkan_ps5_vertex_pipeline_stores_atomics_probe
+    PRIVATE VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE=1)
   add_executable(vulkan_ps5_query_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -729,6 +787,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_shader_clip_distance_probe
       vulkan_ps5_shader_cull_distance_probe
       vulkan_ps5_tessellation_example
+      vulkan_ps5_vertex_pipeline_stores_atomics_probe
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
       vulkan_ps5_depth_clamp_probe
       vulkan_ps5_swapchain_example
@@ -754,6 +813,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_shader_cull_distance_probe
       vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
+      vulkan_ps5_vertex_pipeline_stores_atomics_probe
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
       vulkan_ps5_depth_clamp_probe
       vulkan_ps5_mrt_example
@@ -800,6 +860,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_shader_image_gather_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_fragment_stores_atomics_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_vertex_pipeline_stores_atomics_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_mirror_clamp_probe PRIVATE
       SceSystemService)

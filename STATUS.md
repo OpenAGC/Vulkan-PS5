@@ -832,3 +832,17 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   `multiDrawIndirect`, `drawIndirectFirstInstance`, and
   `shaderDrawParameters` are advertised and accepted through their standard
   core, Features2, Vulkan 1.1, and standalone feature paths.
+
+The core `vertexPipelineStoresAndAtomics` contract is implemented and
+hardware-qualified. Legacy and Features2 queries report it, and device
+creation accepts it through both paths. The combined VS/TCS/TES/GS probe
+performs an atomic exchange and direct SSBO store in every applicable stage,
+then requires eight exact markers and exactly 7,200 green pixels. The fused
+TES-to-GS recorder now preserves both its vertex resource table and descriptor
+tables instead of rejecting or overwriting the former. Both 33/33 host suites,
+runner safety coverage, and the complete Prospero build pass. Repeated public
+`20260728T133417Z` and `20260728T133515Z` FW 5.50 gates passed the exact
+oracle with matching SystemService exit, no stale process, and only the known
+single `amount=0x4000` baseline warning. The live Eden profile is now eight
+feature gaps. The public Prospero ELF SHA-256 is
+`e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
