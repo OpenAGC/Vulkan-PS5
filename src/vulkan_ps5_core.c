@@ -2151,8 +2151,12 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         pCreateInfo->sType != VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO)
         return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->pNext || pCreateInfo->flags ||
-        pCreateInfo->unnormalizedCoordinates || pCreateInfo->anisotropyEnable ||
+        pCreateInfo->unnormalizedCoordinates ||
         pCreateInfo->minLod < 0.0f || pCreateInfo->maxLod < pCreateInfo->minLod)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (pCreateInfo->anisotropyEnable &&
+        (!(pCreateInfo->maxAnisotropy >= 1.0f) ||
+         pCreateInfo->maxAnisotropy > 16.0f))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     AgcClampMode u, v, w;
     if (!sampler_clamp(pCreateInfo->addressModeU, &u) ||
@@ -2160,11 +2164,19 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         !sampler_clamp(pCreateInfo->addressModeW, &w))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     AgcFilterMode min_filter = pCreateInfo->minFilter == VK_FILTER_NEAREST ?
-        kAgcFilterPoint : pCreateInfo->minFilter == VK_FILTER_LINEAR ?
-        kAgcFilterBilinear : (AgcFilterMode)-1;
+        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoPoint :
+                                        kAgcFilterPoint) :
+        pCreateInfo->minFilter == VK_FILTER_LINEAR ?
+        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoLinear :
+                                        kAgcFilterBilinear) :
+        (AgcFilterMode)-1;
     AgcFilterMode mag_filter = pCreateInfo->magFilter == VK_FILTER_NEAREST ?
-        kAgcFilterPoint : pCreateInfo->magFilter == VK_FILTER_LINEAR ?
-        kAgcFilterBilinear : (AgcFilterMode)-1;
+        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoPoint :
+                                        kAgcFilterPoint) :
+        pCreateInfo->magFilter == VK_FILTER_LINEAR ?
+        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoLinear :
+                                        kAgcFilterBilinear) :
+        (AgcFilterMode)-1;
     if ((int)min_filter < 0 || (int)mag_filter < 0)
         return VK_ERROR_FEATURE_NOT_PRESENT;
     AgcMipFilterMode mip_filter = pCreateInfo->maxLod == 0.0f ?
@@ -2182,6 +2194,9 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
     agcSamplerDescriptorSetClampMode(&sampler->descriptor, u, v, w);
     agcSamplerDescriptorSetFilterMode(&sampler->descriptor, min_filter,
                                       mag_filter, mip_filter);
+    if (pCreateInfo->anisotropyEnable)
+        agcSamplerDescriptorSetMaxAnisotropy(
+            &sampler->descriptor, (uint32_t)pCreateInfo->maxAnisotropy);
     agcSamplerDescriptorSetLod(&sampler->descriptor, pCreateInfo->minLod,
                                pCreateInfo->maxLod, pCreateInfo->mipLodBias);
     if (pCreateInfo->compareEnable)

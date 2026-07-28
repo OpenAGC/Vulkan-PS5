@@ -578,3 +578,9 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   Its bounded one-shot runner has clean/crash safety coverage, exact-PID fatal
   checks and cleanup, and post-run websrv validation. Hardware execution is
   still pending a fresh explicit FW 5.50 gate.
+- The hidden sampler-anisotropy path now validates the Vulkan 1x-16x range,
+  switches point/linear requests to gfx1013 anisotropic filter modes, and
+  encodes the quantized maximum with OpenAGC's typed descriptor helper. Direct
+  host tests cover valid 8x creation and invalid low/high ratios; all 17 host
+  tests and the Prospero build pass. `samplerAnisotropy` remains `VK_FALSE`
+  until deterministic hardware readback qualifies filtering behavior.

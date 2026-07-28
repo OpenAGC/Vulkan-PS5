@@ -325,6 +325,23 @@ int main(int argc, char **argv)
     };
     VkSampler sampler;
     assert(vkCreateSampler(device, &sampler_info, NULL, &sampler) == VK_SUCCESS);
+    VkSamplerCreateInfo anisotropic_sampler_info = sampler_info;
+    anisotropic_sampler_info.anisotropyEnable = VK_TRUE;
+    anisotropic_sampler_info.maxAnisotropy = 8.0f;
+    VkSampler anisotropic_sampler;
+    assert(vkCreateSampler(device, &anisotropic_sampler_info, NULL,
+                           &anisotropic_sampler) == VK_SUCCESS);
+    VkSamplerCreateInfo invalid_anisotropic_sampler_info =
+        anisotropic_sampler_info;
+    invalid_anisotropic_sampler_info.maxAnisotropy = 0.5f;
+    VkSampler invalid_sampler = VK_NULL_HANDLE;
+    assert(vkCreateSampler(device, &invalid_anisotropic_sampler_info, NULL,
+                           &invalid_sampler) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_sampler == VK_NULL_HANDLE);
+    invalid_anisotropic_sampler_info.maxAnisotropy = 17.0f;
+    assert(vkCreateSampler(device, &invalid_anisotropic_sampler_info, NULL,
+                           &invalid_sampler) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_sampler == VK_NULL_HANDLE);
     const VkDescriptorSetLayoutBinding texture_binding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -971,6 +988,7 @@ int main(int argc, char **argv)
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
     vkDestroyDescriptorSetLayout(device, hull_output_set_layout, NULL);
     vkDestroyDescriptorSetLayout(device, texture_set_layout, NULL);
+    vkDestroySampler(device, anisotropic_sampler, NULL);
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);
     vkDestroyImage(device, texture_image, NULL);

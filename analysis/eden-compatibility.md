@@ -87,7 +87,9 @@ does not turn a failed requirement into support.
    public query contract remain.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
-   indirect-draw, query, and shader paths.
+   indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
+   semantics are implemented and host-tested but still need a deterministic
+   hardware filtering gate before promotion.
 3. Run the prepared standalone VMA consumer once on a fresh FW 5.50 console.
    Its direct and loader/VVL host modes already match Eden's externally
    synchronized dynamic allocator, all four buffer policies, images, manual

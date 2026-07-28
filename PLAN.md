@@ -303,6 +303,13 @@
   The bounded one-shot runner has clean/crash coverage and exact-PID cleanup.
   One fresh-console FW 5.50 run remains before treating the runtime portion as
   hardware-qualified.
+  Sampler anisotropy now has complete hidden-path descriptor semantics without
+  premature advertisement. Vulkan validates the enabled ratio against the
+  reported 1x-16x range, selects gfx1013 anisotropic point/linear filter modes,
+  and encodes the quantized maximum through OpenAGC's existing typed sampler
+  API. Host tests cover enabled creation plus below-minimum and above-maximum
+  rejection, and the full host and Prospero builds pass. The feature remains
+  false until a deterministic filtering-quality readback gate qualifies it.
 
 ## Summary
 

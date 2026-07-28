@@ -18,6 +18,10 @@ The runtime compiler and graphics-pipeline path also accept instance-rate
 vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
 the extension remains hidden pending one run of the prepared deterministic
 hardware readback gate.
+Sampler creation also carries validated 1x-16x anisotropy into gfx1013's
+anisotropic point/linear modes and maximum-ratio field. The public
+`samplerAnisotropy` bit remains false until a deterministic hardware readback
+gate validates the filtering result.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;
