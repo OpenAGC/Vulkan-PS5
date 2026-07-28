@@ -123,7 +123,11 @@ Implemented and host-verified:
   and the ICD supplies TES to TCS compilation and TCS to TES/TES+GS
   compilation. This links both separately emitted programs to the same
   offchip location remap. All seven host tests and the Prospero cross-build
-  pass, but this revised candidate is not hardware-qualified yet.
+  pass. Its first bounded FW 5.500.008 run returned safely with a zeroed target
+  (`20260728T020700Z-tessellation-run1.log`), and the loader remained
+  responsive afterward. Interface linking alone therefore did not fix patch
+  reads; no automatic retry was attempted and this candidate remains
+  unqualified.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

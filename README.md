@@ -88,7 +88,9 @@ compiling TES or TES+GS. The compiler links that non-executable interface
 module so both separately emitted programs share one offchip location remap.
 Host command-recording tests cover the linked compiler path and derived PM4
 values; the public feature bit remains disabled until the restored patch-output
-sample passes the bounded hardware gate twice.
+sample passes the bounded hardware gate twice. The first bounded API v5 FW
+5.500.008 run returned safely and left the console responsive, but its target
+remained zeroed, so no retry was attempted.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
