@@ -16,6 +16,10 @@
 #define SAMPLE_NAME "vertex_divisor"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
+#define SAMPLE_NAME "sampler_anisotropy"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_REPEAT
+#define SAMPLE_FILTER VK_FILTER_LINEAR
 #elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
 #define SAMPLE_NAME "mirror_clamp"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE
@@ -149,8 +153,13 @@ int main(void)
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &target_range));
 
     VkImageCreateInfo texture_info = target_info;
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    texture_info.extent.width = 256;
+    texture_info.extent.height = 4;
+#else
     texture_info.extent.width = 2;
     texture_info.extent.height = 2;
+#endif
     texture_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     VkImage texture;
     VK_CHECK(vkCreateImage(device, &texture_info, NULL, &texture));
@@ -176,12 +185,21 @@ int main(void)
     VkSubresourceLayout texture_layout;
     vkGetImageSubresourceLayout(device, texture, &texture_subresource,
                                 &texture_layout);
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    for (uint32_t y = 0; y < texture_info.extent.height; ++y) {
+        uint32_t *row = (uint32_t *)
+            ((uint8_t *)texture_mapped + y * texture_layout.rowPitch);
+        for (uint32_t x = 0; x < texture_info.extent.width; ++x)
+            row[x] = (x & 1u) ? 0xffffffffu : 0xff000000u;
+    }
+#else
     texture_mapped[0] = 0xff0000ffu;
     texture_mapped[1] = 0xff00ff00u;
     uint32_t *texture_row1 = (uint32_t *)
         ((uint8_t *)texture_mapped + texture_layout.rowPitch);
     texture_row1[0] = 0xffff0000u;
     texture_row1[1] = 0xffffffffu;
+#endif
     const VkMappedMemoryRange texture_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .memory = texture_memory,
@@ -195,6 +213,16 @@ int main(void)
         {{-0.75f, -0.75f}, {0.75f, 0.75f}},
         {{ 0.75f, -0.75f}, {0.75f, 0.25f}},
         {{ 0.00f,  0.75f}, {0.25f, 0.75f}},
+    };
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
+    const Vertex vertices[7] = {
+        {{9.0f, 9.0f}, {0.0f, 0.5f}},
+        {{-0.90f, -0.75f}, {0.000f, 0.5f}},
+        {{-0.10f, -0.75f}, {4.375f, 0.5f}},
+        {{-0.50f,  0.75f}, {2.1875f, 0.5f}},
+        {{ 0.10f, -0.75f}, {0.000f, 0.5f}},
+        {{ 0.90f, -0.75f}, {4.375f, 0.5f}},
+        {{ 0.50f,  0.75f}, {2.1875f, 0.5f}},
     };
 #elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
     const Vertex vertices[4] = {
@@ -211,7 +239,11 @@ int main(void)
         {{ 0.00f,  0.75f}, {0.5f, 1.0f}},
     };
 #endif
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    const uint16_t indices[6] = {1, 2, 3, 4, 5, 6};
+#else
     const uint16_t indices[3] = {1, 2, 3};
+#endif
     VkBuffer vertex_buffer, index_buffer;
     VkDeviceMemory vertex_memory, index_memory;
     void *vertex_mapped, *index_mapped;
@@ -253,6 +285,14 @@ int main(void)
     };
     VkSampler sampler;
     VK_CHECK(vkCreateSampler(device, &sampler_info, NULL, &sampler));
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    VkSamplerCreateInfo anisotropic_sampler_info = sampler_info;
+    anisotropic_sampler_info.anisotropyEnable = VK_TRUE;
+    anisotropic_sampler_info.maxAnisotropy = 16.0f;
+    VkSampler anisotropic_sampler;
+    VK_CHECK(vkCreateSampler(device, &anisotropic_sampler_info, NULL,
+                             &anisotropic_sampler));
+#endif
 
     const VkDescriptorSetLayoutBinding texture_binding = {
         .binding = 0,
@@ -268,16 +308,51 @@ int main(void)
     VkDescriptorSetLayout set_layout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL, &set_layout));
     const VkDescriptorPoolSize pool_size = {
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+        2,
+#else
+        1,
+#endif
     };
     const VkDescriptorPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = 1,
+        .maxSets =
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+            2,
+#else
+            1,
+#endif
         .poolSizeCount = 1,
         .pPoolSizes = &pool_size,
     };
     VkDescriptorPool descriptor_pool;
     VK_CHECK(vkCreateDescriptorPool(device, &pool_info, NULL, &descriptor_pool));
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    const VkDescriptorSetLayout set_layouts[2] = {set_layout, set_layout};
+    VkDescriptorSet descriptor_sets[2];
+    const VkDescriptorSetAllocateInfo set_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = descriptor_pool,
+        .descriptorSetCount = 2,
+        .pSetLayouts = set_layouts,
+    };
+    VK_CHECK(vkAllocateDescriptorSets(device, &set_info, descriptor_sets));
+    VkDescriptorImageInfo descriptor_images[2] = {
+        {sampler, texture_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {anisotropic_sampler, texture_view,
+         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+    };
+    VkWriteDescriptorSet descriptor_writes[2] = {
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, descriptor_sets[0], 0,
+         0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &descriptor_images[0],
+         NULL, NULL},
+        {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, NULL, descriptor_sets[1], 0,
+         0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &descriptor_images[1],
+         NULL, NULL},
+    };
+    vkUpdateDescriptorSets(device, 2, descriptor_writes, 0, NULL);
+#else
     const VkDescriptorSetAllocateInfo set_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = descriptor_pool,
@@ -300,6 +375,7 @@ int main(void)
         .pImageInfo = &descriptor_image,
     };
     vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+#endif
 
     const VkAttachmentDescription attachment = {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -497,8 +573,13 @@ int main(void)
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline_layout, 0, 1, &descriptor_sets[0], 0, NULL);
+#else
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &descriptor_set, 0, NULL);
+#endif
 #ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
     const VkBuffer vertex_buffers[] = {vertex_buffer, vertex_buffer};
     const VkDeviceSize vertex_offsets[] = {0, 0};
@@ -515,6 +596,11 @@ int main(void)
         1,
 #endif
         0, 0, 0);
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline_layout, 0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDrawIndexed(command, 3, 1, 3, 0, 0);
+#endif
     vkCmdEndRenderPass(command);
     VK_CHECK(vkEndCommandBuffer(command));
 
@@ -550,10 +636,59 @@ int main(void)
         if (!found && distinct_count < 64u)
             distinct[distinct_count++] = pixel;
     }
+#ifndef VULKAN_PS5_ANISOTROPY_PROBE
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
+#endif
     int status = 0;
-#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    uint32_t linear_count = 0u, anisotropic_count = 0u;
+    uint64_t linear_sum = 0u, anisotropic_sum = 0u;
+    uint64_t linear_deviation = 0u, anisotropic_deviation = 0u;
+    for (uint32_t y = 0; y < TARGET_HEIGHT; ++y) {
+        for (uint32_t x = 0; x < TARGET_WIDTH; ++x) {
+            uint32_t pixel = pixels[y * TARGET_WIDTH + x];
+            if (!pixel) continue;
+            uint32_t value = pixel & 0xffu;
+            uint32_t deviation = value > 128u ? value - 128u : 128u - value;
+            if (x < TARGET_WIDTH / 2u) {
+                linear_count++;
+                linear_sum += value;
+                linear_deviation += deviation;
+            } else {
+                anisotropic_count++;
+                anisotropic_sum += value;
+                anisotropic_deviation += deviation;
+            }
+        }
+    }
+    uint32_t linear_mean = linear_count ?
+        (uint32_t)(linear_sum / linear_count) : 0u;
+    uint32_t anisotropic_mean = anisotropic_count ?
+        (uint32_t)(anisotropic_sum / anisotropic_count) : 0u;
+    uint32_t linear_mad = linear_count ?
+        (uint32_t)(linear_deviation / linear_count) : 0u;
+    uint32_t anisotropic_mad = anisotropic_count ?
+        (uint32_t)(anisotropic_deviation / anisotropic_count) : UINT32_MAX;
+    if (linear_count < 8000u || linear_count > 11000u ||
+        anisotropic_count < 8000u || anisotropic_count > 11000u ||
+        linear_count + 64u < anisotropic_count ||
+        anisotropic_count + 64u < linear_count ||
+        linear_mean < 96u || linear_mean > 160u ||
+        anisotropic_mean < 112u || anisotropic_mean > 144u ||
+        linear_mad < 32u || anisotropic_mad * 4u >= linear_mad * 3u ||
+        opaque != covered || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("sampler_anisotropy: mismatch linear=%u/%u/%u aniso=%u/%u/%u opaque=%u covered=%u\n",
+            linear_count, linear_mean, linear_mad, anisotropic_count,
+            anisotropic_mean, anisotropic_mad, opaque, covered);
+        status = 1;
+    } else {
+        printf("sampler_anisotropy: PASS linear=%u/%u/%u aniso=%u/%u/%u\n",
+            linear_count, linear_mean, linear_mad, anisotropic_count,
+            anisotropic_mean, anisotropic_mad);
+    }
+#elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
     if (covered < 16000u || covered > 21000u || opaque != covered ||
         distinct_count != 1u || center != 0xffffffffu ||
         pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
@@ -601,6 +736,9 @@ int main(void)
     vkDestroyRenderPass(device, render_pass, NULL);
     vkDestroyDescriptorPool(device, descriptor_pool, NULL);
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+    vkDestroySampler(device, anisotropic_sampler, NULL);
+#endif
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);
     vkDestroyImageView(device, target_view, NULL);

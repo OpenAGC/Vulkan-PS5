@@ -21,7 +21,12 @@ hardware readback gate.
 Sampler creation also carries validated 1x-16x anisotropy into gfx1013's
 anisotropic point/linear modes and maximum-ratio field. The public
 `samplerAnisotropy` bit remains false until a deterministic hardware readback
-gate validates the filtering result.
+gate validates the filtering result. That gate is now prepared: equal bilinear
+and 16x-anisotropic draws sample the same high-frequency stripe texture with an
+elongated footprint, and the mapped-memory oracle requires the anisotropic
+half's mean absolute deviation from neutral gray to fall materially below the
+bilinear control. Its runner permits one launch and applies the established
+exact-PID crash, cleanup, warning, and console-response checks.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;

@@ -311,9 +311,18 @@
   premature advertisement. Vulkan validates the enabled ratio against the
   reported 1x-16x range, selects gfx1013 anisotropic point/linear filter modes,
   and encodes the quantized maximum through OpenAGC's existing typed sampler
-  API. Host tests cover enabled creation plus below-minimum and above-maximum
-  rejection, and the full host and Prospero builds pass. The feature remains
-  false until a deterministic filtering-quality readback gate qualifies it.
+  API. The deterministic probe renders equal bilinear-control and 16x
+  anisotropic triangles over a repeated one-pixel stripe texture. Both use the
+  same elongated implicit-derivative footprint; mapped readback requires equal
+  coverage, neutral means, substantial control aliasing, and at least a 25%
+  reduction in mean absolute deviation for the anisotropic half. Its bounded
+  runner rejects a missing oracle, exact-PID crash, unexpected warning,
+  lingering process, or unavailable websrv. Host sampler tests plus runner
+  clean/crash simulations pass in the 18/18 suite; the Prospero candidate links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `1bd658e47963f1df9de860d844eb46835baf3f050c76ffd9eac9ef1f0142d1ce`.
+  The feature remains false until one fresh-console hardware gate qualifies the
+  filtering result and the standard feature-query/request path is promoted.
 
 ## Summary
 

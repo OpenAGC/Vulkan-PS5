@@ -590,6 +590,14 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
 - The hidden sampler-anisotropy path now validates the Vulkan 1x-16x range,
   switches point/linear requests to gfx1013 anisotropic filter modes, and
   encodes the quantized maximum with OpenAGC's typed descriptor helper. Direct
-  host tests cover valid 8x creation and invalid low/high ratios; all 17 host
-  tests and the Prospero build pass. `samplerAnisotropy` remains `VK_FALSE`
-  until deterministic hardware readback qualifies filtering behavior.
+  host tests cover valid 8x creation and invalid low/high ratios. A standalone
+  probe now draws identical high-frequency stripe footprints with bilinear and
+  16x-anisotropic samplers into separate target halves. Its oracle checks equal
+  coverage and neutral means, proves that the bilinear control aliases, and
+  requires the anisotropic mean absolute deviation to be at least 25% lower.
+  The one-shot runner has clean/crash exact-PID coverage and the full host suite
+  passes 18/18. The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
+  SHA-256
+  `1bd658e47963f1df9de860d844eb46835baf3f050c76ffd9eac9ef1f0142d1ce`.
+  `samplerAnisotropy` remains `VK_FALSE` until one fresh explicit FW 5.50 run
+  passes and the normal feature-query/request contract is enabled.

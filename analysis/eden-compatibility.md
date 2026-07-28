@@ -88,8 +88,10 @@ does not turn a failed requirement into support.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
-   semantics are implemented and host-tested but still need a deterministic
-   hardware filtering gate before promotion.
+   semantics are implemented and host-tested. Its deterministic paired
+   bilinear/16x filtering probe, mapped-memory contrast oracle, bounded runner,
+   and Prospero ELF are prepared; one fresh-console run remains before normal
+   feature advertisement and device-enable handling can be promoted.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
 4. Add only the allowed Eden changes: Prospero surface creation, build/link
