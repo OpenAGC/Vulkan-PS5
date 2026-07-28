@@ -36,3 +36,19 @@ be localized without inference.
 
 Retained logs are under `examples/qualification-logs/20260727T231245Z-*.log`
 and are ignored by Git.
+
+## Staged recovery run (2026-07-28 UTC)
+
+Query qualification was split into independently deployed targets so the
+known-good graphics stream is not coupled to all unqualified query packets:
+
+- `lifecycle`: query-pool creation, host reset, and destruction; no query PM4
+- `reset`: corrected command-reset `WRITE_DATA`; no occlusion snapshots
+- `full`: begin/draw/end occlusion snapshots and result validation
+
+The full stage is excluded from `run_fw550_m3.sh` and requires the explicit
+`VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` acknowledgement. The lifecycle probe
+passed on FW `0x05500008` with `green=18432`; its retained log is
+`20260728T002915Z-query-lifecycle.log`. This proves the query allocation and
+host-reset lifecycle does not reproduce the hang. It does not qualify either
+the corrected reset packet or occlusion begin/end PM4.

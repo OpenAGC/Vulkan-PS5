@@ -300,13 +300,20 @@ int main(void)
         .framebuffer = framebuffer,
         .renderArea = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}},
     };
+#if defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
+    vkCmdResetQueryPool(command, query_pool, 0, 1);
+#endif
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+    !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
+    !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     vkCmdBeginQuery(command, query_pool, 0, 0);
 #endif
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+    !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
+    !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     vkCmdEndQuery(command, query_pool, 0);
 #endif
     vkCmdEndRenderPass(command);
@@ -348,7 +355,9 @@ int main(void)
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+    !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
+    !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     uint64_t query_data[2] = {0, 0};
     VkResult query_result = vkGetQueryPoolResults(device, query_pool, 0, 1,
         sizeof(query_data), query_data, sizeof(query_data),
@@ -360,12 +369,16 @@ int main(void)
     if (green_count < 16000u || green_count > 21000u ||
         unexpected_count != 0u || center != GREEN_RGBA8 ||
         pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+    !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
+    !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
         || query_result != VK_SUCCESS || query_data[1] != 1u ||
         query_data[0] != green_count
 #endif
         ) {
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+    !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
+    !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
         printf("query: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
             query_result, (unsigned long long)query_data[0],
             (unsigned long long)query_data[1], green_count, unexpected_count);
@@ -375,7 +388,11 @@ int main(void)
 #endif
         status = 1;
     } else {
-#if defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY)
+        printf("query_lifecycle: PASS green=%u\n", green_count);
+#elif defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
+        printf("query_reset: PASS green=%u\n", green_count);
+#elif defined(VULKAN_PS5_QUERY_SAMPLE)
         printf("query: PASS samples=%llu green=%u\n",
             (unsigned long long)query_data[0], green_count);
 #else

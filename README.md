@@ -77,8 +77,23 @@ and untouched background for both targets.
 triangle workload. It brackets the draw with an occlusion query and requires
 the returned 64-bit sample count and availability bit to match the mapped
 green-pixel oracle exactly. It uses `VK_EXT_host_query_reset` so query begin/end
-hardware can be qualified independently from command-reset PM4. The generic backend intentionally reports an
-unavailable zero result because it records but does not execute the stream.
+hardware can be qualified independently from command-reset PM4. The generic
+backend intentionally reports an unavailable zero result because it records
+but does not execute the stream.
+
+Query hardware qualification is deliberately staged. The
+`vulkan_ps5_query_lifecycle_probe` creates and host-resets a pool but emits no
+query PM4. The `vulkan_ps5_query_reset_probe` adds only the corrected command
+reset `WRITE_DATA`. The full target adds occlusion begin/end snapshots. Run one
+stage explicitly; the full stage also requires a risk acknowledgement because
+an earlier unisolated query submission hung FW 5.50:
+
+```sh
+PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh lifecycle
+PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh reset
+PS5_HOST=10.0.1.41 VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES \
+  examples/run_fw550_query_probes.sh full
+```
 
 When the console is online, deploy either Prospero ELF through the foreground
 etaHEN websrv path so its stdout is returned to the terminal:
@@ -90,10 +105,11 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
   build-prospero-m2/vulkan_ps5_triangle_example.elf vulkan_ps5_triangle
 ```
 
-The Milestone 3 qualification runner checks websrv reachability, performs two
-foreground runs of each sample, requires the exact compute, triangle,
-indexed-textured, depth, MRT, and query PASS
-oracles, and retains stdout under `examples/qualification-logs/`:
+The qualified-subset Milestone 3 runner checks websrv reachability, performs
+two foreground runs of each sample, requires the exact compute, triangle,
+indexed-textured, depth, and MRT PASS oracles, and retains stdout under
+`examples/qualification-logs/`. Query probes are kept out of this runner until
+their PM4 is hardware-qualified:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_m3.sh

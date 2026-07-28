@@ -192,3 +192,9 @@ FW 5.50 compute/triangle hardware gate:
   compute, triangle, indexed-textured, depth, and MRT twice through foreground
   websrv, rejects a missing PASS oracle, and retains per-run output without
   committing runtime logs.
+- Query qualification now uses explicit `lifecycle`, `reset`, and `full` probe
+  stages. The lifecycle stage emits no query PM4 and passed FW `0x05500008` on
+  2026-07-28 with the qualified triangle oracle (`green=18432`). The reset-only
+  and full begin/end stages remain hardware-unqualified; the full stage requires
+  `VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` and cannot run accidentally as part
+  of the Milestone 3 regression suite.
