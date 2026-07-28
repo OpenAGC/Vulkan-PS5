@@ -73,14 +73,14 @@ and constants into OpenAGC's typed gfx1013 blend state. Every baseline,
 geometry, indirect, and tessellation draw restores that state. The exact PM4
 regression uses one disabled full-mask target and one enabled GB-only target,
 requiring distinct control words, target mask `0x6f`, and all four constants.
-Both normal and ASAN/UBSAN suites pass 22/22 and the Prospero build passes.
+Both normal and ASAN/UBSAN suites pass 23/23 and the Prospero build passes.
 The standalone MRT gate now requires target zero to retain opaque green while
 target one resolves to half-intensity magenta through constant-color/alpha
 factors, followed by the shared SystemService lifecycle. Since exact 0.5 is a
 tie when converted to 8-bit UNORM, the gate accepts only `0x7f7f007f` or
 `0x80800080`.
 Its runner covers clean, fatal, NUL-containing, PID-reuse, and exact-identity
-paths. Both host configurations pass 22/22; Prospero ELF SHA-256 is
+paths. Both host configurations pass 23/23; Prospero ELF SHA-256 is
 `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`.
 The first bounded hardware run produced the correct target-zero coverage and
 nonzero target-one coverage, then completed the matching self-kill lifecycle
@@ -96,7 +96,7 @@ constant, clamp, and slope factors; `vkCmdSetDepthBias` records command-local
 dynamic values. Baseline, indexed, indirect, geometry, and tessellation paths
 enable front/back polygon offset and emit OpenAGC's typed D16/D32 format,
 clamp, slope, and constant registers. Exact PM4 and pipeline regressions pass
-in both 22/22 host configurations. The standalone bounded probe supplies an
+in both 23/23 host configurations. The standalone bounded probe supplies an
 oversized constant bias with clamp 0.125 and requires raw D32 depth to move
 from 0.25/0.75 to exact 0.375/0.875 while preserving the established color and
 stencil decisions. Its runner covers matching-self-kill, NUL, later-PID, fatal,
@@ -104,6 +104,20 @@ and exact-identity paths. The Prospero ELF links the required runtime set and
 has SHA-256
 `8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
 Public `depthBiasClamp` remains false pending one bounded FW 5.50 run.
+
+The host-side `depthClamp` contract is also implemented without advertising
+the feature. Every graphics frame uses OpenAGC's exact `0x00080000` clip-control
+mask for Vulkan's zero-to-one depth convention; static depth-clamp pipelines
+use `0x0c080000` to additionally disable near and far Z clipping on baseline,
+indexed, indirect, geometry, and tessellation draws. The established depth
+sample shader moved from -0.5/0.5 to 0.25/0.75 so its existing raw D32 oracle
+remains valid. Exact PM4 and pipeline regressions pass in both 23/23 host
+configurations. The bounded probe distinguishes clamping from clipping by
+requiring a negative-Z green triangle at exact D32 zero, plus a normal red
+control triangle at exact 0.25, and uses the shared matching-self-kill runner.
+The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+`9f06393c09e58d0c13862bd4992b6a0fe32b7e3e59e6743736df204e9fc07a24`.
+Public `depthClamp` remains false pending one bounded FW 5.50 run.
 
 ## Runtime compatibility
 

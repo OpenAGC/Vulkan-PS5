@@ -158,6 +158,7 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
+    VkBool32 depth_clamp_enable;
     AgcGfx1013DepthStencilState depth_stencil;
     VkBool32 has_depth_stencil;
     const AgcGfx1013TessellationState *tessellation;
@@ -1932,7 +1933,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             create->pMultisampleState;
         const VkPipelineColorBlendStateCreateInfo *blend =
             create->pColorBlendState;
-        if (raster->depthClampEnable || raster->rasterizerDiscardEnable ||
+        if (raster->rasterizerDiscardEnable ||
             raster->polygonMode != VK_POLYGON_MODE_FILL ||
             raster->cullMode != VK_CULL_MODE_NONE ||
             raster->lineWidth != 1.0f ||
@@ -2137,6 +2138,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         };
         pipeline->depth_bias_enable = raster->depthBiasEnable;
         pipeline->depth_bias_dynamic = dynamic_depth_bias;
+        pipeline->depth_clamp_enable = raster->depthClampEnable;
         pipeline->has_depth_stencil = has_depth_stencil;
         pipeline->depth_stencil = depth_stencil;
         memcpy(pipeline->vertex_strides, vertex_strides,
@@ -3843,6 +3845,8 @@ static void record_tessellation_draw(
         return;
     }
     AgcGfx1013FrameState draw_frame = command->frame_state;
+    if (pipeline->depth_clamp_enable)
+        draw_frame.clip_control = AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
     draw_frame.viewport = pipeline->viewport;
     draw_frame.scissor = pipeline->scissor;
     const VkPs5RuntimeShader *hull = &pipeline->runtime[0];
@@ -3952,6 +3956,9 @@ static VkResult prepare_baseline_draw(
         return VK_ERROR_INITIALIZATION_FAILED;
 
     prepared->frame = command->frame_state;
+    if (pipeline->depth_clamp_enable)
+        prepared->frame.clip_control =
+            AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
     prepared->frame.viewport = pipeline->viewport;
     prepared->frame.scissor = pipeline->scissor;
     const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
@@ -4301,6 +4308,7 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     frame.ngg_mode_control = AGC_GFX1013_NGG_MODE_CONTROL;
     frame.vertex_reuse_block_control = AGC_GFX1013_VERTEX_REUSE_BLOCK;
     frame.instance_step_rate = 1u;
+    frame.clip_control = AGC_GFX1013_VULKAN_CLIP_CONTROL;
     AgcGfx1013GraphicsDefaultStats stats;
     if (agcGfx1013BuildFramePrologue(
             &command->dcb, &frame, &stats) != AGC_OK) {

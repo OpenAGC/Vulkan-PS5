@@ -289,7 +289,7 @@ Implemented and host-verified:
   A standalone bounded probe requires opaque green on the disabled target and
   half-intensity magenta (`0x7f7f007f` or `0x80800080`, the two legal 8-bit
   UNORM tie results) on the constant-factor target, then
-  exits through SystemService. Both host suites pass 22/22. Its current
+  exits through SystemService. Both host suites pass 23/23. Its current
   diagnostic Prospero ELF SHA-256 is
   `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`,
   and `independentBlend` remains false. The first bounded run reached the
@@ -306,13 +306,26 @@ Implemented and host-verified:
   `VK_DYNAMIC_STATE_DEPTH_BIAS`, `vkCmdSetDepthBias` records command-local
   state, and OpenAGC emits exact D16/D32 format scaling plus clamp and
   front/back slope/constant registers. Exact PM4 and pipeline regressions pass
-  in both 22/22 host suites. The bounded depth-bias-clamp probe uses an
+  in both 23/23 host suites. The bounded depth-bias-clamp probe uses an
   oversized constant with a 0.125 clamp and requires D32 values 0.375 and
   0.875 instead of the unbiased 0.25 and 0.75, followed by the shared
   matching-self-kill lifecycle. The Prospero ELF links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
   `8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
   Public `depthBiasClamp` remains false until one bounded FW 5.50 run passes.
+- Static depth clamp is host-complete for baseline, indexed, indirect,
+  geometry, and tessellation draws. Every frame now programs gfx1013's Vulkan
+  zero-to-one clip convention; `depthClampEnable` additionally disables near
+  and far Z clipping through OpenAGC's exact `0x0c080000` clip-control mask.
+  The established depth sample shader now uses 0.25/0.75 instead of
+  -0.5/0.5, preserving its raw D32 oracle under correct Vulkan clip space.
+  Exact PM4 and pipeline regressions pass in both 23/23 host suites. The
+  bounded depth-clamp probe requires a negative-Z green triangle at exact D32
+  zero and a normal red control at exact 0.25, followed by the shared
+  matching-self-kill lifecycle. The Prospero ELF links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `9f06393c09e58d0c13862bd4992b6a0fe32b7e3e59e6743736df204e9fc07a24`.
+  Public `depthClamp` remains false until one bounded FW 5.50 run passes.
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50

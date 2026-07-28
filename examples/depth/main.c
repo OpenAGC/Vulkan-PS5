@@ -5,13 +5,24 @@
 #include <string.h>
 
 #include "vulkan_ps5_depth_frag_spv.h"
+#if defined(VULKAN_PS5_DEPTH_CLAMP_PROBE)
+#include "vulkan_ps5_depth_clamp_vert_spv.h"
+#define DEPTH_VERTEX_SPV vulkan_ps5_depth_clamp_vert_spv
+#else
 #include "vulkan_ps5_depth_vert_spv.h"
+#define DEPTH_VERTEX_SPV vulkan_ps5_depth_vert_spv
+#endif
 
 #if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
 #include "../system_service_exit.h"
 #define SAMPLE_NAME "depth_bias_clamp"
 #define NEAR_DEPTH_BITS 0x3ec00000u
 #define FAR_DEPTH_BITS 0x3f600000u
+#elif defined(VULKAN_PS5_DEPTH_CLAMP_PROBE)
+#include "../system_service_exit.h"
+#define SAMPLE_NAME "depth_clamp"
+#define NEAR_DEPTH_BITS 0x00000000u
+#define FAR_DEPTH_BITS 0x3e800000u
 #else
 #define SAMPLE_NAME "depth"
 #define NEAR_DEPTH_BITS 0x3e800000u
@@ -211,7 +222,7 @@ int main(void)
 
     const VkShaderModuleCreateInfo vs_info = {
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, NULL, 0,
-        sizeof(vulkan_ps5_depth_vert_spv), vulkan_ps5_depth_vert_spv,
+        sizeof(DEPTH_VERTEX_SPV), DEPTH_VERTEX_SPV,
     };
     const VkShaderModuleCreateInfo fs_info = {
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, NULL, 0,
@@ -248,6 +259,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_NONE,
+#if defined(VULKAN_PS5_DEPTH_CLAMP_PROBE)
+        .depthClampEnable = VK_TRUE,
+#endif
 #if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
         .depthBiasEnable = VK_TRUE,
 #endif
@@ -411,7 +425,8 @@ int main(void)
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
-    defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+    (defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE) || \
+     defined(VULKAN_PS5_DEPTH_CLAMP_PROBE))
     vulkan_ps5_system_service_exit(SAMPLE_NAME);
 #endif
     return status;

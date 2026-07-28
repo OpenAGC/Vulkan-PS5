@@ -754,6 +754,7 @@ int main(int argc, char **argv)
                                      &graphics_info, NULL,
                                      &graphics_pipeline) == VK_SUCCESS);
     VkPipelineRasterizationStateCreateInfo static_bias_raster = rasterization;
+    static_bias_raster.depthClampEnable = VK_TRUE;
     static_bias_raster.depthBiasConstantFactor = 2.0f;
     static_bias_raster.depthBiasClamp = 0.25f;
     static_bias_raster.depthBiasSlopeFactor = -1.5f;
@@ -978,6 +979,7 @@ int main(int argc, char **argv)
     bool found_depth_control = false, found_stencil_control = false;
     bool found_depth_bias_format = false, found_depth_bias_values = false;
     bool found_depth_bias_enable = false;
+    bool found_vulkan_clip_control = false, found_depth_clamp = false;
     uint32_t occlusion_snapshots = 0;
     bool found_query_reset = false, found_query_availability = false;
     uint32_t last_single_sh_register = UINT32_MAX;
@@ -1090,6 +1092,12 @@ int main(int argc, char **argv)
                 (dwords[i + 2] & AGC_GFX1013_DEPTH_BIAS_RASTER_MODE) ==
                     AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_PA_CL_CLIP_CNTL) {
+            found_vulkan_clip_control |=
+                dwords[i + 2] == AGC_GFX1013_VULKAN_CLIP_CONTROL;
+            found_depth_clamp |=
+                dwords[i + 2] == AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
             uint64_t image_address_1 =
                 vk_ps5_memory_gpu_address(image_memory_1, 0);
@@ -1152,6 +1160,7 @@ int main(int argc, char **argv)
            found_blend_constants &&
            found_depth_bias_format && found_depth_bias_values &&
            found_depth_bias_enable &&
+           found_vulkan_clip_control && found_depth_clamp &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
            found_query_availability);
