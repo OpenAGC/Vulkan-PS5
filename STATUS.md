@@ -175,7 +175,12 @@ Implemented and host-verified:
   configurations pass and the
   Prospero ELF links with `-lunwind -lc++abi -lc++ -lm`; corrected ELF SHA-256
   is `9be96734ae5b1643d9b1f408101cc345bb0bb7291491ed8fbdc989ab974285cc`.
-  It awaits one bounded run after a fresh console-availability signal.
+  Its first bounded FW 5.500.008 run passed all deterministic oracles: hull
+  markers `0x48530000` through `0x48530002`, all three copied input positions,
+  and exactly 7200 green pixels
+  (`20260728T034030Z-tessellation-run1.log`). It returned normally, and no
+  retry was attempted. One independent fresh-console pass remains before
+  `tessellationShader` feature exposure can be considered.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

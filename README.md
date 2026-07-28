@@ -151,7 +151,13 @@ matches the exact compiler-selected register/value pair in PM4. Both seven-test
 host configurations pass and the Prospero link
 includes `-lunwind -lc++abi -lc++ -lm`. The corrected ELF has SHA-256
 `9be96734ae5b1643d9b1f408101cc345bb0bb7291491ed8fbdc989ab974285cc` and
-has not been launched on hardware.
+completed its first bounded FW 5.500.008 launch successfully
+(`20260728T034030Z-tessellation-run1.log`). The storage-buffer oracle reported
+all three hull invocation markers (`0x48530000`, `0x48530001`, and
+`0x48530002`) and the exact three input control-point positions; the image
+oracle reported exactly 7200 green pixels. The runner returned normally, and
+no retry was attempted. `tessellationShader` remains disabled until the same
+ELF passes one more independent run after a fresh console-availability signal.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
