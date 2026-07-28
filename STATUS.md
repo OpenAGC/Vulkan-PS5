@@ -624,16 +624,17 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   continue-after-unsuitable behavior from being mistaken for support, and
   defines the application-neutral implementation order.
 - A deterministic `vulkan_ps5_mirror_clamp_probe` and one-shot FW 5.50 runner
-  are ready for the next extension qualification. The probe uses an
+  qualify `VK_KHR_sampler_mirror_clamp_to_edge`. The probe uses an
   out-of-range texture coordinate whose expected gray readback distinguishes
   gfx1013 mirror-once from edge clamp. The runner requires an exact PASS
   oracle, rejects PID-scoped crashes/XO violations and unexpected warnings,
   proves exact-PID process absence, and rechecks websrv without retrying.
-  Runner safety coverage, all 13 host tests, and the Prospero build pass. The
-  candidate SHA-256 is
-  `8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`.
-  The extension remains unadvertised pending a fresh explicit `ps5 up` and
-  one bounded hardware run.
+  Runner safety coverage, both 25-test host suites, and the Prospero build
+  pass. Both the internal-path and extension-enabled FW 5.50 runs produced
+  18,432 gray pixels with exact center `0xff808080`, matching SystemService
+  self-exit, no stale process, and clean target-only klog. The extension is
+  enumerated and accepted at device creation. The public-path ELF SHA-256 is
+  `6b591dfe79c69f32cc9efdb641ab686183b0c7c0e032df7f3892f6e3357ce78f`.
 - openagc-psbc API v8 and Vulkan pipeline creation now carry instance-rate
   vertex attributes and nonzero per-binding divisors through RADV's gfx1013
   vertex-input lowering. Unlisted instance bindings correctly default to

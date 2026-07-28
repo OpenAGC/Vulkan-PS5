@@ -17,20 +17,23 @@ build/vulkan_ps5_eden_profile_test --strict
 | Requirement | Eden requirement | Current evidence | State |
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
-| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | Driver properties and conservative float-control properties are enumerated, queryable, and accepted at device creation | 2 gaps |
-| Core/Features2 | 29 mandatory feature bits | `geometryShader`, `tessellationShader`, and `hostQueryReset` are true | 26 gaps |
+| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | Driver properties, mirror clamp, and conservative float-control properties are enumerated, queryable, and accepted at device creation | 1 gap |
+| Core/Features2 | 29 mandatory feature bits | Eight core feature bits plus `hostQueryReset` are true | 20 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
 | PS5 surface | A standard surface must be supplied by the PS5 frontend | Eden currently has no Prospero surface/build integration and treats headless as no surface | Gap outside ICD |
 
-The sampler mirror-clamp contract has a hardware candidate but is not counted
-as supported yet. `vulkan_ps5_mirror_clamp_probe` samples `(-0.5, -0.5)` and
+The sampler mirror-clamp contract is hardware-qualified and counted as
+supported. `vulkan_ps5_mirror_clamp_probe` samples `(-0.5, -0.5)` and
 requires the mirror-once gray texel instead of the red edge-clamp texel. The
 one-shot runner has host-tested clean and crash paths, exact-PID cleanup, and
-bounded warning handling. The Prospero candidate SHA-256 is
-`8ffe2a48c074391e0e96c56d03699a9f887b21ae0b15721be2d89a0cf24fe5da`.
-One fresh-console FW 5.50 run is still required before enumeration.
+bounded warning handling. Both the internal-path and extension-enabled FW 5.50
+runs produced 18,432 gray pixels with exact center `0xff808080`, clean
+SystemService self-exit, no stale process, and clean target-only klog.
+`VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted at device
+creation. The public-path Prospero ELF SHA-256 is
+`6b591dfe79c69f32cc9efdb641ab686183b0c7c0e032df7f3892f6e3357ce78f`.
 
 The vertex-divisor software contract is also implemented but not yet
 advertised. openagc-psbc API v8 passes input rate and divisor state into RADV's
@@ -52,7 +55,7 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=20 limits=0 queues=0 total=22
+eden-profile: extensions=1 features=20 limits=0 queues=0 total=21
 ```
 
 The 20 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
@@ -193,12 +196,11 @@ timeout.
 
 ## Implementation order
 
-1. Complete the two remaining mandatory extension contracts: sampler mirror
-   clamp and vertex divisors with real sampler/pipeline semantics. The
+1. Complete the remaining mandatory extension contract: vertex divisors with
+   real compiler and pipeline semantics. The
    query-only driver/float-control contracts are complete and tested; float
-   execution-mode capabilities remain conservatively false. The mirror-clamp
-   hardware probe and bounded runner are prepared; public enumeration awaits
-   its single FW 5.50 qualification run. Vertex-divisor compiler and pipeline
+   execution-mode capabilities remain conservatively false. Mirror clamp is
+   hardware-qualified and enumerated. Vertex-divisor compiler and pipeline
    semantics and bounded readback gate are prepared; the one hardware run and
    public query contract remain.
 2. Promote mandatory feature groups only after command/compiler coverage and

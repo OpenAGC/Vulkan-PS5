@@ -11,9 +11,11 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
-A deterministic mirror-clamp readback probe and bounded FW 5.50 runner are
-prepared, but `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until the
-exact gfx1013 address mode passes that hardware gate.
+`VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
+internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
+with exact center `0xff808080`, clean process exit, and clean target-only klog.
+The public-path Prospero ELF SHA-256 is
+`6b591dfe79c69f32cc9efdb641ab686183b0c7c0e032df7f3892f6e3357ce78f`.
 The runtime compiler and graphics-pipeline path also accept instance-rate
 vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
 the extension remains hidden pending one run of the prepared deterministic

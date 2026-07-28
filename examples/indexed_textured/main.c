@@ -130,10 +130,19 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+#if defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
+    const char *const device_extensions[] = {
+        VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
+    };
+#endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+#if defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
+        .enabledExtensionCount = 1u,
+        .ppEnabledExtensionNames = device_extensions,
+#endif
     };
     VkDevice device;
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));

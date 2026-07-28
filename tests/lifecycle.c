@@ -92,13 +92,14 @@ int main(void) {
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 4);
-    VkExtensionProperties extensions[4];
+    assert(extension_count == 5);
+    VkExtensionProperties extensions[5];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
     VkBool32 has_swapchain = VK_FALSE;
     VkBool32 has_driver_properties = VK_FALSE;
+    VkBool32 has_sampler_mirror_clamp = VK_FALSE;
     VkBool32 has_shader_float_controls = VK_FALSE;
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
@@ -107,11 +108,13 @@ int main(void) {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0;
         has_driver_properties |= strcmp(extensions[i].extensionName,
             VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME) == 0;
+        has_sampler_mirror_clamp |= strcmp(extensions[i].extensionName,
+            VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) == 0;
         has_shader_float_controls |= strcmp(extensions[i].extensionName,
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME) == 0;
     }
     assert(has_host_query_reset && has_swapchain && has_driver_properties &&
-           has_shader_float_controls);
+           has_sampler_mirror_clamp && has_shader_float_controls);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -203,11 +206,12 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 3,
+        .enabledExtensionCount = 4,
         .ppEnabledExtensionNames =
             (const char *const[]){
                 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
                 VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
+                VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
                 VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
             },
     };
