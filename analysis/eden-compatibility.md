@@ -63,10 +63,10 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=6 limits=0 queues=0 total=6
+eden-profile: extensions=0 features=5 limits=0 queues=0 total=5
 ```
 
-The 6 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
+The 5 feature gaps are `imageCubeArray`, `multiViewport`,
 `robustBufferAccess`, `sampleRateShading`, and
 `shaderStorageImageWriteWithoutFormat`.
 
@@ -95,9 +95,21 @@ bypass, simple-float, and round-mode policy from the target number type. The
 internal-path and final public query/request FW 5.50 gates both produced 18,432
 pixels on each target with exact target-one `0x80800080`, clean process exit,
 and only the established 0x4000 baseline VM warning. `independentBlend` is now
-advertised and accepted through legacy and Features2 paths; dual-source blend
-remains separate and unsupported. The public-path Prospero ELF SHA-256 is
+advertised and accepted through legacy and Features2 paths. The public-path Prospero ELF SHA-256 is
 `e42014fcab89df6001555faecd6a2c4a0d05edb87d9d7bcd011c62ca0caa6a99`.
+
+The `dualSrcBlend` contract is implemented and hardware-qualified. Legacy and
+Features2 paths advertise, query, and request the feature normally. Pipeline
+creation maps all core SRC1 color/alpha factors, rejects SRC1 on attachments
+after MRT0, and passes complete dual-source context into `openagc-psbc`. The
+compiler uses explicit source-index-1 color mapping, native gfx1013 MRT0/MRT1
+32-bit ABGR exports, and Oberon's DB dual-export bit; OpenAGC disables RB+
+dual-quad mode and all SX blend optimization while SRC1 is active. The bounded
+probe multiplies a white primary output by a green source-index-1 output. Two
+consecutive FW 5.50 runs produced exactly 18,432 opaque green pixels with center
+`0xff00ff00`, self-exited cleanly, and logged only the established
+`amount=0x4000` baseline VM warning (`20260728T152837Z` and
+`20260728T152900Z`).
 
 The `logicOp` contract is implemented and hardware-qualified. Every one of the
 16 core `VkLogicOp` values maps to OpenAGC's typed

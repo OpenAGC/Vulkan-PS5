@@ -631,7 +631,12 @@ state, fill rasterization without culling, and static per-target blending and
 color write masks. Vulkan blend factors and operations, separate alpha state,
 four blend constants, and up to eight independent attachment records translate
 to OpenAGC's typed gfx1013 blend state before baseline, geometry, indirect, and
-tessellation draws. Dual-source factors remain rejected.
+tessellation draws. SRC1 factors are accepted for attachment zero when
+`dualSrcBlend` is enabled; later attachments reject them as required.
+The bounded `vulkan_ps5_dual_src_blend_probe` uses a white primary output and
+green source-index-1 output, then requires exactly 18,432 opaque green pixels.
+Two consecutive FW 5.50 runs passed and self-exited cleanly; only the known
+`amount=0x4000` baseline VM warning appeared.
 The standalone `vulkan_ps5_independent_blend_probe` renders the same
 triangle to two attachments: target zero must remain opaque green with blending
 disabled, while target one must become half-intensity magenta through

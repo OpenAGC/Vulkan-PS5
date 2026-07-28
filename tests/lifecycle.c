@@ -164,6 +164,7 @@ int main(void) {
     assert(features2.features.depthBiasClamp == VK_TRUE);
     assert(features2.features.depthClamp == VK_TRUE);
     assert(features2.features.drawIndirectFirstInstance == VK_TRUE);
+    assert(features2.features.dualSrcBlend == VK_TRUE);
     assert(features2.features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features2.features.fillModeNonSolid == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
@@ -220,6 +221,7 @@ int main(void) {
     assert(features.depthBiasClamp == VK_TRUE);
     assert(features.depthClamp == VK_TRUE);
     assert(features.drawIndirectFirstInstance == VK_TRUE);
+    assert(features.dualSrcBlend == VK_TRUE);
     assert(features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features.fillModeNonSolid == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
@@ -238,6 +240,7 @@ int main(void) {
     features.depthBiasClamp = VK_FALSE;
     features.depthClamp = VK_FALSE;
     features.drawIndirectFirstInstance = VK_FALSE;
+    features.dualSrcBlend = VK_FALSE;
     features.fragmentStoresAndAtomics = VK_FALSE;
     features.fillModeNonSolid = VK_FALSE;
     features.geometryShader = VK_FALSE;
@@ -326,6 +329,7 @@ int main(void) {
             .depthBiasClamp = VK_TRUE,
             .depthClamp = VK_TRUE,
             .drawIndirectFirstInstance = VK_TRUE,
+            .dualSrcBlend = VK_TRUE,
             .fragmentStoresAndAtomics = VK_TRUE,
             .fillModeNonSolid = VK_TRUE,
             .geometryShader = VK_TRUE,
@@ -398,6 +402,7 @@ int main(void) {
         .depthBiasClamp = VK_TRUE,
         .depthClamp = VK_TRUE,
         .drawIndirectFirstInstance = VK_TRUE,
+        .dualSrcBlend = VK_TRUE,
         .fragmentStoresAndAtomics = VK_TRUE,
         .fillModeNonSolid = VK_TRUE,
         .geometryShader = VK_TRUE,

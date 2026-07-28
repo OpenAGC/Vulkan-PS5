@@ -29,6 +29,9 @@
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
 #include "vulkan_ps5_image_gather_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_image_gather_frag_spv
+#elif defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
+#include "vulkan_ps5_dual_src_blend_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_dual_src_blend_frag_spv
 #else
 #include "vulkan_ps5_indexed_textured_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_indexed_textured_frag_spv
@@ -43,6 +46,10 @@
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
 #define SAMPLE_NAME "shader_image_gather_extended"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
+#define SAMPLE_NAME "dual_src_blend"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
@@ -159,6 +166,16 @@ int main(void)
     const VkPhysicalDeviceFeatures enabled_features = {
         .shaderImageGatherExtended = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.dualSrcBlend) {
+        printf("dual_src_blend: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .dualSrcBlend = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
     VkPhysicalDeviceShaderDrawParametersFeatures supported_draw_parameters = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
@@ -238,7 +255,8 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
-    defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+    defined(VULKAN_PS5_IMAGE_GATHER_PROBE) || \
+    defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
         .pEnabledFeatures = &enabled_features,
 #elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
         .enabledExtensionCount = 1u,
@@ -754,6 +772,15 @@ int main(void)
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
     const VkPipelineColorBlendAttachmentState blend_attachment = {
+#ifdef VULKAN_PS5_DUAL_SRC_BLEND_PROBE
+        .blendEnable = VK_TRUE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC1_COLOR,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC1_ALPHA,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+#endif
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
@@ -913,6 +940,17 @@ int main(void)
     } else {
         printf("fragment_stores_atomics: PASS covered=%u atomic=%u stores=%u marker=51a7c0de\n",
             covered, fragment_results[0], storage_writes);
+    }
+#elif defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
+    if (covered != 18432u || opaque != covered || distinct_count != 2u ||
+        center != 0xff00ff00u || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("dual_src_blend: mismatch covered=%u opaque=%u colors=%u center=%08x\n",
+            covered, opaque, distinct_count, center);
+        status = 1;
+    } else {
+        printf("dual_src_blend: PASS covered=%u center=%08x src1=green\n",
+            covered, center);
     }
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
     if (covered != 18432u || opaque != covered || distinct_count != 1u ||

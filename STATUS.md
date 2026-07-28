@@ -1,5 +1,15 @@
 # Implementation Status
 
+## Milestone 6: dual-source blending (2026-07-28)
+
+`dualSrcBlend` is advertised and accepted through legacy and Features2 paths.
+Pipeline creation maps all SRC1 color/alpha factors, restricts them to MRT0,
+and supplies complete dual-source context to `openagc-psbc`. The compiler uses
+native gfx1013 MRT0/MRT1 32-bit ABGR exports and Oberon's DB dual-export state;
+OpenAGC disables RB+ dual-quad mode and SX blend optimization. Two consecutive
+bounded FW 5.50 runs passed the exact 18,432-pixel green SRC1 oracle with clean
+exit. The Eden compatibility profile now has five feature gaps.
+
 ## Milestone 1: host ICD lifecycle
 
 Implemented:

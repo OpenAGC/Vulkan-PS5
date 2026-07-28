@@ -544,6 +544,7 @@ vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
 
 static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
+    features->dualSrcBlend = VK_TRUE;
     features->depthBiasClamp = VK_TRUE;
     features->depthClamp = VK_TRUE;
     features->drawIndirectFirstInstance = VK_TRUE;

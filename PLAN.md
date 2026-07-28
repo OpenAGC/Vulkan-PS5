@@ -2,6 +2,11 @@
 
 ## Progress
 
+- Milestone 6 `dualSrcBlend` closure is complete. Legacy and Features2
+  query/request paths, SRC1 factor translation, pipeline compiler context,
+  native gfx1013 dual exports, OpenAGC RB+ state, host/VVL coverage, and two
+  bounded FW 5.50 exact-readback runs all pass. Five Eden feature gaps remain.
+
 - Milestone 1 is complete: host lifecycle, dispatch, conservative gfx1013
   capabilities, memory/resources, packaging, and loader/VVL tests.
 - Milestone 2 compiler-library integration is complete: reusable host/Prospero
