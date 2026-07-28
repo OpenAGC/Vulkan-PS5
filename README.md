@@ -168,8 +168,14 @@ queries and requests tessellation explicitly. Both host configurations pass all
 seven tests, and its rebuilt Prospero ELF links with `-lunwind`, `-lc++abi`,
 `-lc++`, and `-lm` and has SHA-256
 `a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d`.
-One bounded hardware smoke of this feature-requesting ELF remains after a fresh
-console-availability signal.
+Its one bounded hardware smoke passed every hull marker and copied-position
+check but produced an all-zero image
+(`20260728T034904Z-tessellation-run1.log`). The application returned and the
+console remained responsive; no retry was attempted. Apart from the final
+image oracle, this log is identical to the immediately preceding passing log.
+The result exposes nondeterminism after TCS execution in the
+offchip-to-TES/raster path, so public feature exposure is not considered stable
+until that path is corrected and the repeated hardware gate passes again.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

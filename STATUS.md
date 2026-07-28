@@ -191,8 +191,13 @@ Implemented and host-verified:
   rejection. The standalone sample now queries and requests tessellation
   explicitly. Both seven-test host configurations and the Prospero cross-build
   pass; the new feature-requesting ELF has SHA-256
-  `a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d` and
-  awaits one bounded hardware smoke after a fresh console signal.
+  `a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d`.
+  Its one bounded hardware smoke passed the complete hull probe but returned an
+  all-zero image (`20260728T034904Z-tessellation-run1.log`). The process exited
+  and the console remained responsive; no retry was attempted. The log matches
+  the preceding pass until the final image oracle, so the remaining defect is
+  nondeterministic state or ordering after TCS execution. Feature exposure is
+  unqualified again pending a correction and a repeated passing gate.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

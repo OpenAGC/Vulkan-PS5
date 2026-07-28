@@ -86,8 +86,14 @@
   device feature queries, accepts that feature through legacy and Features2
   device creation while continuing to reject every unadvertised core feature,
   and makes the standalone sample request it explicitly. Both seven-test host
-  configurations and the Prospero cross-build pass. One bounded hardware smoke
-  of the feature-requesting ELF remains after a fresh console signal.
+  configurations and the Prospero cross-build pass. Its one bounded hardware
+  smoke preserved all hull markers and copied control points but produced an
+  all-zero image (`20260728T034904Z-tessellation-run1.log`). The application
+  returned and the console remained responsive; no retry was attempted. The
+  passing and failing logs are identical until the image oracle, exposing
+  nondeterminism after TCS execution in the offchip-to-TES/raster path.
+  `tessellationShader` exposure must remain unqualified until that path is
+  corrected and the repeated gate passes again.
 
 ## Summary
 

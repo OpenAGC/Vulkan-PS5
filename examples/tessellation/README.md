@@ -62,5 +62,10 @@ the sample's scope. The ICD consequently advertises `tessellationShader`, and
 this sample now queries that bit and enables it during ordinary Vulkan device
 creation before constructing the pipeline. The feature-requesting Prospero ELF
 has SHA-256
-`a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d` and
-awaits one bounded hardware smoke after a fresh console-availability signal.
+`a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d`.
+Its one bounded hardware smoke passed all hull markers and copied positions but
+produced an all-zero image (`20260728T034904Z-tessellation-run1.log`). It
+returned normally, the console remained responsive, and it was not retried.
+The result localizes the remaining nondeterminism after TCS execution, in the
+offchip-to-TES/raster path; feature exposure is not stable until that path is
+corrected and the repeated gate passes again.
