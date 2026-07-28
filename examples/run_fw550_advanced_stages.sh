@@ -14,6 +14,7 @@ repo_dir=$(dirname -- "$script_dir")
 build_dir=${VULKAN_PS5_PROSPERO_BUILD:-$repo_dir/build-prospero-m2}
 run_count=${VULKAN_PS5_FW550_RUNS:-1}
 log_dir=${VULKAN_PS5_FW550_LOG_DIR:-$script_dir/qualification-logs}
+websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-60}
 
 case "$run_count" in
     ''|*[!0-9]*|0)
@@ -53,7 +54,8 @@ run=1
 while [ "$run" -le "$run_count" ]; do
     log="$log_dir/${timestamp}-${stage}-run${run}.log"
     echo "FW550 $stage run $run/$run_count"
-    if ! "$script_dir/deploy_websrv.sh" "$elf" \
+    if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
+        "$script_dir/deploy_websrv.sh" "$elf" \
         "vulkan_ps5_${stage}" >"$log" 2>&1; then
         sed -n '1,160p' "$log" >&2
         echo "$stage run $run failed; log: $log" >&2

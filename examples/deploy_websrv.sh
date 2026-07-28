@@ -10,9 +10,16 @@ fi
 
 elf=$1
 name=${2:-$(basename "$elf" .elf)}
+websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-30}
 case "$name" in
     *[!A-Za-z0-9_-]*|'')
         echo "remote-name must contain only letters, digits, _ or -" >&2
+        exit 2
+        ;;
+esac
+case "$websrv_timeout" in
+    ''|*[!0-9]*|0)
+        echo "VULKAN_PS5_WEBSRV_TIMEOUT must be a positive integer" >&2
         exit 2
         ;;
 esac
@@ -26,5 +33,5 @@ curl -sS --connect-timeout 3 --max-time 30 \
     "ftp://${PS5_HOST}:2121/" --quote "MKD $remote_dir" >/dev/null 2>&1 || true
 curl -sS --connect-timeout 3 --max-time 30 \
     -T "$elf" "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf"
-curl -sS --connect-timeout 3 --max-time 30 \
+curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
     "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
