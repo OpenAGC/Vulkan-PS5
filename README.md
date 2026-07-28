@@ -65,7 +65,8 @@ PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 
 The runner never retries automatically. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,
-XO faults, and VM leaks, requires a self-requested kernel `KillApp()` event
+XO faults, duplicate or unrecognized kernel warnings, and any VM warning beyond
+the one proven FW 5.50/raw-ELF baseline line. It requires a self-requested kernel `KillApp()` event
 followed by `[AppMgr] All processes exited`, and asks ps5debug-NG to prove that
 the exact launched PID no longer exists. SystemService removes a self-killed
 process before `sceSystemServiceKillApp` can return, so stdout after that call
@@ -111,8 +112,7 @@ The next gate (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
 falsifying that mapping hypothesis as well. All 27 retained OpenAGC graphics
 klogs contain the identical one-page warning. OpenAGC `4f66aa7` now balances
 the remaining flip-event lifecycle explicitly—unregister event, close
-VideoOut, then delete the still-live equeue. A fresh bounded run will determine
-whether that removes the warning or confirms a FW 5.50/raw-ELF baseline.
+VideoOut, then delete the still-live equeue.
 The balanced-lifecycle run (`20260728T064111Z-swapchain-run1.log`) again
 completed 1,800 frames, Vulkan cleanup, self-KillApp, exact-PID removal, and
 shell restoration without a crash, but retained the same warning. The bounded
@@ -122,15 +122,21 @@ performs no Vulkan, OpenAGC, GPU, VideoOut, equeue, or custom-memory work, and
 classifies either a clean teardown or exactly one baseline `0x4000` warning.
 Its ELF SHA-256 is
 `e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.
-Run it only after a fresh explicit console signal:
+The bounded baseline run
+(`20260728T064628Z-system-exit-probe-target.klog`) produced the exact same
+single warning while completing self-KillApp, exact-PID removal, and the
+post-run console probe. This proves the line is raw-ELF container bookkeeping,
+not a Vulkan/OpenAGC/VideoOut leak. The diagnostic can be repeated only after a
+fresh explicit console signal:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_system_exit_probe.sh
 ```
 
 `vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
-to act unless exactly one other `eboot.elf` exists. One new bounded hardware
-run is required.
+to act unless exactly one other `eboot.elf` exists. The balanced 1,800-frame
+swapchain run plus the dependency-free baseline comparison close the FW 5.50
+Milestone 4 hardware gate.
 
 ## Standalone compute and triangle samples
 

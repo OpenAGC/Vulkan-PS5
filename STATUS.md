@@ -373,7 +373,7 @@ FW 5.50 compute/triangle hardware gate:
   to the repeated Milestone 3 regression suite. The staged probes remain for
   isolating lifecycle, reset, idle-ZPASS, and live-counting regressions.
 
-## Milestone 4: VideoOut WSI (host qualified, hardware gate pending)
+## Milestone 4: VideoOut WSI (FW 5.50 hardware qualified)
 
 Implemented:
 
@@ -391,7 +391,7 @@ Implemented:
   restoration, VideoOut registration, flip equeue, and deterministic teardown.
 - Direct host WSI tests cover enumeration, `VK_INCOMPLETE`, exhaustion,
   acquire/present synchronization, device groups, and recreation. All nine ICD
-  tests, the runner safety simulation, and the WSI-enabled Validation Layers
+  tests, both runner safety simulations, and the WSI-enabled Validation Layers
   test pass with zero messages.
   The WSI test also releases an image from a delayed presentation thread and
   proves a blocked acquire wakes with that image.
@@ -400,10 +400,9 @@ Implemented:
   SHA-256 is
   `d94722b2c9473b8407769b9b1fe044dd5796c6d5f78bbba7ccec15cfb6975c90`.
 
-Pending:
+Qualification history:
 
-- One bounded FW 5.50 1,800-frame run and a post-run console responsiveness
-  probe. The first candidate exited on an execute-only read while verifying
+- The first candidate exited on an execute-only read while verifying
   the VideoOut patch (`20260728T053743Z-swapchain-run1.log`); the kernel log
   localized it to `libSceVideoOut.sprx+0x7e61`. OpenAGC `290213c` moves byte
   verification inside the RWX window and restores RX on every path. The second
@@ -442,11 +441,10 @@ Pending:
   (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
   falsifying that hypothesis too. All 27 retained OpenAGC graphics klogs carry
   the identical one-page warning. OpenAGC `4f66aa7` now explicitly unregisters
-  the flip event before closing VideoOut and deleting its still-live equeue. A
-  fresh bounded run will distinguish that resource from a FW 5.50/raw-ELF
-  baseline; no automatic retry is permitted. The runner now
+  the flip event before closing VideoOut and deleting its still-live equeue.
+  The runner has no automatic retry and now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
-  XO faults, and VM leaks, requires a self-requested kernel `KillApp()` followed
+  XO faults, and warnings beyond the proven single raw-ELF baseline, requires a self-requested kernel `KillApp()` followed
   by `All processes exited`, and
   requires exact-PID process absence before PASS. Post-PASS failures also
   attempt cleanup of that exact PID.
@@ -459,3 +457,10 @@ Pending:
   exactly one matching `0x4000` baseline warning and rejects other warnings or
   fatal lifecycle evidence. Probe ELF SHA-256:
   `e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.
+  Its bounded hardware run
+  (`20260728T064628Z-system-exit-probe-target.klog`) produced the exact same
+  warning without any Vulkan, OpenAGC, GPU, VideoOut, equeue, or custom-memory
+  work, then completed self-KillApp, exact-PID removal, and the console probe.
+  The warning is therefore FW 5.50/raw-ELF bookkeeping. Combined with the
+  balanced 1,800-frame swapchain run, this closes the Milestone 4 hardware
+  gate.

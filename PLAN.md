@@ -192,9 +192,7 @@
   The next gate (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
   falsifying that hypothesis too. All 27 retained OpenAGC graphics klogs carry
   the identical one-page warning. OpenAGC `4f66aa7` now explicitly unregisters
-  the flip event before closing VideoOut and deleting its still-live equeue; a
-  fresh bounded run will distinguish that resource from a FW 5.50/raw-ELF
-  baseline warning.
+  the flip event before closing VideoOut and deleting its still-live equeue.
   The balanced-lifecycle run (`20260728T064111Z-swapchain-run1.log`) again
   completed 1,800 frames and the full safe app-exit lifecycle without a crash,
   but retained the warning. A new SystemService-only probe contains no Vulkan,
@@ -202,12 +200,18 @@
   runner that accepts only a clean lifecycle or exactly one matching baseline
   warning. Its ELF SHA-256 is
   `e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.
+  The bounded baseline run at
+  `20260728T064628Z-system-exit-probe-target.klog` produced that exact warning
+  with no Vulkan, OpenAGC, GPU, VideoOut, equeue, or custom-memory use while
+  completing self-KillApp, PID removal, and the console probe. This classifies
+  the line as FW 5.50/raw-ELF bookkeeping and closes the Milestone 4 hardware
+  gate with the balanced 1,800-frame swapchain evidence.
   A separately built recovery payload refuses to act unless exactly one other
-  `eboot.elf` exists. One new bounded run remains before this milestone is
-  hardware qualified; the runner has no automatic retry and uses exact-PID
+  `eboot.elf` exists. The runner has no automatic retry and uses exact-PID
   ps5debug-NG cleanup only on a timeout/failure. The runner takes a bounded post-run
   klog snapshot, scopes it to the new eboot PID, rejects fatal signals, app
-  crashes, XO faults, or VM leaks, requires a self-requested kernel `KillApp()`
+  crashes, XO faults, or warnings beyond the proven single raw-ELF baseline,
+  requires a self-requested kernel `KillApp()`
   followed by `All processes exited`, and requires ps5debug-NG to prove process
   absence before reporting
   qualification PASS. Post-PASS safety failures also trigger exact-PID cleanup.

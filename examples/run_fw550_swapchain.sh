@@ -111,11 +111,20 @@ target_exec_line=$(grep -n "^<${target_pid}> EXEC /app0/eboot\.bin " "$klog" | \
 sed -n "${target_exec_line},\$p" "$klog" >"$target_klog"
 target_pid_hex=$(printf '%x' "$target_pid")
 if grep -Eq \
-    "# proc ID: *${target_pid}$|mDBG: Sending signal\(pid: *${target_pid},|App Crash : PID=0x0*${target_pid_hex}([^0-9a-f]|$)|SYSTEM_XO_VIOLATION|VM resource leak" \
+    "# proc ID: *${target_pid}$|mDBG: Sending signal\(pid: *${target_pid},|App Crash : PID=0x0*${target_pid_hex}([^0-9a-f]|$)|SYSTEM_XO_VIOLATION" \
     "$target_klog"; then
     kill_stale_process "$target_pid" || true
     sed -n '1,240p' "$target_klog" >&2
     echo "swapchain emitted PASS but its scoped kernel log is not clean: $target_klog" >&2
+    exit 1
+fi
+baseline_warning='[KERNEL] WARNING: VM resource leak: set:1, res:0, amount:0x4000'
+baseline_warning_count=$(grep -Fxc "$baseline_warning" "$target_klog" || true)
+if grep -F '[KERNEL] WARNING:' "$target_klog" | \
+       grep -Fvx "$baseline_warning" >/dev/null || \
+   [ "$baseline_warning_count" -gt 1 ]; then
+    kill_stale_process "$target_pid" || true
+    echo "swapchain emitted PASS but its scoped kernel warnings exceed the proven FW 5.50 raw-ELF baseline: $target_klog" >&2
     exit 1
 fi
 kill_pair=$(sed -n \
@@ -151,6 +160,9 @@ if ! curl -sS --connect-timeout 3 --max-time 5 \
     exit 1
 fi
 
+if [ "$baseline_warning_count" -eq 1 ]; then
+    echo "FW550 swapchain: accepted proven raw-ELF baseline warning amount=0x4000"
+fi
 echo "FW550 swapchain: PASS (1800 frames, clean exit and klog)"
 echo "log: $log"
 echo "klog: $target_klog"

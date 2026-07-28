@@ -31,7 +31,8 @@ case "${FAKE_KLOG_MODE:-clean}" in
     clean)
         printf '%s\n' \
             '[SysCore] KillApp() appId={0x00002016} is requested from 0x00002016' \
-            '[AppMgr] All processes exited'
+            '[AppMgr] All processes exited' \
+            '[KERNEL] WARNING: VM resource leak: set:1, res:0, amount:0x4000'
         ;;
     crash)
         printf '%s\n' \
@@ -42,6 +43,12 @@ case "${FAKE_KLOG_MODE:-clean}" in
             '# proc ID: 321'
         ;;
     no_lifecycle) ;;
+    unexpected_warning)
+        printf '%s\n' \
+            '[SysCore] KillApp() appId={0x00002016} is requested from 0x00002016' \
+            '[AppMgr] All processes exited' \
+            '[KERNEL] WARNING: VM resource leak: set:1, res:0, amount:0x8000'
+        ;;
     *) exit 2 ;;
 esac
 EOF
@@ -78,6 +85,8 @@ if ! run_runner clean "$test_root/clean.out" "$test_root/clean-logs"; then
 fi
 grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
     "$test_root/clean.out" >/dev/null
+grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
+    "$test_root/clean.out" >/dev/null
 
 : >"$test_root/uv.log"
 if run_runner crash "$test_root/crash.out" "$test_root/crash-logs"; then
@@ -85,6 +94,16 @@ if run_runner crash "$test_root/crash.out" "$test_root/crash-logs"; then
     exit 1
 fi
 grep -F 'scoped kernel log is not clean' "$test_root/crash.out" >/dev/null
+grep -F -- '--pid 321' "$test_root/uv.log" >/dev/null
+
+: >"$test_root/uv.log"
+if run_runner unexpected_warning "$test_root/unexpected-warning.out" \
+    "$test_root/unexpected-warning-logs"; then
+    echo "unexpected kernel warning passed the baseline gate" >&2
+    exit 1
+fi
+grep -F 'warnings exceed the proven FW 5.50 raw-ELF baseline' \
+    "$test_root/unexpected-warning.out" >/dev/null
 grep -F -- '--pid 321' "$test_root/uv.log" >/dev/null
 
 : >"$test_root/uv.log"
