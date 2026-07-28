@@ -396,7 +396,7 @@ Implemented:
   proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `6756d1fe0083411e8e5d1e97d7931d6f144f575009ecfd73dc5e76fe8afbe6d6`.
+  `271cc11273f334e8155a8fb9154693cd0370534d59d3b14c7b346f73d482b0e9`.
 
 Pending:
 
@@ -404,7 +404,10 @@ Pending:
   probe. The first candidate exited on an execute-only read while verifying
   the VideoOut patch (`20260728T053743Z-swapchain-run1.log`); the kernel log
   localized it to `libSceVideoOut.sprx+0x7e61`. OpenAGC `290213c` moves byte
-  verification inside the RWX window and restores RX on every path. The
-  console recovered, no target process survived, and no retry occurred. A new
-  explicit console-availability signal is required. No automatic retry is
-  permitted.
+  verification inside the RWX window and restores RX on every path. The second
+  run (`20260728T054235Z-swapchain-run1.log`) reached 1,800 frames, but a
+  teardown SIGSEGV and `0x4000` VM resource leak occurred after the premature
+  PASS line. OpenAGC `18011af` now closes VideoOut before deleting the equeue
+  and omits the unqualified explicit flip-event deletion. The sample now emits
+  PASS only after complete Vulkan teardown. A new bounded run is required; no
+  automatic retry is permitted.

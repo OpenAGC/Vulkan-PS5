@@ -195,18 +195,21 @@ int main(void) {
             printf("swapchain: %u/%u frames\n", frame + 1u, FRAME_COUNT);
     }
     REQUIRE(vkDeviceWaitIdle(device));
-    printf("swapchain: PASS %u frames\n", FRAME_COUNT);
     result = VK_SUCCESS;
 
 cleanup:
+    printf("swapchain: cleanup begin\n");
     if (device) vkDeviceWaitIdle(device);
     if (fence) vkDestroyFence(device, fence, NULL);
     if (complete) vkDestroySemaphore(device, complete, NULL);
     if (acquired) vkDestroySemaphore(device, acquired, NULL);
     if (command_pool) vkDestroyCommandPool(device, command_pool, NULL);
     if (swapchain) vkDestroySwapchainKHR(device, swapchain, NULL);
+    printf("swapchain: swapchain destroyed\n");
     if (device) vkDestroyDevice(device, NULL);
     if (surface) vkDestroySurfaceKHR(instance, surface, NULL);
     if (instance) vkDestroyInstance(instance, NULL);
+    if (result == VK_SUCCESS)
+        printf("swapchain: PASS %u frames\n", FRAME_COUNT);
     return result == VK_SUCCESS ? 0 : 1;
 }

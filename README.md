@@ -66,8 +66,12 @@ only the matching qualification process before returning failure.
 The first FW 5.50 attempt stopped safely before registration: kernel evidence
 showed that byte verification touched the execute-only VideoOut text page
 before its permissions were changed. OpenAGC `290213c` performs verification
-inside the short RWX window and restores RX on every exit. The rebuilt
-candidate awaits a fresh explicit console-availability signal.
+inside the short RWX window and restores RX on every exit. A second run reached
+1,800 frames, but the kernel reported a teardown SIGSEGV and a `0x4000` VM
+resource leak after the sample had printed PASS. OpenAGC `18011af` now uses the
+hardware-proven teardown order (close VideoOut, then delete its equeue), and the
+sample emits PASS only after swapchain, device, surface, and instance cleanup.
+That corrected candidate still requires one bounded hardware run.
 
 ## Standalone compute and triangle samples
 
