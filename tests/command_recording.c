@@ -40,6 +40,44 @@ static VkShaderModule shader_module(VkDevice device, const char *path)
     return module;
 }
 
+static bool has_register_value(const uint32_t *commands, uint32_t used,
+                               uint32_t opcode, uint32_t offset,
+                               uint32_t value)
+{
+    uint32_t cursor = 0;
+    while (cursor < used) {
+        uint32_t length = agcPm4Length(commands[cursor]);
+        if (length < 2u || cursor + length > used)
+            return false;
+        if (agcPm4Opcode(commands[cursor]) == opcode && length >= 3u) {
+            uint32_t base = commands[cursor + 1u];
+            for (uint32_t i = 0; i < length - 2u; ++i)
+                if (base + i == offset &&
+                    commands[cursor + 2u + i] == value)
+                    return true;
+        }
+        cursor += length;
+    }
+    return false;
+}
+
+static uint32_t count_register_value(const uint32_t *commands, uint32_t used,
+                                     uint32_t opcode, uint32_t value)
+{
+    uint32_t cursor = 0;
+    uint32_t count = 0;
+    while (cursor < used) {
+        uint32_t length = agcPm4Length(commands[cursor]);
+        if (length < 2u || cursor + length > used)
+            return 0u;
+        if (agcPm4Opcode(commands[cursor]) == opcode)
+            for (uint32_t i = 0; i < length - 2u; ++i)
+                count += commands[cursor + 2u + i] == value;
+        cursor += length;
+    }
+    return count;
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 7);
@@ -710,6 +748,11 @@ int main(int argc, char **argv)
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
+    assert(has_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
+                              AGC_REG_SPI_SHADER_USER_DATA_HS_0 + 11u,
+                              0x228a2108u));
+    assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
+                                0x228a2108u) >= 2u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;

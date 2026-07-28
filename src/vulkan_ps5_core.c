@@ -132,6 +132,8 @@ typedef struct VkPs5Pipeline {
     VkBool32 has_depth_stencil;
     const AgcGfx1013TessellationState *tessellation;
     uint64_t tess_ring_descriptor_address;
+    uint32_t tcs_offchip_layout;
+    uint32_t tes_offchip_layout;
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -1498,6 +1500,39 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
     return psbc_result(openagcPsbcCompile(&info, output));
 }
 
+static VkResult build_tessellation_layouts(VkPs5Pipeline *pipeline)
+{
+    const OpenAgcPsbcMetadata *control = &pipeline->stages[0].metadata;
+    const OpenAgcPsbcMetadata *evaluation = &pipeline->stages[1].metadata;
+
+    if (!control->tessellation_patch_count ||
+        control->tessellation_patch_count !=
+            evaluation->tessellation_patch_count ||
+        !control->tessellation_input_control_points ||
+        !control->tessellation_output_control_points ||
+        control->tessellation_output_control_points !=
+            evaluation->tessellation_output_control_points)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    const AgcGfx1013TessellationLayoutState state = {
+        .patch_count = control->tessellation_patch_count,
+        .input_control_points =
+            control->tessellation_input_control_points,
+        .output_control_points =
+            control->tessellation_output_control_points,
+        .vertex_output_count =
+            control->tessellation_vertex_output_count,
+        .control_output_count =
+            control->tessellation_control_output_count,
+        .primitive_mode = evaluation->tessellation_primitive_mode,
+        .tes_reads_tess_factors =
+            evaluation->tessellation_reads_factors,
+    };
+    return agcGfx1013BuildTessellationOffchipLayouts(
+               &state, &pipeline->tcs_offchip_layout,
+               &pipeline->tes_offchip_layout) == AGC_OK ?
+        VK_SUCCESS : VK_ERROR_INITIALIZATION_FAILED;
+}
+
 static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocator,
                           VkPs5Pipeline *pipeline) {
     if (!pipeline) return;
@@ -1898,6 +1933,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 pipeline->stage_count = ++compiled;
             }
         }
+        if (result != VK_SUCCESS) {
+            free_pipeline(device, pAllocator, pipeline);
+            return result;
+        }
+        if (tess_control)
+            result = build_tessellation_layouts(pipeline);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
@@ -3294,7 +3335,8 @@ static void record_tessellation_draw(
             .primitive_back_code_address = primitive->binding.code_address,
             .ring_descriptor_address =
                 pipeline->tess_ring_descriptor_address,
-            .tcs_offchip_layout = AGC_GFX1013_TESS_OFFCHIP_LAYOUT,
+            .tcs_offchip_layout = pipeline->tcs_offchip_layout,
+            .tes_offchip_layout = pipeline->tes_offchip_layout,
             .primitive_type = pipeline->primitive_type,
         },
         .frame = &draw_frame,

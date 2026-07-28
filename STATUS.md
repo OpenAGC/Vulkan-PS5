@@ -110,6 +110,13 @@ Implemented and host-verified:
   `20260728T013031Z-tessellation-run1.log`) and is hardware-qualified at that
   scope. `tessellationShader` remains false until patch-output reads are fixed
   and hardware-qualified.
+  The next patch-output-read candidate no longer uses the fixture-specific
+  `TCS_OFFCHIP_LAYOUT` constant. openagc-psbc API v4 reports the linked LS/HS
+  output counts, patch/control-point counts, primitive mode, and tess-factor
+  reads for each compiled pipeline; the ICD validates those values and asks
+  OpenAGC to build separate TCS and TES layout words. Host command-recording
+  tests verify that both compiler-derived values reach PM4. This candidate is
+  not hardware-qualified yet.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

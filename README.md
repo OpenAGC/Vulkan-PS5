@@ -80,6 +80,12 @@ green pixels, hardware-qualifying the basic standalone workload.
 `tessellationShader` remains false until patch-output reads are fixed and
 separately hardware-qualified.
 
+The current unqualified candidate derives its TCS/TES offchip layout words
+from openagc-psbc API v4 metadata and OpenAGC's typed layout builder rather
+than reusing the OpenAGC fixture constant. Host command-recording tests cover
+the compiler-derived PM4 values; the public feature bit remains disabled until
+the restored patch-output sample passes the bounded hardware gate twice.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console
