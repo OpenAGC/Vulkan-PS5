@@ -99,7 +99,14 @@
   offchip control points, separating missing TES launch, bad offchip reads,
   and downstream rasterization. Both host configurations pass all seven tests,
   host execution reaches the expected no-GPU oracle, and the Prospero build
-  passes. Its ELF awaits one bounded run after a fresh console signal.
+  passes. Its one bounded FW 5.500.008 run returned normally and left the
+  console responsive (`20260728T035640Z-tessellation-run1.log`). All three
+  hull markers and copied LDS positions passed, and TES wrote marker
+  `0x54455300`, proving that the factor ring launches evaluation. TES read all
+  three offchip control-point positions as zero and the image stayed black.
+  The remaining defect is therefore localized before rasterization, to the HS
+  offchip stores or the matching TES offchip address/layout ABI. No retry was
+  attempted.
 
 ## Summary
 

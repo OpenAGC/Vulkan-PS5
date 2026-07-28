@@ -76,5 +76,11 @@ unique tessellated vertex with `gl_TessCoord.x` equal to one writes marker
 therefore distinguishes a missing TES launch, incorrect offchip reads, and a
 downstream raster failure. Both host configurations and the Prospero build
 pass. The candidate ELF has SHA-256
-`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e` and
-awaits one bounded hardware run after a fresh console-availability signal.
+`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`.
+Its one bounded FW 5.500.008 run returned normally and left the console
+responsive (`20260728T035640Z-tessellation-run1.log`). The hull probe passed
+and TES wrote marker `0x54455300`, proving that evaluation and factor-ring
+launch work. TES nevertheless copied zero for every component of all three
+offchip control points, and the image remained black. This rules out
+rasterization and localizes the remaining defect to HS offchip stores or the
+matching TES offchip address/layout ABI. The runner did not retry it.

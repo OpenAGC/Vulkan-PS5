@@ -186,8 +186,14 @@ and a passing TES probe with a zero image identifies rasterization. Both host
 configurations pass all seven tests, host execution reaches the expected
 no-GPU oracle, and the Prospero ELF links with `-lunwind`, `-lc++abi`, `-lc++`,
 and `-lm`. Its SHA-256 is
-`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`;
-it awaits one bounded hardware run after a fresh console signal.
+`b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`.
+Its one bounded FW 5.500.008 run returned normally and left the console
+responsive (`20260728T035640Z-tessellation-run1.log`). The hull probe still
+passed, and TES wrote marker `0x54455300`, so the evaluation stage and factor
+ring are active. TES copied zero for every component of all three offchip
+control points and the image remained black. This excludes downstream
+rasterization and localizes the correction to HS offchip stores or the matching
+TES offchip address/layout ABI. No retry was attempted.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

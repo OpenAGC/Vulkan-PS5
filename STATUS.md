@@ -204,8 +204,13 @@ Implemented and host-verified:
   offchip reads, and rasterization. Both seven-test host configurations, host
   pipeline/command execution through the expected no-GPU oracle, and the
   Prospero build pass. Candidate ELF SHA-256 is
-  `b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`;
-  it awaits one bounded hardware run after a fresh console signal.
+  `b3e239c757996b7b8296719d461415913e9f1475b601553f28dd5aa06ac65c6e`.
+  Its one bounded FW 5.500.008 run returned normally and left the console
+  responsive (`20260728T035640Z-tessellation-run1.log`). The hull probe passed
+  and TES wrote marker `0x54455300`, proving that evaluation launches, but TES
+  copied zero for all three offchip control-point positions and the image was
+  black. The remaining fault is before rasterization, in HS offchip stores or
+  the matching TES offchip address/layout ABI. No retry was attempted.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
