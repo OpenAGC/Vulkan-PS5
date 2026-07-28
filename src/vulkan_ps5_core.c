@@ -3946,6 +3946,7 @@ static void record_graphics_indirect(
         .start_instance_location =
             prepared.start_instance_location == UINT32_MAX ?
                 0u : prepared.start_instance_location,
+        .draw_initiator = indexed ? 0u : 2u,
         .indexed = indexed ? 1u : 0u,
     };
     if (indexed) {

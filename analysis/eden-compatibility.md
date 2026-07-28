@@ -105,13 +105,16 @@ timeout.
    draw recording is no longer a stub. Compiler metadata now includes DrawIndex,
    and DrawID-using multi draws expand into hardware-qualified single packets.
    Its paired multi-draw/nonzero-first-instance/DrawID exact-color gate faulted
-   during submission even after reverting to sequential qualified single
-   packets, so the same candidate must not be repeated. A narrower diagnostic
-   is required before the three related core bits are promoted. The rejected
-   packet experiments, GPU-reset evidence, and PID-reuse runner hardening are documented in
+   during submission even after reverting to sequential single packets. A
+   one-draw BaseVertex/BaseInstance diagnostic reproduced the exact fault and
+   proved DrawID was not required. Comparison with upstream RADV and OpenAGC's
+   passing fixture identified a zero-initialized non-indexed draw initiator:
+   Vulkan now emits `DI_SRC_SEL_AUTO_INDEX=2` for non-indexed indirect and zero
+   for indexed indirect, with exact host packet assertions. The corrected
+   candidate awaits one bounded hardware run before the three related core bits
+   can be promoted. The rejected packet experiments, GPU-reset evidence, root
+   cause, and PID-reuse runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
-   A one-draw BaseVertex/BaseInstance-only diagnostic is built for the next
-   bounded run; it removes DrawID and multi expansion from the fault boundary.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
 4. Add only the allowed Eden changes: Prospero surface creation, build/link

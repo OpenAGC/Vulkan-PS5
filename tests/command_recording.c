@@ -974,11 +974,13 @@ int main(int argc, char **argv)
                        AGC_PM4_OP_DRAW_INDIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            assert(dwords[i + 4] == 2u);
             indirect_count++;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            assert(dwords[i + 4] == 0u);
             indexed_indirect_count++;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDIRECT_MULTI) {

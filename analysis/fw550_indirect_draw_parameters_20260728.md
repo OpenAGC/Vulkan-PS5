@@ -65,3 +65,30 @@ Therefore the timeout must not be classified as harmless infrastructure-only
 evidence, even though no target process or GPU submission was captured. No
 retry was made, and further PS5 interaction is suspended pending a safer
 recovery/debug path.
+
+After an explicit real-PS5 retest request, the one-draw diagnostic launched as
+native-game PID 84 and reproduced `VK_ERROR_DEVICE_LOST` at `vkQueueSubmit`.
+The sanitized klog records `SIGSEGV`, an active graphics queue, and a GPU reset:
+
+- `examples/qualification-logs/20260728T090836Z-indirect-parameters-run1.log`
+- `examples/qualification-logs/20260728T090836Z-indirect-parameters-run1-sanitized.klog`
+
+The signature is deterministic across the 10-dword, sequential DrawID, and
+one-draw no-DrawID cases: RIP `0x4000bb`, a reported unmapped write address
+ending in `0x003`, and an active graphics queue followed by reset. The address
+moved from `0x1c9c9c003` to `0x1c9ca0003` as the per-run allocation moved by
+16 KiB. This proves DrawID and multi expansion are not required for the fault.
+
+The root cause is the `DRAW_INDIRECT` initiator. Vulkan left it zero-initialized,
+selecting the indexed/DMA source even for a non-indexed draw. Upstream RADV
+emits `V_0287F0_DI_SRC_SEL_AUTO_INDEX` for non-indexed indirect and
+`V_0287F0_DI_SRC_SEL_DMA` for indexed indirect; OpenAGC's earlier passing
+single-indirect hardware fixture likewise used value two. Vulkan now emits
+initiator two for non-indexed and zero for indexed, and exact command tests
+lock both packet tails.
+
+The corrected one-draw Prospero candidate SHA-256 is
+`2692929133f28e936d1035db74df1da535263fc7d887f2fb7cf09d784c86e1d8`.
+All 20 host tests pass, the full Prospero build passes, and the required
+`-lunwind`, `-lc++abi`, `-lc++`, and `-lm` link set is retained. One fresh
+bounded run is required before the indirect feature bits can be promoted.

@@ -41,7 +41,10 @@ multi packet. A 2026-07-28 attempt to use a speculative Mesa-style 10-dword
 multi packet caused a PID-scoped GPU fault/reset, so that form was removed.
 The standalone `vulkan_ps5_indirect_parameters_probe` narrows subsequent
 qualification to one BaseVertex/BaseInstance indirect draw without DrawID or
-multi-draw expansion.
+multi-draw expansion. That diagnostic exposed the remaining fault: the ICD
+left the non-indexed draw initiator at the indexed/DMA value zero. It now emits
+gfx1013 `DI_SRC_SEL_AUTO_INDEX` value two for non-indexed indirect draws and
+zero for indexed indirect draws, with both exact packet tails host-tested.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
 packets for every Vulkan copy region. Recording validates bound memory,
