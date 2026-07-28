@@ -55,6 +55,15 @@ center, background, and green-pixel count. Its Prospero output is
 `vulkan_ps5_triangle_example.elf`; generic-host execution likewise reports the
 expected all-zero readback.
 
+`vulkan_ps5_geometry_example` adds a standard geometry stage to that workload.
+The geometry shader shrinks the input triangle by one half in each dimension,
+so its mapped-memory oracle expects roughly one quarter of the ordinary
+triangle coverage and cannot pass through a vertex-only path accidentally. The
+host command regression records an indexed draw with the fused VS+GS primitive
+record; its Prospero output is `vulkan_ps5_geometry_example.elf`. The driver
+continues to report `geometryShader = VK_FALSE` until the ELF passes twice on
+FW 5.50.
+
 `vulkan_ps5_indexed_textured_example` binds an interleaved position/UV vertex
 buffer, a UINT16 index buffer containing `{1,2,3}` after a decoy vertex, and a
 bilinear clamp sampler over a 2x2 RGBA8 image. Its readback oracle requires
@@ -153,9 +162,11 @@ compute CS pipeline creation
 compile SPIR-V at runtime with complete vertex, descriptor/pipeline-layout,
 push-constant, specialization-constant, entry-point, and render-pass color
 context. Geometry and tessellation stage fusion are also wired through pipeline
-creation, including independent specialization data for fused stages, but their
-Vulkan feature bits remain disabled until the resulting pipelines are qualified
-on hardware. Compute dispatch and a no-input triangle draw now emit real
+creation, including independent specialization data for fused stages. Geometry
+draw recording now accepts the fused compiler record and handles its zero-sized
+push-constant pointer plus vertex-offset metadata, but both optional Vulkan
+feature bits remain disabled until their standalone pipelines are repeatedly
+qualified on hardware. Compute dispatch and a no-input triangle draw now emit real
 gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Compute
 uniform/storage-buffer descriptor sets are stored through standard Vulkan
 updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler

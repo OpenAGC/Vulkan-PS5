@@ -42,7 +42,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path)
 
 int main(int argc, char **argv)
 {
-    assert(argc == 4);
+    assert(argc == 5);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -323,6 +323,7 @@ int main(int argc, char **argv)
 
     VkShaderModule vertex = shader_module(device, argv[2]);
     VkShaderModule fragment = shader_module(device, argv[3]);
+    VkShaderModule geometry = shader_module(device, argv[4]);
     const VkPipelineLayoutCreateInfo graphics_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
@@ -599,6 +600,19 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &graphics_info, NULL,
                                      &graphics_pipeline) == VK_SUCCESS);
+    const VkPipelineShaderStageCreateInfo geometry_stages[] = {
+        graphics_stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_GEOMETRY_BIT, geometry, "main", NULL},
+        graphics_stages[1],
+    };
+    VkGraphicsPipelineCreateInfo geometry_info = graphics_info;
+    geometry_info.stageCount = 3;
+    geometry_info.pStages = geometry_stages;
+    VkPipeline geometry_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &geometry_info, NULL,
+                                     &geometry_pipeline) == VK_SUCCESS);
 
     const VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -641,7 +655,7 @@ int main(int argc, char **argv)
                             0, 1, &descriptor_sets[1], 0, NULL);
     vkCmdDispatch(command, 3, 5, 7);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      graphics_pipeline);
+                      geometry_pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             graphics_layout, 0, 1, &texture_set, 0, NULL);
     const VkRenderPassBeginInfo render_begin = {
@@ -770,6 +784,7 @@ int main(int argc, char **argv)
     vkDestroyFence(device, fence, NULL);
     vkDestroyQueryPool(device, query_pool, NULL);
     vkDestroyCommandPool(device, pool, NULL);
+    vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);
@@ -789,6 +804,7 @@ int main(int argc, char **argv)
     vkDestroyImage(device, texture_image, NULL);
     vkFreeMemory(device, texture_memory, NULL);
     vkDestroyShaderModule(device, fragment, NULL);
+    vkDestroyShaderModule(device, geometry, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyDescriptorPool(device, descriptor_pool, NULL);

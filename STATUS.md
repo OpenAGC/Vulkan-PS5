@@ -79,6 +79,14 @@ Implemented and host-verified:
 - No-input VS/PS triangle bind/draw emits the fused Wave32 NGG state,
   interpolant state, base-vertex/start-instance user SGPRs, and
   `DRAW_INDEX_AUTO` through `agcGfx1013DrawBaselineIndexAuto`.
+- Fused VS+GS pipelines now use the same typed OpenAGC primitive-shader path.
+  Draw recording accepts geometry compiler metadata for vertex tables,
+  base-vertex/start-instance values, and the unused zero-sized push-constant
+  pointer without claiming support for nonzero push constants. The command
+  regression performs a successful indexed geometry draw and verifies its PM4.
+  A standalone mapped-readback ELF shrinks the triangle in the geometry stage,
+  giving it a distinct coverage oracle. Host tests and the Prospero cross-link
+  pass; two FW 5.50 runs remain required before advertising `geometryShader`.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

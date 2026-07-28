@@ -3169,12 +3169,13 @@ static void record_graphics_draw(
     VkPs5Pipeline *pipeline = command->bound_graphics;
     if (!pipeline || !command->active_render_pass ||
         pipeline->stage_count != 2 || !element_count || !instance_count ||
-        pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_VERTEX ||
+        (pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_VERTEX &&
+         pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_GEOMETRY) ||
         pipeline->stage_types[1] != OPENAGC_PSBC_STAGE_FRAGMENT) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
-    AgcRegisterValue user_data[2];
+    AgcRegisterValue user_data[OPENAGC_PSBC_MAX_USER_SGPRS];
     uint32_t user_data_count = 0;
     AgcGfx1013ResourceTableBinding
         primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
@@ -3206,11 +3207,15 @@ static void record_graphics_draw(
             value = indexed ? (uint32_t)vertex_offset : first_element;
         else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
             value = first_instance;
+        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_PUSH_CONSTANT_POINTER &&
+                 metadata->push_constant_size == 0u)
+            value = 0u;
         else {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
-        if (sgpr->dword_count != 1 || user_data_count == 2) {
+        if (sgpr->dword_count != 1 ||
+            user_data_count == OPENAGC_PSBC_MAX_USER_SGPRS) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }

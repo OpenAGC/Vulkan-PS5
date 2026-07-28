@@ -6,6 +6,12 @@
 
 #include "vulkan_ps5_triangle_frag_spv.h"
 #include "vulkan_ps5_triangle_vert_spv.h"
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#include "vulkan_ps5_geometry_spv.h"
+#define SAMPLE_LABEL "geometry"
+#else
+#define SAMPLE_LABEL "triangle"
+#endif
 
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
@@ -14,7 +20,7 @@
 #define VK_CHECK(expression) do { \
     VkResult check_result = (expression); \
     if (check_result != VK_SUCCESS) { \
-        printf("triangle: %s failed (%d)\n", #expression, check_result); \
+        printf(SAMPLE_LABEL ": %s failed (%d)\n", #expression, check_result); \
         return 1; \
     } \
 } while (0)
@@ -44,6 +50,9 @@ int main(void)
     VkRenderPass render_pass;
     VkFramebuffer framebuffer;
     VkShaderModule vertex_shader;
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    VkShaderModule geometry_shader;
+#endif
     VkShaderModule fragment_shader;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
@@ -62,7 +71,7 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) {
-        printf("triangle: expected one physical device\n");
+        printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
     const float priority = 1.0f;
@@ -123,7 +132,7 @@ int main(void)
     uint32_t memory_type = find_host_visible_memory_type(
         physical, requirements.memoryTypeBits);
     if (memory_type == UINT32_MAX) {
-        printf("triangle: no host-visible compatible memory type\n");
+        printf(SAMPLE_LABEL ": no host-visible compatible memory type\n");
         return 1;
     }
     const VkMemoryAllocateInfo memory_info = {
@@ -198,10 +207,21 @@ int main(void)
         .codeSize = sizeof(vulkan_ps5_triangle_frag_spv),
         .pCode = vulkan_ps5_triangle_frag_spv,
     };
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    const VkShaderModuleCreateInfo geometry_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_geometry_spv),
+        .pCode = vulkan_ps5_geometry_spv,
+    };
+#endif
     VK_CHECK(vkCreateShaderModule(
         device, &vertex_shader_info, NULL, &vertex_shader));
     VK_CHECK(vkCreateShaderModule(
         device, &fragment_shader_info, NULL, &fragment_shader));
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    VK_CHECK(vkCreateShaderModule(
+        device, &geometry_shader_info, NULL, &geometry_shader));
+#endif
     const VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     };
@@ -214,6 +234,14 @@ int main(void)
             .module = vertex_shader,
             .pName = "main",
         },
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
+            .module = geometry_shader,
+            .pName = "main",
+        },
+#endif
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -262,7 +290,7 @@ int main(void)
     };
     const VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .stageCount = 2,
+        .stageCount = sizeof(stages) / sizeof(stages[0]),
         .pStages = stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &input_assembly,
@@ -373,9 +401,15 @@ int main(void)
     image_ok = green_count == 0u && unexpected_count == 0u && center == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
 #else
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    image_ok = green_count >= 3500u && green_count <= 6000u &&
+        unexpected_count == 0u && center == GREEN_RGBA8 &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#else
     image_ok = green_count >= 16000u && green_count <= 21000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#endif
 #endif
     if (!image_ok
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
@@ -396,7 +430,7 @@ int main(void)
             query_result, (unsigned long long)query_data[0],
             (unsigned long long)query_data[1], green_count, unexpected_count);
 #else
-        printf("triangle: mismatch green=%u unexpected=%u center=%08x\n",
+        printf(SAMPLE_LABEL ": mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
 #endif
         status = 1;
@@ -413,7 +447,7 @@ int main(void)
         printf("query: PASS samples=%llu green=%u\n",
             (unsigned long long)query_data[0], green_count);
 #else
-        printf("triangle: PASS %u green pixels\n", green_count);
+        printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);
 #endif
     }
 
@@ -425,6 +459,9 @@ int main(void)
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
     vkDestroyShaderModule(device, fragment_shader, NULL);
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    vkDestroyShaderModule(device, geometry_shader, NULL);
+#endif
     vkDestroyShaderModule(device, vertex_shader, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
