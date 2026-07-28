@@ -396,7 +396,7 @@ Implemented:
   proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `271cc11273f334e8155a8fb9154693cd0370534d59d3b14c7b346f73d482b0e9`.
+  `7e714ae4861f27b13306e39264e1c2715c73720bdc8dc6820f46d0ae3be6d642`.
 
 Pending:
 
@@ -409,5 +409,10 @@ Pending:
   teardown SIGSEGV and `0x4000` VM resource leak occurred after the premature
   PASS line. OpenAGC `18011af` now closes VideoOut before deleting the equeue
   and omits the unqualified explicit flip-event deletion. The sample now emits
-  PASS only after complete Vulkan teardown. A new bounded run is required; no
+  PASS only after complete Vulkan teardown. The corrected run
+  (`20260728T054859Z-swapchain-run1.log`) reached both cleanup checkpoints, but
+  returning from the ELF entrypoint jumped to `main+0xbb` (`RIP 0x4000bb`) and
+  caused SIGSEGV plus a `0x4000` VM resource leak. The Prospero sample now
+  flushes output and uses the SDK's hardware-proven `thr_exit` termination;
+  host builds still return normally. A new bounded run is required; no
   automatic retry is permitted.

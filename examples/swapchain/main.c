@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef OPENAGC_PROSPERO
+#include <sys/thr.h>
+#endif
+
 enum { FRAME_COUNT = 1800, IMAGE_COUNT = 3 };
 
 #define REQUIRE(call) do { \
@@ -211,5 +215,13 @@ cleanup:
     if (instance) vkDestroyInstance(instance, NULL);
     if (result == VK_SUCCESS)
         printf("swapchain: PASS %u frames\n", FRAME_COUNT);
-    return result == VK_SUCCESS ? 0 : 1;
+    const int exit_code = result == VK_SUCCESS ? 0 : 1;
+#ifdef OPENAGC_PROSPERO
+    fflush(NULL);
+    long thread_state = exit_code;
+    thr_exit(&thread_state);
+    __builtin_unreachable();
+#else
+    return exit_code;
+#endif
 }

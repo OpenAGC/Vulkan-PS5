@@ -153,7 +153,7 @@
   WSI-enabled VVL test pass without messages. The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `271cc11273f334e8155a8fb9154693cd0370534d59d3b14c7b346f73d482b0e9`.
+  `7e714ae4861f27b13306e39264e1c2715c73720bdc8dc6820f46d0ae3be6d642`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -165,9 +165,13 @@
   OpenAGC `18011af` now follows the hardware-proven teardown order by closing
   VideoOut before deleting the equeue, without an unqualified explicit
   flip-event deletion. The sample now prints PASS only after all Vulkan cleanup
-  completes. One new bounded run remains before this milestone is hardware
-  qualified; the runner has no automatic retry and uses ps5debug-NG cleanup
-  only on a timeout/failure.
+  completes. The next bounded run reached all cleanup checkpoints and printed
+  PASS, but returning from the ELF entrypoint jumped to `main+0xbb` and caused
+  SIGSEGV. The Prospero sample now flushes output and terminates through the
+  SDK's hardware-proven `thr_exit` path instead of returning; host builds keep
+  their normal return path. One new bounded run remains before this milestone
+  is hardware qualified; the runner has no automatic retry and uses ps5debug-NG
+  cleanup only on a timeout/failure.
   Exhausted acquisition now waits against a monotonic deadline instead of
   returning early, while present releases the swapchain lock during the
   bounded VSYNC wait. A host regression holds all three images, presents one

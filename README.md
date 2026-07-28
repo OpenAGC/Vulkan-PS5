@@ -71,7 +71,11 @@ inside the short RWX window and restores RX on every exit. A second run reached
 resource leak after the sample had printed PASS. OpenAGC `18011af` now uses the
 hardware-proven teardown order (close VideoOut, then delete its equeue), and the
 sample emits PASS only after swapchain, device, surface, and instance cleanup.
-That corrected candidate still requires one bounded hardware run.
+The corrected run completed those cleanup checkpoints, but returning from the
+Prospero ELF entrypoint then jumped back into `main` (`RIP 0x4000bb`,
+`main+0xbb`) and caused SIGSEGV. The Prospero sample now terminates through the
+SDK's proven `thr_exit` path after flushing output; host builds still return
+normally. That process-exit correction requires one new bounded hardware run.
 
 ## Standalone compute and triangle samples
 
