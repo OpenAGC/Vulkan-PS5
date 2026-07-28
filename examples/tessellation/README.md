@@ -15,6 +15,7 @@ On success it prints:
 tessellation: PASS <count> green pixels
 ```
 
-The FW 5.50 basic qualification gate requires two independent successful runs.
-The driver must not advertise `tessellationShader` until the separate
-patch-output-read path is also fixed and hardware-qualified.
+Two independent FW 5.500.008 runs produced exactly 7200 green pixels, completing
+the basic standalone qualification gate. The driver must not advertise
+`tessellationShader` until the separate patch-output-read path is also fixed and
+hardware-qualified.

@@ -42,10 +42,11 @@
   Geometry draw recording and its deterministic standalone Prospero ELF passed
   twice on FW 5.50. Tessellation diagnostics safely fixed missing DCB ring
   programming and separated the basic OpenAGC-qualified shader dataflow from
-  still-unqualified offchip patch-output reads. The revised basic gate awaits
-  two hardware passes. Geometry can then advance through its standard feature
-  request path; tessellation stays disabled until patch-output reads are fixed
-  and hardware-qualified as well.
+  still-unqualified offchip patch-output reads. The revised basic gate passed
+  twice on FW 5.500.008 with exactly 7200 pixels, completing standalone geometry
+  and basic tessellation hardware qualification. Geometry can now advance
+  through its standard feature-request path; tessellation stays disabled until
+  patch-output reads are fixed and hardware-qualified as well.
 
 ## Summary
 

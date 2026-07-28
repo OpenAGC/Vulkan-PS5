@@ -85,9 +85,12 @@ Implemented and host-verified:
   pointer without claiming support for nonzero push constants. The command
   regression performs a successful indexed geometry draw and verifies its PM4.
   A standalone mapped-readback ELF shrinks the triangle in the geometry stage,
-  giving it a distinct coverage oracle. Two independent FW 5.50 runs produced
-  exactly 4608 green pixels. The core feature remains disabled until the
-  standard feature-request path is enabled and rerun.
+  giving it a distinct coverage oracle. Two independent FW 5.500.008 runs
+  produced exactly 4608 green pixels
+  (`20260728T012020Z-geometry-run1.log` and
+  `20260728T012034Z-geometry-run1.log`). The standalone geometry workload is
+  hardware-qualified; the core feature remains disabled until the standard
+  feature-request path is enabled and rerun.
 - Tessellation pipelines require standard `PATCH_LIST` input and compile the
   fused LS+HS stage in Wave32 alongside TES+NGG and PS. The device lazily owns
   one 256-byte-aligned factor ring, offchip ring, and descriptor table, builds
@@ -102,8 +105,11 @@ Implemented and host-verified:
   patch-output reads as the only material difference from OpenAGC's passing
   shader path. The basic hardware gate now follows OpenAGC's qualified
   constant-position dataflow, while patch-output reads remain explicitly
-  unqualified. Even after the revised ELF passes twice, `tessellationShader`
-  must remain false until patch-output reads are fixed and hardware-qualified.
+  unqualified. The revised basic workload passed twice on FW 5.500.008 with
+  exactly 7200 green pixels (`20260728T013019Z-tessellation-run1.log` and
+  `20260728T013031Z-tessellation-run1.log`) and is hardware-qualified at that
+  scope. `tessellationShader` remains false until patch-output reads are fixed
+  and hardware-qualified.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

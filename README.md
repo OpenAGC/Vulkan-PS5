@@ -61,9 +61,10 @@ so its mapped-memory oracle expects roughly one quarter of the ordinary
 triangle coverage and cannot pass through a vertex-only path accidentally. The
 host command regression records an indexed draw with the fused VS+GS primitive
 record; its Prospero output is `vulkan_ps5_geometry_example.elf`. Two
-independent FW 5.50 launches each produced exactly 4608 green pixels. The
-driver continues to report `geometryShader = VK_FALSE` until the standard
-feature-request path is enabled and rerun.
+independent FW 5.500.008 launches each produced exactly 4608 green pixels, so
+the standalone geometry workload is hardware-qualified. The driver continues
+to report `geometryShader = VK_FALSE` until the standard feature-request path
+is enabled and rerun.
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
@@ -74,8 +75,10 @@ missing command-buffer ring programming, then left unqualified offchip
 patch-output reads as the only material difference from OpenAGC's passing
 path. The basic hardware gate now uses OpenAGC's qualified constant-position
 shader dataflow. Its Prospero ELF also cross-links with the required target
-runtimes; `tessellationShader` remains false until patch-output reads are fixed
-and separately hardware-qualified, regardless of the basic sample result.
+runtimes. Two independent FW 5.500.008 launches each produced exactly 7200
+green pixels, hardware-qualifying the basic standalone workload.
+`tessellationShader` remains false until patch-output reads are fixed and
+separately hardware-qualified.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
