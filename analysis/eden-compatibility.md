@@ -52,11 +52,10 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=21 limits=0 queues=0 total=23
+eden-profile: extensions=2 features=20 limits=0 queues=0 total=22
 ```
 
-The 21 feature gaps are `depthBiasClamp`,
-`drawIndirectFirstInstance`, `dualSrcBlend`,
+The 20 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `largePoints`,
 `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
 `samplerAnisotropy`, `sampleRateShading`,
@@ -111,20 +110,23 @@ legacy and Features2 paths. The public-path Prospero ELF links the required
 runtime set and has SHA-256
 `aee2fa93057571ee294862c822c11f1c4ca924b55938c315e51d93968cae21e1`.
 
-The host-side `depthBiasClamp` contract is now implemented without advertising
-the feature. Static pipelines and `VK_DYNAMIC_STATE_DEPTH_BIAS` both preserve
+The `depthBiasClamp` contract is implemented and hardware-qualified. Static
+pipelines and `VK_DYNAMIC_STATE_DEPTH_BIAS` both preserve
 constant, clamp, and slope factors; `vkCmdSetDepthBias` records command-local
 dynamic values. Baseline, indexed, indirect, geometry, and tessellation paths
 enable front/back polygon offset and emit OpenAGC's typed D16/D32 format,
 clamp, slope, and constant registers. Exact PM4 and pipeline regressions pass
-in both 24/24 host configurations. The standalone bounded probe supplies an
+in both 25/25 host configurations. The standalone bounded probe supplies an
 oversized constant bias with clamp 0.125 and requires raw D32 depth to move
 from 0.25/0.75 to exact 0.375/0.875 while preserving the established color and
 stencil decisions. Its runner covers matching-self-kill, NUL, later-PID, fatal,
-and exact-identity paths. The Prospero ELF links the required runtime set and
-has SHA-256
-`8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
-Public `depthBiasClamp` remains false pending one bounded FW 5.50 run.
+and exact-identity paths. The internal-path and final public query/request FW
+5.50 runs both produced exact green 12,288, red 9,830, raw D32
+54,145/12,288/9,830, and stencil 22,118 counts, followed by clean process exit.
+Target-only klogs contained only the established 0x4000 baseline VM warning.
+`depthBiasClamp` is advertised and accepted through legacy and Features2 paths.
+The public-path Prospero ELF links the required runtime set and has SHA-256
+`f2da4d9bab0030cdfe342ed8abc42e03601f5f66fcdb47d39ce761ad42702244`.
 
 The `depthClamp` contract is implemented and advertised. Every graphics frame
 uses OpenAGC's exact `0x00080000` clip-control mask and `ZSCALE=1`, `ZOFFSET=0`

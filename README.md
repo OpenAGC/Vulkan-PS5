@@ -644,8 +644,12 @@ pipelines translate constant, clamp, and slope factors to OpenAGC's typed D16
 or D32 depth-bias state for every graphics draw path. The standalone
 `vulkan_ps5_depth_bias_clamp_probe` applies a deliberately oversized constant
 bias with a 0.125 clamp and requires exact D32 depth shifts from 0.25/0.75 to
-0.375/0.875. Public `depthBiasClamp` remains false until that bounded hardware
-gate passes. Every frame uses gfx1013's Vulkan zero-to-one depth clip convention
+0.375/0.875. Both the internal-path and public query/request FW 5.50 gates
+passed with exact color, D32, and stencil counts, clean process exit, and only
+the established 0x4000 baseline VM warning. `depthBiasClamp` is advertised and
+accepted through legacy and Features2 paths; the public-path ELF SHA-256 is
+`f2da4d9bab0030cdfe342ed8abc42e03601f5f66fcdb47d39ce761ad42702244`.
+Every frame uses gfx1013's Vulkan zero-to-one depth clip convention
 and the matching viewport transform (`ZSCALE=1`, `ZOFFSET=0`).
 Static `depthClampEnable` is accepted for every graphics draw path and disables
 near/far Z clipping through OpenAGC while retaining the Vulkan convention. The

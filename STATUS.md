@@ -308,13 +308,16 @@ Implemented and host-verified:
   `VK_DYNAMIC_STATE_DEPTH_BIAS`, `vkCmdSetDepthBias` records command-local
   state, and OpenAGC emits exact D16/D32 format scaling plus clamp and
   front/back slope/constant registers. Exact PM4 and pipeline regressions pass
-  in both 24/24 host suites. The bounded depth-bias-clamp probe uses an
+  in both 25/25 host suites. The bounded depth-bias-clamp probe uses an
   oversized constant with a 0.125 clamp and requires D32 values 0.375 and
   0.875 instead of the unbiased 0.25 and 0.75, followed by the shared
-  matching-self-kill lifecycle. The Prospero ELF links
-  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
-  Public `depthBiasClamp` remains false until one bounded FW 5.50 run passes.
+  matching-self-kill lifecycle. Both the internal-path and public query/request
+  FW 5.50 runs produced exact green 12,288, red 9,830, raw D32
+  54,145/12,288/9,830, and stencil 22,118 counts, clean process exit, and only
+  the established 0x4000 baseline VM warning. `depthBiasClamp` is advertised
+  and accepted through legacy and Features2 paths. The public-path Prospero ELF
+  links `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `f2da4d9bab0030cdfe342ed8abc42e03601f5f66fcdb47d39ce761ad42702244`.
 - Static depth clamp is host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. Every frame now programs gfx1013's Vulkan
   zero-to-one clip convention and matching `ZSCALE=1`, `ZOFFSET=0` viewport
