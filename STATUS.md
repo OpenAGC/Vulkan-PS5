@@ -315,8 +315,9 @@ Implemented and host-verified:
   Public `depthBiasClamp` remains false until one bounded FW 5.50 run passes.
 - Static depth clamp is host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. Every frame now programs gfx1013's Vulkan
-  zero-to-one clip convention; `depthClampEnable` additionally disables near
-  and far Z clipping through OpenAGC's exact `0x0c080000` clip-control mask.
+  zero-to-one clip convention and matching `ZSCALE=1`, `ZOFFSET=0` viewport
+  transform; `depthClampEnable` additionally disables near and far Z clipping
+  through OpenAGC's exact `0x0c080000` clip-control mask.
   The established depth sample shader now uses 0.25/0.75 instead of
   -0.5/0.5, preserving its raw D32 oracle under correct Vulkan clip space.
   Exact PM4 and pipeline regressions pass in both 23/23 host suites. The
@@ -324,8 +325,13 @@ Implemented and host-verified:
   zero and a normal red control at exact 0.25, followed by the shared
   matching-self-kill lifecycle. The Prospero ELF links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `9f06393c09e58d0c13862bd4992b6a0fe32b7e3e59e6743736df204e9fc07a24`.
-  Public `depthClamp` remains false until one bounded FW 5.50 run passes.
+  `03bc6e70d592cac2b9c1d9dfb1cddcb56924649ba639c2de114984f1b42eb1da`.
+  The first bounded FW 5.50 run safely rendered the expected color coverage,
+  wrote the matching stencil coverage, exited through SystemService, and left
+  no stale process, but exposed OpenAGC's legacy 0.5/0.5 viewport remap after
+  enabling Vulkan clip control. OpenAGC `c0dd5b4` fixes that double transform;
+  exact Vulkan-PS5 PM4 regression coverage locks the corrected values. Public
+  `depthClamp` remains false until one corrected bounded FW 5.50 run passes.
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50

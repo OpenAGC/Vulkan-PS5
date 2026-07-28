@@ -107,7 +107,8 @@ Public `depthBiasClamp` remains false pending one bounded FW 5.50 run.
 
 The host-side `depthClamp` contract is also implemented without advertising
 the feature. Every graphics frame uses OpenAGC's exact `0x00080000` clip-control
-mask for Vulkan's zero-to-one depth convention; static depth-clamp pipelines
+mask and `ZSCALE=1`, `ZOFFSET=0` viewport transform for Vulkan's zero-to-one
+depth convention; static depth-clamp pipelines
 use `0x0c080000` to additionally disable near and far Z clipping on baseline,
 indexed, indirect, geometry, and tessellation draws. The established depth
 sample shader moved from -0.5/0.5 to 0.25/0.75 so its existing raw D32 oracle
@@ -116,8 +117,13 @@ configurations. The bounded probe distinguishes clamping from clipping by
 requiring a negative-Z green triangle at exact D32 zero, plus a normal red
 control triangle at exact 0.25, and uses the shared matching-self-kill runner.
 The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-`9f06393c09e58d0c13862bd4992b6a0fe32b7e3e59e6743736df204e9fc07a24`.
-Public `depthClamp` remains false pending one bounded FW 5.50 run.
+`03bc6e70d592cac2b9c1d9dfb1cddcb56924649ba639c2de114984f1b42eb1da`.
+The first bounded FW 5.50 run produced the expected color and stencil coverage,
+completed SystemService exit, and left no stale process, but revealed that the
+legacy OpenAGC viewport still applied a 0.5/0.5 depth remap after Vulkan clip
+control was enabled. OpenAGC `c0dd5b4` adds an explicit zero-to-one viewport
+mode and the command regression locks its exact values. Public `depthClamp`
+remains false pending one corrected bounded FW 5.50 run.
 
 ## Runtime compatibility
 

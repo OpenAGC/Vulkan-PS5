@@ -2223,6 +2223,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->primitive_type = tess_control ? 9u : 4u;
         pipeline->viewport.width = (uint32_t)viewport->width;
         pipeline->viewport.height = (uint32_t)viewport->height;
+        pipeline->viewport.depth_clip_space =
+            AGC_GFX1013_CLIP_SPACE_ZERO_TO_ONE;
         pipeline->scissor.left = (uint32_t)scissor->offset.x;
         pipeline->scissor.top = (uint32_t)scissor->offset.y;
         pipeline->scissor.right = pipeline->scissor.left + scissor->extent.width;
@@ -4296,6 +4298,7 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     }
     frame.viewport.width = b->renderArea.extent.width;
     frame.viewport.height = b->renderArea.extent.height;
+    frame.viewport.depth_clip_space = AGC_GFX1013_CLIP_SPACE_ZERO_TO_ONE;
     frame.scissor.left = (uint32_t)b->renderArea.offset.x;
     frame.scissor.top = (uint32_t)b->renderArea.offset.y;
     frame.scissor.right = frame.scissor.left + b->renderArea.extent.width;

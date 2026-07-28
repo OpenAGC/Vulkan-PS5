@@ -623,14 +623,15 @@ or D32 depth-bias state for every graphics draw path. The standalone
 `vulkan_ps5_depth_bias_clamp_probe` applies a deliberately oversized constant
 bias with a 0.125 clamp and requires exact D32 depth shifts from 0.25/0.75 to
 0.375/0.875. Public `depthBiasClamp` remains false until that bounded hardware
-gate passes. Every frame uses gfx1013's Vulkan zero-to-one depth clip convention.
+gate passes. Every frame uses gfx1013's Vulkan zero-to-one depth clip convention
+and the matching viewport transform (`ZSCALE=1`, `ZOFFSET=0`).
 Static `depthClampEnable` is accepted for every graphics draw path and disables
 near/far Z clipping through OpenAGC while retaining the Vulkan convention. The
 standalone `vulkan_ps5_depth_clamp_probe` requires a negative-Z green triangle
 to survive at exact D32 zero and a normal red control triangle at exact 0.25.
 The original depth sample now uses 0.25/0.75 shader depth so its established
 oracle remains unchanged under correct Vulkan clip space. Public `depthClamp`
-remains false until the bounded hardware gate passes. Static depth compare/write
+remains false until the corrected bounded hardware gate passes. Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
