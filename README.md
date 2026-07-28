@@ -73,7 +73,8 @@ runtimes; `tessellationShader` remains false until two FW 5.50 passes.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
-once more to collect the second independent qualification log:
+once more to collect the second independent qualification log. Console
+reachability, FTP upload, and HTTP launch operations all use bounded timeouts:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh geometry

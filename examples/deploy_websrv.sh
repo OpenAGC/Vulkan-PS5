@@ -22,7 +22,9 @@ if [ ! -f "$elf" ]; then
 fi
 
 remote_dir="/data/homebrew/$name"
-curl -sS "ftp://${PS5_HOST}:2121/" --quote "MKD $remote_dir" >/dev/null 2>&1 || true
-curl -sS -T "$elf" "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf"
-curl -sS --max-time 30 \
+curl -sS --connect-timeout 3 --max-time 30 \
+    "ftp://${PS5_HOST}:2121/" --quote "MKD $remote_dir" >/dev/null 2>&1 || true
+curl -sS --connect-timeout 3 --max-time 30 \
+    -T "$elf" "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf"
+curl -sS --connect-timeout 3 --max-time 30 \
     "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
