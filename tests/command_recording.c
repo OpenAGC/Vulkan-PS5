@@ -96,6 +96,7 @@ int main(int argc, char **argv)
         .pQueuePriorities = &priority,
     };
     const VkPhysicalDeviceFeatures enabled_features = {
+        .multiViewport = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
     };
     const VkDeviceCreateInfo device_info = {
@@ -753,6 +754,28 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &graphics_info, NULL,
                                      &graphics_pipeline) == VK_SUCCESS);
+    const VkPipelineViewportStateCreateInfo dynamic_viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 2,
+        .scissorCount = 2,
+    };
+    const VkDynamicState dynamic_viewport_states[] = {
+        VK_DYNAMIC_STATE_DEPTH_BIAS,
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic_viewport_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 3,
+        .pDynamicStates = dynamic_viewport_states,
+    };
+    VkGraphicsPipelineCreateInfo dynamic_viewport_pipeline_info = graphics_info;
+    dynamic_viewport_pipeline_info.pViewportState = &dynamic_viewport_state;
+    dynamic_viewport_pipeline_info.pDynamicState = &dynamic_viewport_info;
+    VkPipeline dynamic_viewport_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &dynamic_viewport_pipeline_info, NULL, &dynamic_viewport_pipeline) ==
+        VK_SUCCESS);
     VkPipelineRasterizationStateCreateInfo static_bias_raster = rasterization;
     static_bias_raster.depthClampEnable = VK_TRUE;
     static_bias_raster.depthBiasConstantFactor = 2.0f;
@@ -930,6 +953,21 @@ int main(int argc, char **argv)
     vkCmdBeginQuery(command, query_pool, 1, VK_QUERY_CONTROL_PRECISE_BIT);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
+    const VkViewport dynamic_viewports[] = {
+        {0, 0, 128, 256, 0, 1},
+        {128, 0, 128, 256, 0.25f, 0.75f},
+    };
+    const VkRect2D dynamic_scissors[] = {
+        {{0, 0}, {128, 256}},
+        {{128, 0}, {128, 256}},
+    };
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      dynamic_viewport_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 1, 1, &hull_output_set, 0, NULL);
+    vkCmdSetViewport(command, 0, 2, dynamic_viewports);
+    vkCmdSetScissor(command, 0, 2, dynamic_scissors);
+    vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       tessellation_pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -986,6 +1024,22 @@ int main(int argc, char **argv)
     vkCmdDraw(unset_line_width_command, 2, 1, 0, 0);
     vkCmdEndRenderPass(unset_line_width_command);
     assert(vkEndCommandBuffer(unset_line_width_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+
+    VkCommandBuffer unset_viewport_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &unset_viewport_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(unset_viewport_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdBeginRenderPass(unset_viewport_command, &render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(unset_viewport_command,
+                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      dynamic_viewport_pipeline);
+    vkCmdSetDepthBias(unset_viewport_command, 0.0f, 0.0f, 0.0f);
+    vkCmdDraw(unset_viewport_command, 3, 1, 0, 0);
+    vkCmdEndRenderPass(unset_viewport_command);
+    assert(vkEndCommandBuffer(unset_viewport_command) ==
            VK_ERROR_INITIALIZATION_FAILED);
 
     VkCommandBuffer invalid_indirect_command;
@@ -1061,6 +1115,12 @@ int main(int argc, char **argv)
     assert(has_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                               AGC_REG_SPI_SHADER_USER_DATA_HS_0 + 11u,
                               0x210a2108u));
+    assert(has_register_value(dwords, count, AGC_PM4_OP_SET_CONTEXT_REG,
+                              AGC_REG_PA_CL_VPORT_XOFFSET + 6u,
+                              0x43400000u));
+    assert(has_register_value(dwords, count, AGC_PM4_OP_SET_CONTEXT_REG,
+                              AGC_REG_PA_SC_VPORT_SCISSOR_0_TL + 2u,
+                              0x00000080u));
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                                 0x210a2108u) >= 2u);
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
@@ -1339,6 +1399,7 @@ int main(int argc, char **argv)
     vkDestroyQueryPool(device, query_pool, NULL);
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, dynamic_viewport_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, point_pipeline, NULL);
     vkDestroyPipeline(device, point_list_pipeline, NULL);

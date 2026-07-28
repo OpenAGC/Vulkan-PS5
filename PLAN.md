@@ -2,6 +2,14 @@
 
 ## Progress
 
+- Milestone 6 `multiViewport` closure is complete. The ICD exposes 16
+  viewports, accepts static and dynamic viewport/scissor arrays, and emits
+  OpenAGC's typed gfx1013 per-slot state after shader binds. Normal and
+  sanitizer suites pass 39/39, VVL reports no diagnostics, the Prospero build
+  passes, and two exact FW 5.50 gates produced 9,216 pixels in each of two
+  independently indexed viewports. The automated Eden ICD profile has zero
+  hard startup gaps.
+
 - Milestone 6 `imageCubeArray` closure is complete. Standard 12-layer
   cube-compatible images, cube/cube-array/2D-array views, typed gfx1013 layer
   descriptors, runtime `samplerCubeArray` compilation, 39/39 normal and
@@ -482,8 +490,15 @@
   9,216 red samples from cube 0 and 9,216 green samples from cube 1. Evidence
   is retained in `20260728T170806Z-image-cube-array-run1.log` and
   `20260728T170838Z-image-cube-array-run1.log`.
-- The live Eden compatibility profile now has one feature gap:
-  `multiViewport`.
+- `multiViewport` is hardware-qualified for two static viewport/scissor slots
+  selected by `gl_ViewportIndex`. Repeated gates produced exactly 9,216 green
+  pixels in the left viewport and 9,216 red pixels in the right viewport.
+  Evidence is retained in `20260728T173652Z-multi-viewport-run1.log` and
+  `20260728T173733Z-multi-viewport-run1.log`.
+- The live Eden ICD compatibility profile now reports zero hard gaps:
+  `extensions=0 features=0 limits=0 queues=0 total=0`. The separate Eden PS5
+  surface/build integration remains application work rather than an ICD
+  capability gap.
 
 ## Test Plan and Assumptions
 

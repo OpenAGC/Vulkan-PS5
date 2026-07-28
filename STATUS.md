@@ -1,5 +1,29 @@
 # Implementation Status
 
+## Milestone 6: multiple viewports (2026-07-29)
+
+`multiViewport` is advertised and accepted through legacy and Features2
+paths, with the gfx1013-qualified limit of 16. Graphics pipelines accept
+matching static or dynamic viewport/scissor arrays, command buffers track
+dynamic slots atomically, and baseline, geometry, and tessellation draws emit
+OpenAGC's typed per-slot viewport state after shader binds. Host regressions
+cover two-slot static and dynamic pipelines, missing dynamic state, limits,
+exact slot-one registers, feature requests, and VVL-clean use.
+
+Normal and ASAN/UBSAN suites pass 39/39, and the full Prospero build links the
+probe with `-lunwind -lc++abi -lc++ -lm`. The first hardware diagnostic
+rendered the expected 18,432 covered pixels but used an unqualified geometry
+to-fragment color varying, so its color oracle failed without a GPU fault or
+console freeze. The final application-neutral probe instead distinguishes the
+two viewport regions from `gl_FragCoord` while the geometry shader selects
+slots with `gl_ViewportIndex`. Two bounded FW 5.500.008 runs then produced
+exactly `green=9216 red=9216 viewports=2`, self-exited, and left the console
+responsive. Evidence is in `20260728T173652Z-multi-viewport-run1.log` and
+`20260728T173733Z-multi-viewport-run1.log`; only the known single
+`amount=0x4000` warning remained. The ELF SHA-256 is
+`72adfa0db768fc9ccf113b1c46eecc9b6467edba9d8a9ea62a554acf1a5351d7`.
+The Eden ICD profile now reports zero hard startup gaps.
+
 ## Milestone 6: cube image arrays (2026-07-29)
 
 `imageCubeArray` is advertised and accepted through legacy and Features2
@@ -776,7 +800,11 @@ Implemented and verified:
 
 This closes Milestone 5 at the reusable static SDK/package scope.
 
-## Milestone 6: Eden compatibility profile (in progress)
+## Milestone 6: Eden compatibility profile (ICD profile complete)
+
+The final `multiViewport` closure brings the automated live report to
+`extensions=0 features=0 limits=0 queues=0 total=0`. Eden's separate Prospero
+surface/build/static-entrypoint integration remains outside this ICD profile.
 
 `variablePointers` and `variablePointersStorageBuffer` are public through the
 standalone and Vulkan 1.1 Features2 paths, and both request forms are accepted

@@ -106,6 +106,7 @@ int main(void) {
     };
     const VkPhysicalDeviceFeatures enabled_features = {
         .imageCubeArray = VK_TRUE,
+        .multiViewport = VK_TRUE,
         .sampleRateShading = VK_TRUE,
     };
     VkDeviceCreateInfo device_info = {

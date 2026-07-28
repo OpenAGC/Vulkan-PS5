@@ -7,19 +7,17 @@ DCB path, and the hardware-qualified Milestone 4 headless-surface/swapchain
 path. Milestone 5 also qualifies the relocatable SDK package through a separate
 standard-Vulkan consumer on both host and FW 5.50.
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
-`vulkan_ps5.eden_profile_report` test; the initial Eden suitability baseline is
-30 hard gaps rather than an application-specific bypass.
-Query-complete driver-properties, conservative shader-float-controls, and the
-exact-count occlusion path reduce the live count to 27.
-The current profile has 6 hard feature gaps. The latest closure is
-`variablePointers` plus `variablePointersStorageBuffer`. A 64-invocation
-SPIR-V 1.3 compute probe selects distinct StorageBuffer and Workgroup pointers
-on both branches and validates exact mapped-memory output. Investigation found
-that Wave32 ACO code had been dispatched with the Wave64 packet default;
-Vulkan now selects OpenAGC's explicit Wave32 compute modifier. Repeated public
-FW 5.50 gates passed all load, store, Workgroup, and guard checks. The
-public-path Prospero ELF SHA-256 is
-`d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
+`vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
+had 30 hard gaps; the live ICD profile now reports
+`extensions=0 features=0 limits=0 queues=0 total=0` without an
+application-specific bypass. The final `multiViewport` closure exposes 16
+slots and supports static and dynamic viewport/scissor arrays through typed
+OpenAGC state. Two public FW 5.50 gates each produced exactly 9,216 green
+pixels in viewport zero and 9,216 red pixels in viewport one, then self-exited
+with the console responsive. The public-path Prospero ELF SHA-256 is
+`72adfa0db768fc9ccf113b1c46eecc9b6467edba9d8a9ea62a554acf1a5351d7`.
+Eden's separate Prospero surface/build/static-entrypoint integration remains
+application work rather than an ICD capability gap.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.

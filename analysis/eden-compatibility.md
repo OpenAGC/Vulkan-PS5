@@ -4,8 +4,8 @@ This is the live Milestone 6 gap matrix for `../eden-ps5` revision
 `39763e7321`. The Eden checkout was inspected read-only; its existing deleted
 `AGENTS.md`/`CLAUDE.md` and untracked `.serena/` state were not changed.
 
-Run the profile probe in reporting mode through CTest. Use `--strict` when a
-nonzero exit is desired until every hard startup requirement passes:
+Run the profile probe in reporting mode through CTest. `--strict` also exits
+successfully now that every hard ICD startup requirement passes:
 
 ```sh
 ctest --test-dir build -R vulkan_ps5.eden_profile_report --output-on-failure
@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 25 mandatory feature bits are true | 4 gaps |
+| Core/Features2 | 29 mandatory feature bits | All 29 mandatory feature bits are true | Pass |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,15 +63,15 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=4 limits=0 queues=0 total=4
+eden-profile: extensions=0 features=0 limits=0 queues=0 total=0
 ```
 
-The 4 feature gaps are `imageCubeArray`, `multiViewport`,
-`robustBufferAccess`, and `sampleRateShading`.
-
-These bits must only be enabled as their complete Vulkan and shader semantics
-become hardware-qualified. Eden continuing after logging an unsuitable driver
-does not turn a failed requirement into support.
+The last feature, `multiViewport`, is hardware-qualified through two static
+viewport/scissor slots selected by `gl_ViewportIndex`. Both bounded FW 5.50
+runs produced exactly 9,216 green and 9,216 red pixels, self-exited, and left
+only the known `amount=0x4000` baseline warning. The corresponding host and
+ASAN/UBSAN suites pass 39/39 with VVL-clean coverage. This completes the ICD
+startup profile; the PS5 surface/build row above remains frontend integration.
 
 The `independentBlend` contract is implemented and hardware-qualified. Graphics
 pipelines translate distinct per-attachment enable state, non-dual-source

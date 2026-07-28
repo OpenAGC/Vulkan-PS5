@@ -562,6 +562,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->independentBlend = VK_TRUE;
     features->largePoints = VK_TRUE;
     features->logicOp = VK_TRUE;
+    features->multiViewport = VK_TRUE;
     features->multiDrawIndirect = VK_TRUE;
     features->occlusionQueryPrecise = VK_TRUE;
     features->samplerAnisotropy = VK_TRUE;

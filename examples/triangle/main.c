@@ -21,6 +21,14 @@
     vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv
 #include "../system_service_exit.h"
 #define SAMPLE_LABEL "vertex_pipeline_stores_atomics"
+#elif defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+#include "vulkan_ps5_multi_viewport_geom_spv.h"
+#include "vulkan_ps5_multi_viewport_frag_spv.h"
+#include "vulkan_ps5_triangle_vert_spv.h"
+#define vulkan_ps5_geometry_spv vulkan_ps5_multi_viewport_geom_spv
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_multi_viewport_frag_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "multi_viewport"
 #elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
 #include "vulkan_ps5_cull_distance_vert_spv.h"
 #include "vulkan_ps5_triangle_frag_spv.h"
@@ -160,7 +168,8 @@ int main(void)
     VkDescriptorPool hull_probe_descriptor_pool;
     VkDescriptorSet hull_probe_descriptor_set;
     void *hull_probe_mapped;
-#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
     VkShaderModule geometry_shader;
 #endif
     VkShaderModule fragment_shader;
@@ -291,6 +300,18 @@ int main(void)
     const VkPhysicalDeviceFeatures enabled_features = {
         .logicOp = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.geometryShader ||
+        !supported_features.multiViewport) {
+        printf("multi_viewport: geometryShader or multiViewport is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .geometryShader = VK_TRUE,
+        .multiViewport = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
@@ -366,6 +387,7 @@ int main(void)
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
     defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE) || \
     defined(VULKAN_PS5_TESSELLATION_SAMPLE) || \
     defined(VULKAN_PS5_QUERY_SAMPLE)
         .pEnabledFeatures = &enabled_features,
@@ -712,7 +734,8 @@ int main(void)
         .codeSize = sizeof(vulkan_ps5_tess_evaluation_spv),
         .pCode = vulkan_ps5_tess_evaluation_spv,
     };
-#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
     const VkShaderModuleCreateInfo geometry_shader_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(vulkan_ps5_geometry_spv),
@@ -737,7 +760,8 @@ int main(void)
     VK_CHECK(vkCreateShaderModule(
         device, &tess_evaluation_shader_info, NULL,
         &tess_evaluation_shader));
-#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
     VK_CHECK(vkCreateShaderModule(
         device, &geometry_shader_info, NULL, &geometry_shader));
 #endif
@@ -792,7 +816,8 @@ int main(void)
             .module = tess_evaluation_shader,
             .pName = "main",
         },
-#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
@@ -849,16 +874,34 @@ int main(void)
         .patchControlPoints = 3,
     };
 #endif
+#if defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+    const VkViewport viewport[] = {
+        {0, 0, TARGET_WIDTH / 2u, TARGET_HEIGHT, 0, 1},
+        {TARGET_WIDTH / 2u, 0, TARGET_WIDTH / 2u, TARGET_HEIGHT, 0, 1},
+    };
+    const VkRect2D scissor[] = {
+        {{0, 0}, {TARGET_WIDTH / 2u, TARGET_HEIGHT}},
+        {{TARGET_WIDTH / 2u, 0}, {TARGET_WIDTH / 2u, TARGET_HEIGHT}},
+    };
+#else
     const VkViewport viewport = {
         0, 0, TARGET_WIDTH, TARGET_HEIGHT, 0, 1,
     };
     const VkRect2D scissor = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}};
+#endif
     const VkPipelineViewportStateCreateInfo viewport_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+        .viewportCount = 2,
+        .pViewports = viewport,
+        .scissorCount = 2,
+        .pScissors = scissor,
+#else
         .viewportCount = 1,
         .pViewports = &viewport,
         .scissorCount = 1,
         .pScissors = &scissor,
+#endif
     };
     const VkPipelineRasterizationStateCreateInfo rasterization = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
@@ -1043,7 +1086,8 @@ int main(void)
 #if defined(VULKAN_PS5_DEMOTE_PROBE) || \
     defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
-    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
     uint32_t red_count = 0;
 #endif
 #if defined(VULKAN_PS5_DEMOTE_PROBE)
@@ -1075,7 +1119,8 @@ int main(void)
 #if defined(VULKAN_PS5_DEMOTE_PROBE) || \
     defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
-    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
         else if (pixels[i] == RED_RGBA8) {
             ++red_count;
 #if defined(VULKAN_PS5_DEMOTE_PROBE)
@@ -1102,6 +1147,9 @@ int main(void)
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
+#if defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+    (void)center;
+#endif
 #if defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
     uint32_t cull_left = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 4u];
@@ -1204,6 +1252,14 @@ int main(void)
     image_ok = green_count >= 6000u && green_count <= 8500u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+    image_ok = green_count == 9216u && red_count == 9216u &&
+        unexpected_count == 0u &&
+        pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+            TARGET_WIDTH / 4u] == GREEN_RGBA8 &&
+        pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+            (TARGET_WIDTH * 3u) / 4u] == RED_RGBA8 &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
 #elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     image_ok = green_count >= 3500u && green_count <= 6000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
@@ -1291,6 +1347,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: mismatch line=%u point=%u unexpected=%u center=%08x\n",
             green_count, red_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+        printf("multi_viewport: mismatch green=%u red=%u unexpected=%u\n",
+            green_count, red_count, unexpected_count);
 #elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
         printf("shader_cull_distance: mismatch green=%u unexpected=%u left=%08x right=%08x center=%08x\n",
             green_count, unexpected_count, cull_left, cull_right, center);
@@ -1340,6 +1399,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: PASS line=%u point=%u center=%08x\n",
             green_count, red_count, center);
+#elif defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
+        printf("multi_viewport: PASS green=%u red=%u viewports=2\n",
+            green_count, red_count);
 #elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
         printf("shader_cull_distance: PASS green=%u left=%08x right=%08x\n",
             green_count, cull_left, cull_right);
@@ -1404,7 +1466,8 @@ int main(void)
 #elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkDestroyShaderModule(device, tess_evaluation_shader, NULL);
     vkDestroyShaderModule(device, tess_control_shader, NULL);
-#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE)
     vkDestroyShaderModule(device, geometry_shader, NULL);
 #endif
     vkDestroyShaderModule(device, vertex_shader, NULL);
@@ -1420,6 +1483,7 @@ int main(void)
     (defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
      defined(VULKAN_PS5_ROBUST_VERTEX_PROBE) || \
      defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
+     defined(VULKAN_PS5_MULTI_VIEWPORT_PROBE) || \
      defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_DEMOTE_PROBE) || \

@@ -52,6 +52,7 @@ int main(int argc, char **argv) {
         .pQueueCreateInfos = &queue,
         .pEnabledFeatures = &(const VkPhysicalDeviceFeatures){
             .imageCubeArray = VK_TRUE,
+            .multiViewport = VK_TRUE,
         },
     };
     VkDevice device = VK_NULL_HANDLE;
@@ -238,6 +239,56 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    const VkViewport multi_viewports[] = {
+        {0, 0, 128, 256, 0, 1},
+        {128, 0, 128, 256, 0.25f, 0.75f},
+    };
+    const VkRect2D multi_scissors[] = {
+        {{0, 0}, {128, 256}},
+        {{128, 0}, {128, 256}},
+    };
+    const VkPipelineViewportStateCreateInfo multi_viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 2,
+        .pViewports = multi_viewports,
+        .scissorCount = 2,
+        .pScissors = multi_scissors,
+    };
+    VkGraphicsPipelineCreateInfo multi_viewport_info = graphics_info;
+    multi_viewport_info.pViewportState = &multi_viewport_state;
+    VkPipeline multi_viewport_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &multi_viewport_info, NULL, &multi_viewport_pipeline) == VK_SUCCESS);
+    const VkDynamicState viewport_dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+    };
+    const VkPipelineDynamicStateCreateInfo viewport_dynamic_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = viewport_dynamic_states,
+    };
+    VkPipelineViewportStateCreateInfo dynamic_viewport_state =
+        multi_viewport_state;
+    dynamic_viewport_state.pViewports = NULL;
+    dynamic_viewport_state.pScissors = NULL;
+    VkGraphicsPipelineCreateInfo dynamic_viewport_info = multi_viewport_info;
+    dynamic_viewport_info.pViewportState = &dynamic_viewport_state;
+    dynamic_viewport_info.pDynamicState = &viewport_dynamic_info;
+    VkPipeline dynamic_viewport_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &dynamic_viewport_info, NULL, &dynamic_viewport_pipeline) == VK_SUCCESS);
+    VkPipelineViewportStateCreateInfo invalid_viewport_state =
+        multi_viewport_state;
+    invalid_viewport_state.viewportCount = 17;
+    invalid_viewport_state.scissorCount = 17;
+    VkGraphicsPipelineCreateInfo invalid_viewport_info = multi_viewport_info;
+    invalid_viewport_info.pViewportState = &invalid_viewport_state;
+    VkPipeline invalid_viewport_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &invalid_viewport_info, NULL, &invalid_viewport_pipeline) ==
+        VK_ERROR_INITIALIZATION_FAILED);
+    assert(invalid_viewport_pipeline == VK_NULL_HANDLE);
     VkAttachmentDescription msaa_attachment = attachment;
     msaa_attachment.samples = VK_SAMPLE_COUNT_4_BIT;
     const VkRenderPassCreateInfo msaa_render_pass_info = {
@@ -450,6 +501,8 @@ int main(int argc, char **argv) {
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, dynamic_viewport_pipeline, NULL);
+    vkDestroyPipeline(device, multi_viewport_pipeline, NULL);
     vkDestroyPipeline(device, cube_array_pipeline, NULL);
     vkDestroyPipeline(device, msaa_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);

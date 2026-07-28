@@ -445,6 +445,10 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_cull_distance_vert_spv.h")
   set(VULKAN_PS5_GEOMETRY_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_geometry_spv.h")
+  set(VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_multi_viewport_geom_spv.h")
+  set(VULKAN_PS5_MULTI_VIEWPORT_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_multi_viewport_frag_spv.h")
   set(VULKAN_PS5_TESS_CONTROL_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_tess_control_spv.h")
   set(VULKAN_PS5_TESS_EVALUATION_HEADER
@@ -547,6 +551,22 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.geom"
       -o "${VULKAN_PS5_GEOMETRY_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.geom"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_multi_viewport_geom_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/multi_viewport.geom"
+      -o "${VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/multi_viewport.geom"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_MULTI_VIEWPORT_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_multi_viewport_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/multi_viewport.frag"
+      -o "${VULKAN_PS5_MULTI_VIEWPORT_FRAGMENT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/multi_viewport.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_TESS_CONTROL_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -659,6 +679,13 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_GEOMETRY_HEADER}")
   target_compile_definitions(vulkan_ps5_geometry_example
     PRIVATE VULKAN_PS5_GEOMETRY_SAMPLE=1)
+  add_executable(vulkan_ps5_multi_viewport_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER}"
+    "${VULKAN_PS5_MULTI_VIEWPORT_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_multi_viewport_probe
+    PRIVATE VULKAN_PS5_MULTI_VIEWPORT_PROBE=1)
   add_executable(vulkan_ps5_tessellation_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -951,6 +978,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
+      vulkan_ps5_multi_viewport_probe
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
       vulkan_ps5_wide_lines_probe
@@ -991,6 +1019,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_shader_clip_distance_probe
       vulkan_ps5_shader_cull_distance_probe
       vulkan_ps5_geometry_example
+      vulkan_ps5_multi_viewport_probe
       vulkan_ps5_tessellation_example
       vulkan_ps5_vertex_pipeline_stores_atomics_probe
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
@@ -1043,6 +1072,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_shader_clip_distance_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_shader_cull_distance_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_multi_viewport_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_independent_blend_probe PRIVATE
       SceSystemService)

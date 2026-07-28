@@ -88,6 +88,7 @@ typedef struct VkPs5Sampler { AgcSamplerDescriptor descriptor; } VkPs5Sampler;
 #define VK_PS5_MAX_RENDER_ATTACHMENTS 8u
 #define VK_PS5_MAX_SUBPASSES 8u
 #define VK_PS5_MAX_VERTEX_BINDINGS 32u
+#define VK_PS5_MAX_VIEWPORTS AGC_GFX1013_MAX_VIEWPORTS
 #define VK_PS5_VERTEX_TABLE_SIZE 0x4000u
 #define VK_PS5_VERTEX_TABLE_SLICE \
     (VK_PS5_MAX_VERTEX_BINDINGS * sizeof(AgcGfx1013BufferDescriptor))
@@ -157,8 +158,9 @@ typedef struct VkPs5Pipeline {
     OpenAgcPsbcStage stage_types[3];
     OpenAgcPsbcOutput stages[3];
     VkPs5RuntimeShader runtime[3];
-    AgcGfx1013ViewportState viewport;
-    AgcGfx1013ScissorState scissor;
+    AgcGfx1013ViewportArrayState viewport_state;
+    VkBool32 viewport_dynamic;
+    VkBool32 scissor_dynamic;
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
     VkBool32 robust_buffer_access;
@@ -254,6 +256,10 @@ typedef struct VkPs5CommandBuffer {
     VkBool32 dynamic_line_width_set;
     AgcGfx1013DepthBiasState dynamic_depth_bias;
     VkBool32 dynamic_depth_bias_set;
+    AgcGfx1013Viewport dynamic_viewports[VK_PS5_MAX_VIEWPORTS];
+    AgcGfx1013ScissorState dynamic_scissors[VK_PS5_MAX_VIEWPORTS];
+    uint32_t dynamic_viewport_mask;
+    uint32_t dynamic_scissor_mask;
     VkPs5QueryPool *active_query_pool;
     uint32_t active_query;
     VkPs5Buffer *index_buffer;
@@ -798,6 +804,80 @@ static bool primitive_topology(
     return true;
 }
 
+static bool translate_viewport(
+    const VkViewport *source, AgcGfx1013Viewport *destination)
+{
+    if (!source || !destination ||
+        !(source->width > 0.0f && source->width <= 16384.0f) ||
+        !(source->height > 0.0f && source->height <= 16384.0f) ||
+        !(source->x >= -32768.0f &&
+          source->x + source->width <= 32767.0f) ||
+        !(source->y >= -32768.0f &&
+          source->y + source->height <= 32767.0f) ||
+        !(source->minDepth >= 0.0f && source->minDepth <= 1.0f) ||
+        !(source->maxDepth >= 0.0f && source->maxDepth <= 1.0f) ||
+        source->minDepth > source->maxDepth)
+        return false;
+    *destination = (AgcGfx1013Viewport){
+        .x = source->x,
+        .y = source->y,
+        .width = source->width,
+        .height = source->height,
+        .min_depth = source->minDepth,
+        .max_depth = source->maxDepth,
+    };
+    return true;
+}
+
+static bool translate_scissor(
+    const VkRect2D *source, AgcGfx1013ScissorState *destination)
+{
+    if (!source || !destination || source->offset.x < 0 ||
+        source->offset.y < 0 || !source->extent.width ||
+        !source->extent.height || (uint32_t)source->offset.x > 0x7fffu ||
+        source->extent.width > 0x7fffu - (uint32_t)source->offset.x ||
+        (uint32_t)source->offset.y > 0x7fffu ||
+        source->extent.height > 0x7fffu - (uint32_t)source->offset.y)
+        return false;
+    destination->left = (uint32_t)source->offset.x;
+    destination->top = (uint32_t)source->offset.y;
+    destination->right = destination->left + source->extent.width;
+    destination->bottom = destination->top + source->extent.height;
+    return true;
+}
+
+static VkResult resolve_viewport_state(
+    const VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
+    AgcGfx1013ViewportArrayState *destination)
+{
+    if (!command || !pipeline || !destination ||
+        !command->active_framebuffer || !pipeline->viewport_state.count)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *destination = pipeline->viewport_state;
+    const uint32_t required_mask =
+        (1u << pipeline->viewport_state.count) - 1u;
+    if (pipeline->viewport_dynamic) {
+        if ((command->dynamic_viewport_mask & required_mask) != required_mask)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        memcpy(destination->viewports, command->dynamic_viewports,
+            pipeline->viewport_state.count * sizeof(destination->viewports[0]));
+    }
+    if (pipeline->scissor_dynamic) {
+        if ((command->dynamic_scissor_mask & required_mask) != required_mask)
+            return VK_ERROR_INITIALIZATION_FAILED;
+        memcpy(destination->scissors, command->dynamic_scissors,
+            pipeline->viewport_state.count * sizeof(destination->scissors[0]));
+    }
+    for (uint32_t i = 0u; i < destination->count; ++i) {
+        if (destination->scissors[i].right >
+                command->active_framebuffer->width ||
+            destination->scissors[i].bottom >
+                command->active_framebuffer->height)
+            return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_SUCCESS;
+}
+
 static bool color_blend_state(
     const VkPipelineColorBlendStateCreateInfo *source,
     uint32_t target_count, AgcGfx1013ColorBlendState *destination,
@@ -1295,6 +1375,8 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->index_buffer = NULL;
     command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
+    command->dynamic_viewport_mask = 0u;
+    command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
     command->last_indirect_descriptor_table = 0u;
@@ -1339,6 +1421,8 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->index_buffer = NULL;
     command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
+    command->dynamic_viewport_mask = 0u;
+    command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
     command->last_indirect_descriptor_table = 0u;
@@ -2147,14 +2231,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 &translated_topology) ||
             create->pInputAssemblyState->primitiveRestartEnable)
             return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (!create->pViewportState ||
-            create->pViewportState->viewportCount != 1u ||
-            create->pViewportState->scissorCount != 1u ||
-            !create->pViewportState->pViewports ||
-            !create->pViewportState->pScissors)
-            return VK_ERROR_INITIALIZATION_FAILED;
         VkBool32 dynamic_depth_bias = VK_FALSE;
         VkBool32 dynamic_line_width = VK_FALSE;
+        VkBool32 dynamic_viewport = VK_FALSE;
+        VkBool32 dynamic_scissor = VK_FALSE;
         if (create->pDynamicState) {
             if (create->pDynamicState->dynamicStateCount &&
                 !create->pDynamicState->pDynamicStates)
@@ -2173,11 +2253,31 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                         return VK_ERROR_FEATURE_NOT_PRESENT;
                     dynamic_line_width = VK_TRUE;
                     break;
+                case VK_DYNAMIC_STATE_VIEWPORT:
+                    if (dynamic_viewport)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_viewport = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_SCISSOR:
+                    if (dynamic_scissor)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_scissor = VK_TRUE;
+                    break;
                 default:
                     return VK_ERROR_FEATURE_NOT_PRESENT;
                 }
             }
         }
+        if (!create->pViewportState ||
+            create->pViewportState->sType !=
+                VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO ||
+            !create->pViewportState->viewportCount ||
+            create->pViewportState->viewportCount > VK_PS5_MAX_VIEWPORTS ||
+            create->pViewportState->scissorCount !=
+                create->pViewportState->viewportCount ||
+            (!dynamic_viewport && !create->pViewportState->pViewports) ||
+            (!dynamic_scissor && !create->pViewportState->pScissors))
+            return VK_ERROR_INITIALIZATION_FAILED;
         if (!create->pRasterizationState || !create->pMultisampleState ||
             !create->pColorBlendState)
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -2204,21 +2304,19 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             !blend->pAttachments)
             return VK_ERROR_FEATURE_NOT_PRESENT;
-        const VkViewport *viewport = create->pViewportState->pViewports;
-        const VkRect2D *scissor = create->pViewportState->pScissors;
-        if (viewport->x != 0.0f || viewport->y != 0.0f ||
-            viewport->width <= 0.0f || viewport->height <= 0.0f ||
-            viewport->width > 16384.0f || viewport->height > 16384.0f ||
-            viewport->width != (float)(uint32_t)viewport->width ||
-            viewport->height != (float)(uint32_t)viewport->height ||
-            viewport->minDepth != 0.0f || viewport->maxDepth != 1.0f ||
-            scissor->offset.x < 0 || scissor->offset.y < 0 ||
-            !scissor->extent.width || !scissor->extent.height ||
-            (uint32_t)scissor->offset.x > 16384u ||
-            scissor->extent.width > 16384u - (uint32_t)scissor->offset.x ||
-            (uint32_t)scissor->offset.y > 16384u ||
-            scissor->extent.height > 16384u - (uint32_t)scissor->offset.y)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+        AgcGfx1013ViewportArrayState viewport_state = {
+            .count = create->pViewportState->viewportCount,
+        };
+        for (uint32_t viewport_index = 0u;
+             viewport_index < viewport_state.count; ++viewport_index) {
+            if ((!dynamic_viewport && !translate_viewport(
+                    &create->pViewportState->pViewports[viewport_index],
+                    &viewport_state.viewports[viewport_index])) ||
+                (!dynamic_scissor && !translate_scissor(
+                    &create->pViewportState->pScissors[viewport_index],
+                    &viewport_state.scissors[viewport_index])))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
         const VkPipelineShaderStageCreateInfo *vertex = NULL, *tess_control = NULL;
         const VkPipelineShaderStageCreateInfo *tess_evaluation = NULL;
         const VkPipelineShaderStageCreateInfo *geometry = NULL, *fragment = NULL;
@@ -2425,6 +2523,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 psbc_vertex_format_size(attribute->format);
         }
         pipeline->color_blend = color_blend;
+        pipeline->viewport_state = viewport_state;
+        pipeline->viewport_dynamic = dynamic_viewport;
+        pipeline->scissor_dynamic = dynamic_scissor;
         const uint32_t sample_count =
             (uint32_t)multisample->rasterizationSamples;
         pipeline->sample_state = (AgcGfx1013SampleState){
@@ -2546,14 +2647,6 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             free_pipeline(device, pAllocator, pipeline);
             return VK_ERROR_INITIALIZATION_FAILED;
         }
-        pipeline->viewport.width = (uint32_t)viewport->width;
-        pipeline->viewport.height = (uint32_t)viewport->height;
-        pipeline->viewport.depth_clip_space =
-            AGC_GFX1013_CLIP_SPACE_ZERO_TO_ONE;
-        pipeline->scissor.left = (uint32_t)scissor->offset.x;
-        pipeline->scissor.top = (uint32_t)scissor->offset.y;
-        pipeline->scissor.right = pipeline->scissor.left + scissor->extent.width;
-        pipeline->scissor.bottom = pipeline->scissor.top + scissor->extent.height;
         result = finalize_pipeline(device, pAllocator, pipeline);
         if (result == VK_SUCCESS && tess_control)
             result = vk_ps5_device_prepare_tessellation(device,
@@ -3894,11 +3987,51 @@ vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) {
-    IGNORE(c); IGNORE(f); IGNORE(n); IGNORE(v);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (f > VK_PS5_MAX_VIEWPORTS || n > VK_PS5_MAX_VIEWPORTS - f ||
+        (n && !v)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    AgcGfx1013Viewport translated[VK_PS5_MAX_VIEWPORTS];
+    for (uint32_t i = 0u; i < n; ++i) {
+        if (!translate_viewport(&v[i], &translated[i])) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+    }
+    if (!n)
+        return;
+    memcpy(&command->dynamic_viewports[f], translated,
+        n * sizeof(translated[0]));
+    command->dynamic_viewport_mask |= ((1u << n) - 1u) << f;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
-    IGNORE(c); IGNORE(f); IGNORE(n); IGNORE(r);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (f > VK_PS5_MAX_VIEWPORTS || n > VK_PS5_MAX_VIEWPORTS - f ||
+        (n && !r)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    AgcGfx1013ScissorState translated[VK_PS5_MAX_VIEWPORTS];
+    for (uint32_t i = 0u; i < n; ++i) {
+        if (!translate_scissor(&r[i], &translated[i])) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+    }
+    if (!n)
+        return;
+    memcpy(&command->dynamic_scissors[f], translated,
+        n * sizeof(translated[0]));
+    command->dynamic_scissor_mask |= ((1u << n) - 1u) << f;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetLineWidth(VkCommandBuffer c, float w) {
@@ -4312,18 +4445,15 @@ static void record_tessellation_draw(
         command->record_error = result;
         return;
     }
-    if (pipeline->viewport.width > command->active_framebuffer->width ||
-        pipeline->viewport.height > command->active_framebuffer->height ||
-        pipeline->scissor.right > command->active_framebuffer->width ||
-        pipeline->scissor.bottom > command->active_framebuffer->height) {
-        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+    AgcGfx1013ViewportArrayState viewport_state;
+    result = resolve_viewport_state(command, pipeline, &viewport_state);
+    if (result != VK_SUCCESS) {
+        command->record_error = result;
         return;
     }
     AgcGfx1013FrameState draw_frame = command->frame_state;
     if (pipeline->depth_clamp_enable)
         draw_frame.clip_control = AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
-    draw_frame.viewport = pipeline->viewport;
-    draw_frame.scissor = pipeline->scissor;
     const VkPs5RuntimeShader *hull = &pipeline->runtime[0];
     const VkPs5RuntimeShader *primitive = &pipeline->runtime[1];
     const VkPs5RuntimeShader *pixel = &pipeline->runtime[2];
@@ -4357,6 +4487,7 @@ static void record_tessellation_draw(
         .post_bind_sh_registers = user_data,
         .num_post_bind_sh_registers = user_data_count,
         .sample_state = &pipeline->sample_state,
+        .viewport_array_state = &viewport_state,
         .instance_count = instance_count,
         .vertex_count = element_count,
         .draw_modifier = 0x40000000u,
@@ -4380,6 +4511,7 @@ typedef struct VkPs5PreparedBaselineDraw {
     AgcGfx1013ResourceTableBinding
         pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
     AgcGfx1013FrameState frame;
+    AgcGfx1013ViewportArrayState viewport_state;
     AgcGfx1013BaselineDrawState draw;
     uint32_t base_vertex_location;
     uint32_t start_instance_location;
@@ -4425,18 +4557,15 @@ static VkResult prepare_baseline_draw(
         prepared->pixel_tables, &pixel_table_count);
     if (result != VK_SUCCESS)
         return result;
-    if (pipeline->viewport.width > command->active_framebuffer->width ||
-        pipeline->viewport.height > command->active_framebuffer->height ||
-        pipeline->scissor.right > command->active_framebuffer->width ||
-        pipeline->scissor.bottom > command->active_framebuffer->height)
-        return VK_ERROR_INITIALIZATION_FAILED;
+    result = resolve_viewport_state(
+        command, pipeline, &prepared->viewport_state);
+    if (result != VK_SUCCESS)
+        return result;
 
     prepared->frame = command->frame_state;
     if (pipeline->depth_clamp_enable)
         prepared->frame.clip_control =
             AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
-    prepared->frame.viewport = pipeline->viewport;
-    prepared->frame.scissor = pipeline->scissor;
     const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
     const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
     prepared->draw = (AgcGfx1013BaselineDrawState){
@@ -4463,6 +4592,7 @@ static VkResult prepare_baseline_draw(
         .vertex_count = indirect_draw ? 1u : element_count,
         .draw_modifier = 0x40000000u,
         .sample_state = &pipeline->sample_state,
+        .viewport_array_state = &prepared->viewport_state,
     };
     return VK_SUCCESS;
 }
