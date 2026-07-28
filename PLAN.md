@@ -276,6 +276,14 @@
   Compiler tests, the Vulkan pipeline test, all 13 host tests, and both
   Prospero builds pass. Public extension properties, features, and enumeration
   remain disabled until deterministic hardware readback qualifies the path.
+  That readback gate is now prepared. Four overlapping instances select four
+  distinct texels; divisor two must make the final instance select exact white,
+  while divisor one selects blue and vertex-rate interpretation interpolates.
+  The one-shot runner uses the same exact-PID crash, cleanup, warning, and
+  post-run console checks as the mirror-clamp gate. Its safety test and all 14
+  host tests pass, and the Prospero candidate SHA-256 is
+  `445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`.
+  Public advertisement still awaits one fresh-console FW 5.50 run.
 
 ## Summary
 

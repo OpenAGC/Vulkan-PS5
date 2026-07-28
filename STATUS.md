@@ -546,3 +546,12 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   two and rejects zero. The full 13-test host suite, openagc-psbc host tests,
   and both Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains
   unadvertised until deterministic hardware readback qualifies it.
+- The bounded vertex-divisor hardware candidate is ready. It draws four
+  overlapping instances from red/white/green/blue instance data: divisor two
+  must leave an exact-white single-color triangle, while divisor one leaves
+  blue and vertex-rate handling produces multiple colors. The runner permits
+  one launch, scopes fatal klog checks and cleanup to the exact PID, proves
+  post-return absence and websrv availability, and accepts only the established
+  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 14 host
+  tests pass; the Prospero candidate SHA-256 is
+  `445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`.

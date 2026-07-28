@@ -12,12 +12,18 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
-#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+#define SAMPLE_NAME "vertex_divisor"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
 #define SAMPLE_NAME "mirror_clamp"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_LINEAR
 #else
 #define SAMPLE_NAME "indexed_textured"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_LINEAR
 #endif
 
 #define VK_CHECK(expression) do { \
@@ -183,7 +189,14 @@ int main(void)
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &texture_range));
 
-#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+    const Vertex vertices[4] = {
+        {{9.0f, 9.0f}, {0.25f, 0.25f}},
+        {{-0.75f, -0.75f}, {0.75f, 0.75f}},
+        {{ 0.75f, -0.75f}, {0.75f, 0.25f}},
+        {{ 0.00f,  0.75f}, {0.25f, 0.75f}},
+    };
+#elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
     const Vertex vertices[4] = {
         {{9.0f, 9.0f}, {-0.5f, -0.5f}},
         {{-0.75f, -0.75f}, {-0.5f, -0.5f}},
@@ -231,8 +244,8 @@ int main(void)
     VK_CHECK(vkCreateImageView(device, &texture_view_info, NULL, &texture_view));
     const VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = SAMPLE_FILTER,
+        .minFilter = SAMPLE_FILTER,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = SAMPLE_ADDRESS_MODE,
         .addressModeV = SAMPLE_ADDRESS_MODE,
@@ -354,6 +367,34 @@ int main(void)
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_FRAGMENT_BIT, fragment_shader, "main", NULL},
     };
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+    const VkVertexInputBindingDescription bindings[] = {
+        {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
+        {1, sizeof(Vertex), VK_VERTEX_INPUT_RATE_INSTANCE},
+    };
+    const VkVertexInputAttributeDescription attributes[] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, position)},
+        {1, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+    };
+    const VkVertexInputBindingDivisorDescriptionEXT divisor = {
+        .binding = 1,
+        .divisor = 2,
+    };
+    const VkPipelineVertexInputDivisorStateCreateInfoEXT divisor_state = {
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT,
+        .vertexBindingDivisorCount = 1,
+        .pVertexBindingDivisors = &divisor,
+    };
+    const VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = &divisor_state,
+        .vertexBindingDescriptionCount = 2,
+        .pVertexBindingDescriptions = bindings,
+        .vertexAttributeDescriptionCount = 2,
+        .pVertexAttributeDescriptions = attributes,
+    };
+#else
     const VkVertexInputBindingDescription binding = {
         .binding = 0, .stride = sizeof(Vertex),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
@@ -369,6 +410,7 @@ int main(void)
         .vertexAttributeDescriptionCount = 2,
         .pVertexAttributeDescriptions = attributes,
     };
+#endif
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
@@ -457,10 +499,22 @@ int main(void)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &descriptor_set, 0, NULL);
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+    const VkBuffer vertex_buffers[] = {vertex_buffer, vertex_buffer};
+    const VkDeviceSize vertex_offsets[] = {0, 0};
+    vkCmdBindVertexBuffers(command, 0, 2, vertex_buffers, vertex_offsets);
+#else
     VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
+#endif
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
+    vkCmdDrawIndexed(command, 3,
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+        4,
+#else
+        1,
+#endif
+        0, 0, 0);
     vkCmdEndRenderPass(command);
     VK_CHECK(vkEndCommandBuffer(command));
 
@@ -499,7 +553,18 @@ int main(void)
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
     int status = 0;
-#ifdef VULKAN_PS5_MIRROR_CLAMP_PROBE
+#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+    if (covered < 16000u || covered > 21000u || opaque != covered ||
+        distinct_count != 1u || center != 0xffffffffu ||
+        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("vertex_divisor: mismatch covered=%u opaque=%u colors=%u center=%08x\n",
+            covered, opaque, distinct_count, center);
+        status = 1;
+    } else {
+        printf("vertex_divisor: PASS %u pixels center=%08x divisor=2 instances=4\n",
+            covered, center);
+    }
+#elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
     const uint32_t red = center & 0xffu;
     const uint32_t green = (center >> 8u) & 0xffu;
     const uint32_t blue = (center >> 16u) & 0xffu;

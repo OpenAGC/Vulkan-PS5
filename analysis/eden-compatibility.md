@@ -39,6 +39,12 @@ gfx1013 lowering, and Vulkan pipeline creation consumes
 nonzero-divisor validation. Compiler and pipeline regressions pass on host and
 both components build for Prospero. A deterministic hardware readback probe,
 followed by extension properties/features and enumeration, is still required.
+The probe and one-shot runner are now prepared: four overlapping instances
+must resolve to an exact-white triangle only when divisor two is honored. Its
+runner safety regression and the full 14-test host suite pass. Prospero
+candidate SHA-256 is
+`445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`;
+one fresh-console FW 5.50 run remains before public promotion.
 
 The automated probe currently reports:
 
@@ -77,8 +83,8 @@ does not turn a failed requirement into support.
    execution-mode capabilities remain conservatively false. The mirror-clamp
    hardware probe and bounded runner are prepared; public enumeration awaits
    its single FW 5.50 qualification run. Vertex-divisor compiler and pipeline
-   semantics are host-complete; their readback gate and public query contract
-   remain.
+   semantics and bounded readback gate are prepared; the one hardware run and
+   public query contract remain.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths.
