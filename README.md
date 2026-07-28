@@ -614,13 +614,20 @@ color write masks. Vulkan blend factors and operations, separate alpha state,
 four blend constants, and up to eight independent attachment records translate
 to OpenAGC's typed gfx1013 blend state before baseline, geometry, indirect, and
 tessellation draws. Dual-source factors remain rejected.
-The public `independentBlend` bit stays false pending deterministic hardware
-readback. The standalone `vulkan_ps5_independent_blend_probe` renders the same
+The standalone `vulkan_ps5_independent_blend_probe` renders the same
 triangle to two attachments: target zero must remain opaque green with blending
 disabled, while target one must become half-intensity magenta through
 constant-color/alpha factors. The 8-bit UNORM tie may encode as `0x7f7f007f`
 or `0x80800080`; no other value is accepted. Its bounded runner requires
-the shared self-kill lifecycle. Static `logicOpEnable` pipelines map all 16
+the shared self-kill lifecycle. Hardware diagnostics identified OpenAGC's
+former unconditional color-target blend bypass; OpenAGC `d2522fa` now derives
+the correct policy from the number type. Both the internal-path and public
+query/request FW 5.50 gates passed with 18,432 pixels per target, exact
+`0x80800080` target-one output, clean process exit, and only the established
+0x4000 baseline VM warning. `independentBlend` is advertised through legacy
+and Features2 paths; the public-path ELF SHA-256 is
+`e42014fcab89df6001555faecd6a2c4a0d05edb87d9d7bcd011c62ca0caa6a99`.
+Static `logicOpEnable` pipelines map all 16
 core Vulkan operations to OpenAGC's typed gfx1013 ROP3 state and suppress
 attachment blending while active. Disabled logic state restores COPY. The
 bounded `vulkan_ps5_logic_op_probe` XORs the green fragment value over mapped

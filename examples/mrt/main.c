@@ -109,6 +109,17 @@ int main(void)
         printf(SAMPLE_NAME ": expected one physical device\n");
         return 1;
     }
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.independentBlend) {
+        printf("independent_blend: independentBlend is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .independentBlend = VK_TRUE,
+    };
+#endif
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -120,6 +131,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+        .pEnabledFeatures = &enabled_features,
+#endif
     };
     VkDevice device;
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));

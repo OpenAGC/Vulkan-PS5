@@ -289,14 +289,16 @@ Implemented and host-verified:
   A standalone bounded probe requires opaque green on the disabled target and
   half-intensity magenta (`0x7f7f007f` or `0x80800080`, the two legal 8-bit
   UNORM tie results) on the constant-factor target, then
-  exits through SystemService. Both host suites pass 24/24. Its current
-  diagnostic Prospero ELF SHA-256 is
-  `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`,
-  and `independentBlend` remains false. The first bounded run reached the
-  matching self-kill lifecycle without a fatal GPU signature, but its older
-  single-value oracle rejected all target-one pixels before logging their
-  value; the next candidate records center pixels and accepts only the two
-  legal half-intensity encodings.
+  exits through SystemService. Both 25-test host suites and the Prospero build
+  pass. Hardware diagnostics isolated full-color output to OpenAGC's former
+  unconditional `CB_COLOR_INFO.BLEND_BYPASS`; OpenAGC `d2522fa` now derives
+  blend clamp/bypass and rounding policy from the target number type. Both the
+  internal-path and public query/request FW 5.50 gates produced 18,432 pixels
+  on each target, exact target-one `0x80800080`, clean target-process exit, and
+  only the established 0x4000 baseline VM warning. `independentBlend` is
+  advertised and accepted through legacy and Features2 paths; dual-source
+  blend remains unsupported. The public-path Prospero ELF SHA-256 is
+  `e42014fcab89df6001555faecd6a2c4a0d05edb87d9d7bcd011c62ca0caa6a99`.
   Begin/end transitions cover every attachment, OpenAGC binds CB0-CB7, the
   target mask enables every active slot, and fragment export context carries
   the real MRT count. The command regression verifies CB1 and dual RGBA8

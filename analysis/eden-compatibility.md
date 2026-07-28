@@ -52,12 +52,12 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=22 limits=0 queues=0 total=24
+eden-profile: extensions=2 features=21 limits=0 queues=0 total=23
 ```
 
-The 22 feature gaps are `depthBiasClamp`,
+The 21 feature gaps are `depthBiasClamp`,
 `drawIndirectFirstInstance`, `dualSrcBlend`,
-`fragmentStoresAndAtomics`, `imageCubeArray`, `independentBlend`, `largePoints`,
+`fragmentStoresAndAtomics`, `imageCubeArray`, `largePoints`,
 `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
 `samplerAnisotropy`, `sampleRateShading`,
 `shaderClipDistance`, `shaderCullDistance`, `shaderImageGatherExtended`,
@@ -69,29 +69,30 @@ These bits must only be enabled as their complete Vulkan and shader semantics
 become hardware-qualified. Eden continuing after logging an unsuitable driver
 does not turn a failed requirement into support.
 
-The host-side `independentBlend` contract is now implemented. Graphics
+The `independentBlend` contract is implemented and hardware-qualified. Graphics
 pipelines translate distinct per-attachment enable state, non-dual-source
 factors, all five core blend operations, separate alpha equations, write masks,
 and constants into OpenAGC's typed gfx1013 blend state. Every baseline,
 geometry, indirect, and tessellation draw restores that state. The exact PM4
 regression uses one disabled full-mask target and one enabled GB-only target,
 requiring distinct control words, target mask `0x6f`, and all four constants.
-Both normal and ASAN/UBSAN suites pass 24/24 and the Prospero build passes.
+Both normal and ASAN/UBSAN suites pass 25/25 and the Prospero build passes.
 The standalone MRT gate now requires target zero to retain opaque green while
 target one resolves to half-intensity magenta through constant-color/alpha
 factors, followed by the shared SystemService lifecycle. Since exact 0.5 is a
 tie when converted to 8-bit UNORM, the gate accepts only `0x7f7f007f` or
 `0x80800080`.
 Its runner covers clean, fatal, NUL-containing, PID-reuse, and exact-identity
-paths. Both host configurations pass 24/24; Prospero ELF SHA-256 is
-`8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`.
-The first bounded hardware run produced the correct target-zero coverage and
-nonzero target-one coverage, then completed the matching self-kill lifecycle
-without a fatal GPU signature. Its obsolete single-value oracle rejected the
-target-one pixels without logging their value. The next candidate logs both
-center pixels and accepts only the two legal half-intensity encodings. Public
-`independentBlend` therefore remains false; dual-source blend remains a
-separate unsupported feature.
+paths. Hardware diagnostics showed full-color output even when blending was
+moved to target zero, identifying OpenAGC's unconditional
+`CB_COLOR_INFO.BLEND_BYPASS` as the cause. OpenAGC `d2522fa` now derives clamp,
+bypass, simple-float, and round-mode policy from the target number type. The
+internal-path and final public query/request FW 5.50 gates both produced 18,432
+pixels on each target with exact target-one `0x80800080`, clean process exit,
+and only the established 0x4000 baseline VM warning. `independentBlend` is now
+advertised and accepted through legacy and Features2 paths; dual-source blend
+remains separate and unsupported. The public-path Prospero ELF SHA-256 is
+`e42014fcab89df6001555faecd6a2c4a0d05edb87d9d7bcd011c62ca0caa6a99`.
 
 The `logicOp` contract is implemented and hardware-qualified. Every one of the
 16 core `VkLogicOp` values maps to OpenAGC's typed
