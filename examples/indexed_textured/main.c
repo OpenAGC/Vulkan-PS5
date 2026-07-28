@@ -23,7 +23,10 @@
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
 #endif
-#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
+#include "vulkan_ps5_fragment_stores_atomics_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_fragment_stores_atomics_frag_spv
+#elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
 #include "vulkan_ps5_image_gather_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_image_gather_frag_spv
 #else
@@ -34,7 +37,11 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
-#ifdef VULKAN_PS5_IMAGE_GATHER_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#define SAMPLE_NAME "fragment_stores_atomics"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
 #define SAMPLE_NAME "shader_image_gather_extended"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
@@ -132,7 +139,17 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.fragmentStoresAndAtomics) {
+        printf("fragment_stores_atomics: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .fragmentStoresAndAtomics = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.shaderImageGatherExtended) {
@@ -220,7 +237,8 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
         .pEnabledFeatures = &enabled_features,
 #elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
         .enabledExtensionCount = 1u,
@@ -392,6 +410,23 @@ int main(void)
         {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, index_memory, 0, VK_WHOLE_SIZE},
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 2, upload_ranges));
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    enum { FRAGMENT_RESULT_WORDS = 1u + TARGET_WIDTH * TARGET_HEIGHT };
+    VkBuffer fragment_result_buffer;
+    VkDeviceMemory fragment_result_memory;
+    uint32_t *fragment_results;
+    VK_CHECK(create_buffer(physical, device,
+        (VkDeviceSize)FRAGMENT_RESULT_WORDS * sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &fragment_result_buffer,
+        &fragment_result_memory, (void **)&fragment_results));
+    memset(fragment_results, 0,
+        (size_t)FRAGMENT_RESULT_WORDS * sizeof(uint32_t));
+    const VkMappedMemoryRange fragment_result_range = {
+        VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL,
+        fragment_result_memory, 0, VK_WHOLE_SIZE,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &fragment_result_range));
+#endif
 #ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
     const VkDrawIndirectCommand indirect_commands[2] = {
@@ -456,13 +491,37 @@ int main(void)
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
     };
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    const VkDescriptorSetLayoutBinding set_bindings[2] = {
+        texture_binding,
+        {
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+    };
+#define SAMPLE_SET_BINDINGS set_bindings
+#define SAMPLE_SET_BINDING_COUNT 2u
+#else
+#define SAMPLE_SET_BINDINGS (&texture_binding)
+#define SAMPLE_SET_BINDING_COUNT 1u
+#endif
     const VkDescriptorSetLayoutCreateInfo set_layout_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &texture_binding,
+        .bindingCount = SAMPLE_SET_BINDING_COUNT,
+        .pBindings = SAMPLE_SET_BINDINGS,
     };
     VkDescriptorSetLayout set_layout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL, &set_layout));
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    const VkDescriptorPoolSize pool_sizes[2] = {
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+    };
+#define SAMPLE_POOL_SIZES pool_sizes
+#define SAMPLE_POOL_SIZE_COUNT 2u
+#else
     const VkDescriptorPoolSize pool_size = {
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 #ifdef VULKAN_PS5_ANISOTROPY_PROBE
@@ -471,6 +530,9 @@ int main(void)
         1,
 #endif
     };
+#define SAMPLE_POOL_SIZES (&pool_size)
+#define SAMPLE_POOL_SIZE_COUNT 1u
+#endif
     const VkDescriptorPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets =
@@ -479,8 +541,8 @@ int main(void)
 #else
             1,
 #endif
-        .poolSizeCount = 1,
-        .pPoolSizes = &pool_size,
+        .poolSizeCount = SAMPLE_POOL_SIZE_COUNT,
+        .pPoolSizes = SAMPLE_POOL_SIZES,
     };
     VkDescriptorPool descriptor_pool;
     VK_CHECK(vkCreateDescriptorPool(device, &pool_info, NULL, &descriptor_pool));
@@ -522,6 +584,31 @@ int main(void)
         .imageView = texture_view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    const VkDescriptorBufferInfo fragment_result_info = {
+        .buffer = fragment_result_buffer,
+        .range = (VkDeviceSize)FRAGMENT_RESULT_WORDS * sizeof(uint32_t),
+    };
+    const VkWriteDescriptorSet descriptor_writes[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &descriptor_image,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &fragment_result_info,
+        },
+    };
+    vkUpdateDescriptorSets(device, 2, descriptor_writes, 0, NULL);
+#else
     const VkWriteDescriptorSet descriptor_write = {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet = descriptor_set,
@@ -531,6 +618,7 @@ int main(void)
         .pImageInfo = &descriptor_image,
     };
     vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+#endif
 #endif
 
     const VkAttachmentDescription attachment = {
@@ -785,6 +873,9 @@ int main(void)
     VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, fence));
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &target_range));
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &fragment_result_range));
+#endif
 
     const uint32_t *pixels = target_mapped;
     uint32_t covered = 0u;
@@ -808,7 +899,22 @@ int main(void)
         TARGET_WIDTH / 2u];
 #endif
     int status = 0;
-#ifdef VULKAN_PS5_IMAGE_GATHER_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    uint32_t storage_writes = 0u;
+    for (uint32_t i = 1u; i < FRAGMENT_RESULT_WORDS; ++i)
+        storage_writes += fragment_results[i] == 0x51a7c0deu;
+    if (covered != 18432u || opaque != covered || distinct_count != 1u ||
+        center != 0xff00ff00u || fragment_results[0] != covered ||
+        storage_writes != covered || fragment_results[1] != 0u ||
+        fragment_results[FRAGMENT_RESULT_WORDS - 1u] != 0u) {
+        printf("fragment_stores_atomics: mismatch covered=%u atomic=%u stores=%u center=%08x\n",
+            covered, fragment_results[0], storage_writes, center);
+        status = 1;
+    } else {
+        printf("fragment_stores_atomics: PASS covered=%u atomic=%u stores=%u marker=51a7c0de\n",
+            covered, fragment_results[0], storage_writes);
+    }
+#elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
     if (covered != 18432u || opaque != covered || distinct_count != 1u ||
         center != 0xffffffffu || pixels[0] != 0u ||
         pixels[TARGET_WIDTH - 1u] != 0u) {
@@ -975,6 +1081,11 @@ int main(void)
     vkUnmapMemory(device, indirect_memory);
     vkDestroyBuffer(device, indirect_buffer, NULL);
     vkFreeMemory(device, indirect_memory, NULL);
+#endif
+#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+    vkUnmapMemory(device, fragment_result_memory);
+    vkDestroyBuffer(device, fragment_result_buffer, NULL);
+    vkFreeMemory(device, fragment_result_memory, NULL);
 #endif
     vkUnmapMemory(device, index_memory);
     vkUnmapMemory(device, vertex_memory);

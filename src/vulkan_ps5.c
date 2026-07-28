@@ -547,6 +547,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->depthBiasClamp = VK_TRUE;
     features->depthClamp = VK_TRUE;
     features->drawIndirectFirstInstance = VK_TRUE;
+    features->fragmentStoresAndAtomics = VK_TRUE;
     features->fillModeNonSolid = VK_TRUE;
     features->geometryShader = VK_TRUE;
     features->independentBlend = VK_TRUE;

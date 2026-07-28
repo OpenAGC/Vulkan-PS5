@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 19 mandatory feature bits are true | 10 gaps |
+| Core/Features2 | 29 mandatory feature bits | 20 mandatory feature bits are true | 9 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,11 +63,11 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=10 limits=0 queues=0 total=10
+eden-profile: extensions=0 features=9 limits=0 queues=0 total=9
 ```
 
-The 10 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
-`imageCubeArray`, `multiViewport`, `robustBufferAccess`,
+The 9 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
+`robustBufferAccess`,
 `sampleRateShading`, `shaderStorageImageWriteWithoutFormat`,
 `vertexPipelineStoresAndAtomics`,
 `variablePointers`, and
@@ -276,6 +276,20 @@ SystemService self-exit, no stale process, and only the known single
 `amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
 `de628e54eb7929f484715b0bec441fe8501ccf3c5560c1f01f3479926a2aa679`.
 
+The core `fragmentStoresAndAtomics` contract is implemented and
+hardware-qualified for every currently supported storage resource class.
+The ICD does not advertise storage-image formats, while graphics descriptor
+tables support storage buffers. The fragment probe performs both an atomic
+increment and a uniquely indexed SSBO store for every covered pixel. Both
+32/32 host suites, runner safety coverage, and the complete Prospero build
+pass. The internal gate
+(`20260728T131002Z-fragment-stores-atomics-run1.log`) and final public legacy
+query/request gate (`20260728T131203Z-fragment-stores-atomics-run1.log`) each
+reported exact `covered=18432 atomic=18432 stores=18432 marker=51a7c0de`,
+matching SystemService self-exit, no stale process, and only the known single
+`amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
+`ecbd369db08ae5d7dd80fb66da45d282ef5134ca3d4c614940d1a86e5a2da985`.
+
 ## Runtime compatibility
 
 | Area | Current evidence | State |
@@ -308,7 +322,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    Typed OpenAGC topology/primitive-size state and exact readback have also
    qualified `largePoints`, static/dynamic `wideLines`, fragment demote with
    post-demote derivative participation, vertex-generated clip distance, and
-   primitive cull distance, and four-offset extended image gather.
+   primitive cull distance, four-offset extended image gather, and fragment
+   SSBO stores plus atomics.
    Indirect draw recording is no longer a stub. Compiler metadata includes
    DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
    packets. The earlier submission fault was the zero-initialized non-indexed

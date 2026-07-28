@@ -445,6 +445,19 @@ Implemented and host-verified:
   the exact oracle, clean SystemService self-exit, exact-PID absence, and only
   the known single `amount=0x4000` baseline warning. Public ELF SHA-256 is
   `de628e54eb7929f484715b0bec441fe8501ccf3c5560c1f01f3479926a2aa679`.
+- Core `fragmentStoresAndAtomics` is reported through legacy and Features2
+  queries and accepted at device creation. The fragment probe atomically
+  increments one SSBO counter and writes marker `0x51a7c0de` to the uniquely
+  indexed SSBO word for every rasterized pixel. Both 32/32 normal and
+  ASAN/UBSAN suites pass, as does the complete Prospero build with
+  `-lunwind -lc++abi -lc++ -lm`. The internal gate
+  (`20260728T131002Z-fragment-stores-atomics-run1.log`) and final public
+  query/request gate (`20260728T131203Z-fragment-stores-atomics-run1.log`)
+  each produced exactly 18,432 framebuffer pixels, atomic increments, and
+  storage writes, followed by clean SystemService self-exit, exact-PID
+  absence, and only the known single `amount=0x4000` baseline warning. Public
+  ELF SHA-256 is
+  `ecbd369db08ae5d7dd80fb66da45d282ef5134ca3d4c614940d1a86e5a2da985`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
