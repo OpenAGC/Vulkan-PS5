@@ -4,7 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
+#if defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+#include "vulkan_ps5_cull_distance_vert_spv.h"
+#include "vulkan_ps5_triangle_frag_spv.h"
+#define vulkan_ps5_triangle_vert_spv vulkan_ps5_cull_distance_vert_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "shader_cull_distance"
+#elif defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
 #include "vulkan_ps5_clip_distance_vert_spv.h"
 #include "vulkan_ps5_triangle_frag_spv.h"
 #define vulkan_ps5_triangle_vert_spv vulkan_ps5_clip_distance_vert_spv
@@ -161,6 +167,16 @@ int main(void)
         printf("shader_demote: shaderDemoteToHelperInvocation is not supported\n");
         return 1;
     }
+#elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.shaderCullDistance) {
+        printf("shader_cull_distance: shaderCullDistance is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .shaderCullDistance = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
@@ -278,6 +294,7 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
     defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
@@ -717,7 +734,11 @@ int main(void)
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &hull_probe_descriptor_set, 0, NULL);
 #endif
+#if defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+    vkCmdDraw(command, 6, 1, 0, 0);
+#else
     vkCmdDraw(command, 3, 1, 0, 0);
+#endif
 #if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         point_pipeline);
@@ -822,6 +843,12 @@ int main(void)
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
+#if defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+    uint32_t cull_left = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+        TARGET_WIDTH / 4u];
+    uint32_t cull_right = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
+        (TARGET_WIDTH * 3u) / 4u];
+#endif
 #if defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
     uint32_t clip_left = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 4u];
@@ -913,6 +940,10 @@ int main(void)
         pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
             (TARGET_WIDTH * 3u) / 4u] == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+    image_ok = green_count == 4608u && unexpected_count == 0u &&
+        cull_left == 0u && cull_right == GREEN_RGBA8 && center == 0u &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
 #elif defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
     image_ok = green_count == 9216u && unexpected_count == 0u &&
         clip_left == 0u && clip_right == GREEN_RGBA8 &&
@@ -966,6 +997,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: mismatch line=%u point=%u unexpected=%u center=%08x\n",
             green_count, red_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+        printf("shader_cull_distance: mismatch green=%u unexpected=%u left=%08x right=%08x center=%08x\n",
+            green_count, unexpected_count, cull_left, cull_right, center);
 #elif defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
         printf("shader_clip_distance: mismatch green=%u unexpected=%u left=%08x right=%08x center=%08x\n",
             green_count, unexpected_count, clip_left, clip_right, center);
@@ -1006,6 +1040,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: PASS line=%u point=%u center=%08x\n",
             green_count, red_count, center);
+#elif defined(VULKAN_PS5_CULL_DISTANCE_PROBE)
+        printf("shader_cull_distance: PASS green=%u left=%08x right=%08x\n",
+            green_count, cull_left, cull_right);
 #elif defined(VULKAN_PS5_CLIP_DISTANCE_PROBE)
         printf("shader_clip_distance: PASS green=%u left=%08x right=%08x\n",
             green_count, clip_left, clip_right);
@@ -1060,6 +1097,7 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
+     defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_DEMOTE_PROBE) || \
      defined(VULKAN_PS5_WIDE_LINES_PROBE) || \

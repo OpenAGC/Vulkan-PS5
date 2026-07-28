@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 17 mandatory feature bits are true | 12 gaps |
+| Core/Features2 | 29 mandatory feature bits | 18 mandatory feature bits are true | 11 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,13 +63,12 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=12 limits=0 queues=0 total=12
+eden-profile: extensions=0 features=11 limits=0 queues=0 total=11
 ```
 
-The 12 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
+The 11 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
 `imageCubeArray`, `multiViewport`, `robustBufferAccess`,
-`sampleRateShading`, `shaderCullDistance`,
-`shaderImageGatherExtended`,
+`sampleRateShading`, `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
 `variablePointers`, and
 `variablePointersStorageBuffer`.
@@ -250,6 +249,19 @@ SystemService self-exit, no stale process, and only the known single
 `amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
 `64a4246ff57161364aa84cacb9377fe42b0e886ffce61851ab9329c88c163a31`.
 
+The core `shaderCullDistance` contract is implemented and
+hardware-qualified. Legacy and Features2 queries report it, and device
+creation accepts the core feature request. The vertex probe draws two
+disjoint 4,608-pixel triangles, assigning `-1.0` to every cull-distance value
+of the left primitive and `1.0` to the right control. Both 30/30 host suites,
+runner safety coverage, and the complete Prospero build pass. The internal
+gate (`20260728T124816Z-shader-cull-distance-run1.log`) and final public legacy
+query/request gate (`20260728T124948Z-shader-cull-distance-run1.log`) each
+reported exact `green=4608 left=00000000 right=ff00ff00`, matching
+SystemService self-exit, no stale process, and only the known single
+`amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
+`82ffa08623bf7632635c0009f51b439f4ae861d699c5b052cebc9bf1343dcabf`.
+
 ## Runtime compatibility
 
 | Area | Current evidence | State |
@@ -281,7 +293,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    hardware-qualified by paired bilinear/16x filtering readback on FW 5.50.
    Typed OpenAGC topology/primitive-size state and exact readback have also
    qualified `largePoints`, static/dynamic `wideLines`, fragment demote with
-   post-demote derivative participation, and vertex-generated clip distance.
+   post-demote derivative participation, vertex-generated clip distance, and
+   primitive cull distance.
    Indirect draw recording is no longer a stub. Compiler metadata includes
    DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
    packets. The earlier submission fault was the zero-initialized non-indexed

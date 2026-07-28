@@ -418,6 +418,18 @@ Implemented and host-verified:
   klogs contained only the known single `amount=0x4000` baseline warning.
   Public ELF SHA-256 is
   `64a4246ff57161364aa84cacb9377fe42b0e886ffce61851ab9329c88c163a31`.
+- Core `shaderCullDistance` is reported through legacy and Features2 queries
+  and accepted at device creation. The vertex probe emits two disjoint,
+  equal-area triangles: every left-primitive vertex receives `-1.0`, while the
+  right control receives `1.0`. Correct primitive culling retains exactly
+  4,608 green pixels, leaves the left and center samples zero, and colors the
+  right sample green. Both 30/30 normal and ASAN/UBSAN suites pass, as does the
+  complete Prospero build with `-lunwind -lc++abi -lc++ -lm`. The internal
+  gate (`20260728T124816Z-shader-cull-distance-run1.log`) and final public
+  query/request gate (`20260728T124948Z-shader-cull-distance-run1.log`) passed
+  the exact oracle, clean SystemService self-exit, exact-PID absence, and only
+  the known single `amount=0x4000` baseline warning. Public ELF SHA-256 is
+  `82ffa08623bf7632635c0009f51b439f4ae861d699c5b052cebc9bf1343dcabf`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled

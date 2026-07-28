@@ -11,10 +11,10 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
-The current profile has 12 hard feature gaps. The latest closure is core
-`shaderClipDistance`: the FW 5.50 gate proves that a vertex-generated clip
-distance removes exactly the negative-X half of a triangle through the normal
-legacy feature-query/device-enable path.
+The current profile has 11 hard feature gaps. The latest closure is core
+`shaderCullDistance`: the FW 5.50 gate proves that an all-negative primitive is
+discarded while a separate positive-distance control remains, through the
+normal legacy feature-query/device-enable path.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.
@@ -692,6 +692,10 @@ Core `shaderClipDistance` is advertised and accepted through legacy and
 Features2 paths. Its bounded vertex-shader gate writes `gl_ClipDistance[0]`
 from clip-space X and requires exactly 9,216 retained green pixels, a zero left
 sample, and a green right sample; the public FW 5.50 run passed.
+Core `shaderCullDistance` is likewise advertised and accepted. Its bounded
+vertex-shader gate assigns an all-negative distance to a left triangle and an
+all-positive distance to a right control, requiring exactly 4,608 retained
+green pixels with a zero left sample and green right sample.
 Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
