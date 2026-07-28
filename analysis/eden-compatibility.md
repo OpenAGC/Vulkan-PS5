@@ -52,10 +52,10 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=25 limits=0 queues=0 total=27
+eden-profile: extensions=2 features=24 limits=0 queues=0 total=26
 ```
 
-The 25 feature gaps are `depthBiasClamp`, `depthClamp`,
+The 24 feature gaps are `depthBiasClamp`,
 `drawIndirectFirstInstance`, `dualSrcBlend`, `fillModeNonSolid`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `independentBlend`, `largePoints`,
 `logicOp`, `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
@@ -121,9 +121,9 @@ has SHA-256
 `8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
 Public `depthBiasClamp` remains false pending one bounded FW 5.50 run.
 
-The host-side `depthClamp` contract is also implemented without advertising
-the feature. Every graphics frame uses OpenAGC's exact `0x00080000` clip-control
-mask and `ZSCALE=1`, `ZOFFSET=0` viewport transform for Vulkan's zero-to-one
+The `depthClamp` contract is implemented and advertised. Every graphics frame
+uses OpenAGC's exact `0x00080000` clip-control mask and `ZSCALE=1`, `ZOFFSET=0`
+viewport transform for Vulkan's zero-to-one
 depth convention; static depth-clamp pipelines
 use `0x0c080000` to additionally disable near and far Z clipping on baseline,
 indexed, indirect, geometry, and tessellation draws. The established depth
@@ -132,14 +132,20 @@ remains valid. Exact PM4 and pipeline regressions pass in both 24/24 host
 configurations. The bounded probe distinguishes clamping from clipping by
 requiring a negative-Z green triangle at exact D32 zero, plus a normal red
 control triangle at exact 0.25, and uses the shared matching-self-kill runner.
-The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+The hardware-tested Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
+SHA-256
 `659590336c8030c7ae118210931ac8e0ee4dac3d455c888e53d22a09cd2751b9`.
 The first bounded FW 5.50 run produced the expected color and stencil coverage,
 completed SystemService exit, and left no stale process, but revealed that the
 legacy OpenAGC viewport still applied a 0.5/0.5 depth remap after Vulkan clip
 control was enabled. OpenAGC `c0dd5b4` adds an explicit zero-to-one viewport
-mode and the command regression locks its exact values. Public `depthClamp`
-remains false pending one corrected bounded FW 5.50 run.
+mode and the command regression locks its exact values. The corrected bounded
+FW 5.50 run on 2026-07-28 passed exact green/red/raw/stencil coverage, completed
+the matching SystemService self-exit, left no process, and produced only the
+known single `amount=0x4000` baseline VM warning. Legacy and Features2 queries
+now report `depthClamp`; both device-create paths accept a normal request. The
+post-promotion Prospero ELF is
+`bcbfa074bb504ceabf352e6ecbdb1f45f112dfef70faea057d41a1eb82a9c947`.
 
 ## Runtime compatibility
 

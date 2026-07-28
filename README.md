@@ -640,8 +640,10 @@ near/far Z clipping through OpenAGC while retaining the Vulkan convention. The
 standalone `vulkan_ps5_depth_clamp_probe` requires a negative-Z green triangle
 to survive at exact D32 zero and a normal red control triangle at exact 0.25.
 The original depth sample now uses 0.25/0.75 shader depth so its established
-oracle remains unchanged under correct Vulkan clip space. Public `depthClamp`
-remains false until the corrected bounded hardware gate passes. Static depth compare/write
+oracle remains unchanged under correct Vulkan clip space. The corrected FW 5.50
+gate passed exact color, raw D32, and stencil oracles with a matching self-exit;
+`depthClamp` is advertised and accepted through legacy and Features2 paths.
+Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment

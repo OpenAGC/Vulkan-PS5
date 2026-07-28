@@ -137,15 +137,18 @@ int main(void) {
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_FALSE);
     assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
     assert(features11.shaderDrawParameters == VK_FALSE);
+    assert(features2.features.depthClamp == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
+    assert(features.depthClamp == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
+    features.depthClamp = VK_FALSE;
     features.geometryShader = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
     features.tessellationShader = VK_FALSE;
@@ -204,6 +207,7 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &enabled_host_query_reset,
         .features = {
+            .depthClamp = VK_TRUE,
             .geometryShader = VK_TRUE,
             .occlusionQueryPrecise = VK_TRUE,
             .tessellationShader = VK_TRUE,
@@ -242,6 +246,7 @@ int main(void) {
                           &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(unsupported_device == VK_NULL_HANDLE);
     VkPhysicalDeviceFeatures legacy_geometry_features = {
+        .depthClamp = VK_TRUE,
         .geometryShader = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
     };

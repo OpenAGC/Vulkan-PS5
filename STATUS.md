@@ -323,15 +323,20 @@ Implemented and host-verified:
   Exact PM4 and pipeline regressions pass in both 24/24 host suites. The
   bounded depth-clamp probe requires a negative-Z green triangle at exact D32
   zero and a normal red control at exact 0.25, followed by the shared
-  matching-self-kill lifecycle. The Prospero ELF links
+  matching-self-kill lifecycle. The hardware-tested Prospero ELF links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
   `659590336c8030c7ae118210931ac8e0ee4dac3d455c888e53d22a09cd2751b9`.
   The first bounded FW 5.50 run safely rendered the expected color coverage,
   wrote the matching stencil coverage, exited through SystemService, and left
   no stale process, but exposed OpenAGC's legacy 0.5/0.5 viewport remap after
   enabling Vulkan clip control. OpenAGC `c0dd5b4` fixes that double transform;
-  exact Vulkan-PS5 PM4 regression coverage locks the corrected values. Public
-  `depthClamp` remains false until one corrected bounded FW 5.50 run passes.
+  exact Vulkan-PS5 PM4 regression coverage locks the corrected values. The
+  corrected 2026-07-28 run passed exact green/red/raw/stencil oracles, completed
+  matching SystemService self-exit, left no process, and emitted only the known
+  single `amount=0x4000` baseline VM warning. `depthClamp` is now advertised and
+  accepted through legacy and Features2 paths. The post-promotion Prospero ELF
+  SHA-256 is
+  `bcbfa074bb504ceabf352e6ecbdb1f45f112dfef70faea057d41a1eb82a9c947`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
