@@ -303,6 +303,13 @@ buffer's first dispatch. A Prospero cross-build produces
 gate. Running it on the generic host backend intentionally reports a mismatch
 because that backend records submissions but does not execute shaders.
 
+`vulkan_ps5_storage_image_probe` uses the same standard compute path with a
+linear RGBA8 storage image and SPIR-V
+`StorageImageWriteWithoutFormat`. Host execution verifies compilation,
+descriptor encoding, and command recording; the FW 5.50 gate verifies an exact
+4,096-pixel checkerboard. Run the bounded hardware gate with
+`PS5_HOST=10.0.1.41 examples/run_fw550_storage_image.sh`.
+
 The same option builds `vulkan_ps5_triangle_example`. It renders a solid-green
 triangle into a mapped 256x256 linear RGBA8 attachment through an ordinary
 render pass, waits for completion, invalidates the allocation, and verifies the

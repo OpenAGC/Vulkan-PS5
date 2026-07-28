@@ -10,6 +10,19 @@ OpenAGC disables RB+ dual-quad mode and SX blend optimization. Two consecutive
 bounded FW 5.50 runs passed the exact 18,432-pixel green SRC1 oracle with clean
 exit. The Eden compatibility profile now has five feature gaps.
 
+## Milestone 6: storage-image writes without format (2026-07-28)
+
+`shaderStorageImageWriteWithoutFormat` is advertised and accepted through
+legacy and Features2 paths. Linear RGBA8 storage images now flow through
+descriptor updates and gfx1013 compute/graphics resource tables. Normal and
+ASAN/UBSAN host suites pass 36/36, the Prospero target links with
+`-lunwind -lc++abi -lc++ -lm`, and two bounded FW 5.50 runs verified all 4,096
+checkerboard pixels with clean exit. The Eden compatibility profile now has
+four feature gaps. Evidence is retained in
+`20260728T154623Z-storage-image-run1.log` and
+`20260728T155150Z-storage-image-run1.log`. The final gate also covers the
+shared runner's duplicate Shell kill-request regression.
+
 ## Milestone 1: host ICD lifecycle
 
 Implemented:

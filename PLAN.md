@@ -2,10 +2,10 @@
 
 ## Progress
 
-- Milestone 6 `dualSrcBlend` closure is complete. Legacy and Features2
-  query/request paths, SRC1 factor translation, pipeline compiler context,
-  native gfx1013 dual exports, OpenAGC RB+ state, host/VVL coverage, and two
-  bounded FW 5.50 exact-readback runs all pass. Five Eden feature gaps remain.
+- Milestone 6 `shaderStorageImageWriteWithoutFormat` closure is complete.
+  Linear RGBA8 storage images, standard descriptor updates, formatless SPIR-V
+  image stores, host/sanitizer coverage, and two bounded FW 5.50 exact-readback
+  runs all pass. Four Eden feature gaps remain.
 
 - Milestone 1 is complete: host lifecycle, dispatch, conservative gfx1013
   capabilities, memory/resources, packaging, and loader/VVL tests.
@@ -438,7 +438,13 @@
   `20260728T144957Z-variable-pointers-run1.log` and
   `20260728T145026Z-variable-pointers-run1.log`; the public ELF SHA-256 is
   `d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
-- The live Eden compatibility profile is now six feature gaps.
+- `shaderStorageImageWriteWithoutFormat` is hardware-qualified through a
+  standard compute pipeline and linear RGBA8 storage image. Both 36/36 host
+  suites and repeated FW 5.50 gates pass the exact 4,096-pixel checkerboard
+  oracle. Evidence is retained in `20260728T154623Z-storage-image-run1.log`
+  and `20260728T155150Z-storage-image-run1.log`; the public ELF SHA-256 is
+  `5234ca8640902545ea1c6c55bfe2f503365c3119678fb9ad4d030c51d96ed39a`.
+- The live Eden compatibility profile is now four feature gaps.
 
 ## Test Plan and Assumptions
 

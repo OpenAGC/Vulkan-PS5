@@ -234,6 +234,7 @@ int main(void) {
     assert(features.shaderClipDistance == VK_TRUE);
     assert(features.shaderCullDistance == VK_TRUE);
     assert(features.shaderImageGatherExtended == VK_TRUE);
+    assert(features.shaderStorageImageWriteWithoutFormat == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     assert(features.vertexPipelineStoresAndAtomics == VK_TRUE);
     assert(features.wideLines == VK_TRUE);
@@ -253,6 +254,7 @@ int main(void) {
     features.shaderClipDistance = VK_FALSE;
     features.shaderCullDistance = VK_FALSE;
     features.shaderImageGatherExtended = VK_FALSE;
+    features.shaderStorageImageWriteWithoutFormat = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     features.vertexPipelineStoresAndAtomics = VK_FALSE;
     features.wideLines = VK_FALSE;
@@ -272,6 +274,19 @@ int main(void) {
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures &
            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+    assert(format_properties.linearTilingFeatures &
+           VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
+    assert(!(format_properties.optimalTilingFeatures &
+             VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT));
+    VkImageFormatProperties image_format_properties;
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_STORAGE_BIT, 0u,
+        &image_format_properties) == VK_SUCCESS);
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT, 0u,
+        &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures == 0);

@@ -343,6 +343,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   find_program(VULKAN_PS5_SPIRV_VAL spirv-val REQUIRED)
   set(VULKAN_PS5_COMPUTE_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
+  set(VULKAN_PS5_STORAGE_IMAGE_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_storage_image_spv.h")
   set(VULKAN_PS5_VARIABLE_POINTERS_BINARY
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_variable_pointers.spv")
   set(VULKAN_PS5_VARIABLE_POINTERS_HEADER
@@ -356,6 +358,21 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VERBATIM)
   add_executable(vulkan_ps5_compute_example
     examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  add_custom_command(OUTPUT "${VULKAN_PS5_STORAGE_IMAGE_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_storage_image_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/storage_image.comp"
+      -o "${VULKAN_PS5_STORAGE_IMAGE_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/storage_image.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_storage_image_probe
+    examples/compute/main.c "${VULKAN_PS5_STORAGE_IMAGE_HEADER}")
+  target_compile_definitions(vulkan_ps5_storage_image_probe PRIVATE
+    VULKAN_PS5_STORAGE_IMAGE_PROBE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.storage_image_command_recording
+      COMMAND vulkan_ps5_storage_image_probe)
+  endif()
   add_custom_command(
     OUTPUT "${VULKAN_PS5_VARIABLE_POINTERS_BINARY}"
       "${VULKAN_PS5_VARIABLE_POINTERS_HEADER}"
@@ -832,6 +849,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/buffer_copy/main.c)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
+      vulkan_ps5_storage_image_probe
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
@@ -859,7 +877,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
-      vulkan_ps5_compute_example vulkan_ps5_variable_pointers_probe
+      vulkan_ps5_compute_example vulkan_ps5_storage_image_probe
+      vulkan_ps5_variable_pointers_probe
       vulkan_ps5_triangle_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
@@ -891,6 +910,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(${example_target} PRIVATE vulkan_ps5_static)
   endforeach()
   if(PROSPERO)
+    target_link_libraries(vulkan_ps5_storage_image_probe PRIVATE
+      SceSystemService)
     target_link_libraries(vulkan_ps5_variable_pointers_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)

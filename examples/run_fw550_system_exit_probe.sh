@@ -104,23 +104,19 @@ if grep -Eq \
     exit 1
 fi
 
-kill_pair=$(sed -n \
-    's/.*KillApp() appId={0x\([0-9A-Fa-f][0-9A-Fa-f]*\)} is requested from 0x\([0-9A-Fa-f][0-9A-Fa-f]*\).*/\1 \2/p' \
-    "$target_klog" | tail -n 1)
-kill_line=$(grep -n 'KillApp() appId=' "$target_klog" | tail -n 1 | \
-    cut -d: -f1 || true)
+self_kill=$(grep -n 'KillApp() appId=' "$target_klog" | sed -n \
+    's/^\([0-9][0-9]*\):.*KillApp() appId={0x\([0-9A-Fa-f][0-9A-Fa-f]*\)} is requested from 0x\2.*/\1 \2/p' | \
+    tail -n 1)
 all_exited_line=$(grep -n '\[AppMgr\] All processes exited' "$target_klog" | \
     tail -n 1 | cut -d: -f1 || true)
-if [ -z "$kill_pair" ] || [ -z "$kill_line" ] || \
+if [ -z "$self_kill" ] || \
    [ -z "$all_exited_line" ]; then
     kill_exact_pid "$target_pid" || true
     echo "${display_name} lifecycle evidence is incomplete: $target_klog" >&2
     exit 1
 fi
-kill_app=${kill_pair%% *}
-requester_app=${kill_pair#* }
-if [ "$((0x$kill_app))" -ne "$((0x$requester_app))" ] || \
-   [ "$all_exited_line" -le "$kill_line" ]; then
+kill_line=${self_kill%% *}
+if [ "$all_exited_line" -le "$kill_line" ]; then
     kill_exact_pid "$target_pid" || true
     echo "${display_name} lifecycle evidence is inconsistent: $target_klog" >&2
     exit 1

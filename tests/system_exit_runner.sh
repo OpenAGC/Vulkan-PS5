@@ -29,11 +29,14 @@ cat >"$test_root/bin/nc" <<'EOF'
 printf '%s\n' \
     '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game' \
     '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui' \
-    '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00002016' \
-    '[AppMgr] All processes exited'
+    '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00002016'
 printf '\000'
 case "${FAKE_KLOG_MODE:-baseline}" in
     clean) ;;
+    duplicate)
+        printf '%s\n' \
+            '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00000000'
+        ;;
     baseline)
         printf '%s\n' \
             '[KERNEL] WARNING: VM resource leak: set:1, res:0, amount:0x4000'
@@ -41,6 +44,7 @@ case "${FAKE_KLOG_MODE:-baseline}" in
     crash) printf '%s\n' '# proc ID: 321' ;;
     *) exit 2 ;;
 esac
+printf '%s\n' '[AppMgr] All processes exited'
 EOF
 
 cat >"$test_root/bin/uv" <<'EOF'
@@ -83,6 +87,8 @@ grep -F 'FW550 system-exit probe: BASELINE_VM_WARNING amount=0x4000' \
     "$test_root/baseline.out" >/dev/null
 run_probe clean "$test_root/clean.out"
 grep -F 'FW550 system-exit probe: CLEAN' "$test_root/clean.out" >/dev/null
+run_probe duplicate "$test_root/duplicate.out"
+grep -F 'FW550 system-exit probe: CLEAN' "$test_root/duplicate.out" >/dev/null
 if run_probe crash "$test_root/crash.out"; then
     echo "fatal baseline probe unexpectedly passed" >&2
     exit 1

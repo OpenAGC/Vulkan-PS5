@@ -11,6 +11,14 @@
 #define SAMPLE_LABEL "variable_pointers"
 #define VALUE_COUNT 1024u
 #define GROUP_COUNT 1u
+#elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+#include "vulkan_ps5_storage_image_spv.h"
+#define vulkan_ps5_compute_spv vulkan_ps5_storage_image_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "storage_image_write_without_format"
+#define IMAGE_DIMENSION 64u
+#define VALUE_COUNT (IMAGE_DIMENSION * IMAGE_DIMENSION)
+#define GROUP_COUNT (IMAGE_DIMENSION / 8u)
 #else
 #include "vulkan_ps5_compute_spv.h"
 #define SAMPLE_LABEL "compute"
@@ -44,7 +52,12 @@ int main(void)
 {
     VkInstance instance;
     VkDevice device;
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    VkImage image;
+    VkImageView image_view;
+#else
     VkBuffer buffer;
+#endif
     VkDeviceMemory memory;
     VkDescriptorSetLayout set_layout;
     VkPipelineLayout pipeline_layout;
@@ -76,7 +89,7 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
-#ifdef VULKAN_PS5_VARIABLE_POINTERS_PROBE
+#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE)
     VkPhysicalDeviceVariablePointersFeatures variable_pointer_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
     };
@@ -91,18 +104,53 @@ int main(void)
         return 1;
     }
     const void *device_features = &variable_pointer_features;
+#elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.shaderStorageImageWriteWithoutFormat) {
+        printf(SAMPLE_LABEL ": required feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures requested_features = {
+        .shaderStorageImageWriteWithoutFormat = VK_TRUE,
+    };
+    const void *device_features = NULL;
 #else
     const void *device_features = NULL;
 #endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = device_features,
+        .pEnabledFeatures =
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+            &requested_features,
+#else
+            NULL,
+#endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
     };
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));
 
     const VkDeviceSize buffer_size = VALUE_COUNT * sizeof(uint32_t);
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    const VkImageCreateInfo image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {IMAGE_DIMENSION, IMAGE_DIMENSION, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VK_CHECK(vkCreateImage(device, &image_info, NULL, &image));
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, image, &requirements);
+#else
     const VkBufferCreateInfo buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = buffer_size,
@@ -112,6 +160,7 @@ int main(void)
     VK_CHECK(vkCreateBuffer(device, &buffer_info, NULL, &buffer));
     VkMemoryRequirements requirements;
     vkGetBufferMemoryRequirements(device, buffer, &requirements);
+#endif
     uint32_t memory_type = find_host_visible_memory_type(
         physical, requirements.memoryTypeBits);
     if (memory_type == UINT32_MAX) {
@@ -124,7 +173,27 @@ int main(void)
         .memoryTypeIndex = memory_type,
     };
     VK_CHECK(vkAllocateMemory(device, &memory_info, NULL, &memory));
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    VK_CHECK(vkBindImageMemory(device, image, memory, 0));
+    const VkImageViewCreateInfo view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+        },
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1u,
+            .layerCount = 1u,
+        },
+    };
+    VK_CHECK(vkCreateImageView(device, &view_info, NULL, &image_view));
+#else
     VK_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
+#endif
     VK_CHECK(vkMapMemory(device, memory, 0, buffer_size, 0, &mapped));
     memset(mapped, 0, (size_t)buffer_size);
 #if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE)
@@ -143,7 +212,11 @@ int main(void)
 
     const VkDescriptorSetLayoutBinding binding = {
         .binding = 0,
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+#else
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+#endif
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
     };
@@ -181,7 +254,11 @@ int main(void)
         device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
 
     const VkDescriptorPoolSize pool_size = {
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1,
+#else
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+#endif
     };
     const VkDescriptorPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -199,18 +276,31 @@ int main(void)
     };
     VK_CHECK(vkAllocateDescriptorSets(
         device, &descriptor_allocate_info, &descriptor_set));
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    const VkDescriptorImageInfo descriptor_image = {
+        .imageView = image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+#else
     const VkDescriptorBufferInfo descriptor_buffer = {
         .buffer = buffer,
         .offset = 0,
         .range = buffer_size,
     };
+#endif
     const VkWriteDescriptorSet descriptor_write = {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet = descriptor_set,
         .dstBinding = 0,
         .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorType =
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        .pImageInfo = &descriptor_image,
+#else
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .pBufferInfo = &descriptor_buffer,
+#endif
     };
     vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
 
@@ -232,10 +322,36 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &begin_info));
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    const VkImageMemoryBarrier image_barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = 0u,
+        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1u,
+            .layerCount = 1u,
+        },
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u, 0u, NULL, 0u, NULL,
+        1u, &image_barrier);
+#endif
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
         pipeline_layout, 0, 1, &descriptor_set, 0, NULL);
-    vkCmdDispatch(command, GROUP_COUNT, 1, 1);
+    vkCmdDispatch(command, GROUP_COUNT,
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+        GROUP_COUNT,
+#else
+        1,
+#endif
+        1);
     VK_CHECK(vkEndCommandBuffer(command));
 
     VkQueue queue;
@@ -286,6 +402,28 @@ int main(void)
     } else {
         printf("variable_pointers: PASS invocations=64 storage_load=64 storage_store=64 workgroup=64\n");
     }
+#elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    int status = 0;
+#if !defined(OPENAGC_PROSPERO)
+    (void)values;
+    printf(SAMPLE_LABEL ": PASS command recording\n");
+#else
+    for (uint32_t y = 0; y < IMAGE_DIMENSION && !status; ++y) {
+        for (uint32_t x = 0; x < IMAGE_DIMENSION; ++x) {
+            const uint32_t expected = ((x ^ y) & 1u) == 0u ?
+                0xffff00ffu : 0xff00ff00u;
+            const uint32_t index = y * IMAGE_DIMENSION + x;
+            if (values[index] != expected) {
+                printf(SAMPLE_LABEL ": mismatch x=%u y=%u actual=%08x expected=%08x\n",
+                    x, y, values[index], expected);
+                status = 1;
+                break;
+            }
+        }
+    }
+    if (!status)
+        printf(SAMPLE_LABEL ": PASS %u deterministic pixels\n", VALUE_COUNT);
+#endif
 #else
     int status = 0;
     for (uint32_t i = 0; i < VALUE_COUNT; ++i) {
@@ -309,11 +447,17 @@ int main(void)
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     vkUnmapMemory(device, memory);
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    vkDestroyImageView(device, image_view, NULL);
+    vkDestroyImage(device, image, NULL);
+#else
     vkDestroyBuffer(device, buffer, NULL);
+#endif
     vkFreeMemory(device, memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
-#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) && defined(OPENAGC_PROSPERO)
+#if (defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) || \
+     defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)) && defined(OPENAGC_PROSPERO)
     fflush(stdout);
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);
 #endif

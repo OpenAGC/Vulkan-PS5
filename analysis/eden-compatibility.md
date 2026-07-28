@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 20 mandatory feature bits are true | 9 gaps |
+| Core/Features2 | 29 mandatory feature bits | 25 mandatory feature bits are true | 4 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,12 +63,11 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=5 limits=0 queues=0 total=5
+eden-profile: extensions=0 features=4 limits=0 queues=0 total=4
 ```
 
-The 5 feature gaps are `imageCubeArray`, `multiViewport`,
-`robustBufferAccess`, `sampleRateShading`, and
-`shaderStorageImageWriteWithoutFormat`.
+The 4 feature gaps are `imageCubeArray`, `multiViewport`,
+`robustBufferAccess`, and `sampleRateShading`.
 
 These bits must only be enabled as their complete Vulkan and shader semantics
 become hardware-qualified. Eden continuing after logging an unsuitable driver
@@ -110,6 +109,18 @@ consecutive FW 5.50 runs produced exactly 18,432 opaque green pixels with center
 `0xff00ff00`, self-exited cleanly, and logged only the established
 `amount=0x4000` baseline VM warning (`20260728T152837Z` and
 `20260728T152900Z`).
+
+The `shaderStorageImageWriteWithoutFormat` contract is implemented and
+hardware-qualified. Vulkan advertises storage-image support only for linear
+`VK_FORMAT_R8G8B8A8_UNORM`, accepts storage-image descriptor writes, and emits
+gfx1013 image descriptors for compute and graphics resource tables. The
+standalone compute probe compiles SPIR-V with
+`StorageImageWriteWithoutFormat`, requests the feature normally, and writes a
+64x64 green/magenta checkerboard through `imageStore`. Both bounded FW 5.50
+runs verified all 4,096 pixels exactly, self-exited cleanly, and logged only
+the established `amount=0x4000` baseline VM warning
+(`20260728T154623Z` and `20260728T155150Z`). The Prospero ELF SHA-256 is
+`5234ca8640902545ea1c6c55bfe2f503365c3119678fb9ad4d030c51d96ed39a`.
 
 The `logicOp` contract is implemented and hardware-qualified. Every one of the
 16 core `VkLogicOp` values maps to OpenAGC's typed

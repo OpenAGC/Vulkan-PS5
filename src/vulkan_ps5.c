@@ -560,6 +560,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->shaderClipDistance = VK_TRUE;
     features->shaderCullDistance = VK_TRUE;
     features->shaderImageGatherExtended = VK_TRUE;
+    features->shaderStorageImageWriteWithoutFormat = VK_TRUE;
     features->tessellationShader = VK_TRUE;
     features->vertexPipelineStoresAndAtomics = VK_TRUE;
     features->wideLines = VK_TRUE;
@@ -631,12 +632,20 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
     const VkFormatFeatureFlags color = sampled | transfer |
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    const VkFormatFeatureFlags storage_color = color |
+        VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     const VkFormatFeatureFlags depth = transfer |
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
     switch (format) {
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        pFormatProperties->linearTilingFeatures = storage_color;
+        pFormatProperties->optimalTilingFeatures = color;
+        pFormatProperties->bufferFeatures =
+            VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT |
+            VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
+        break;
     case VK_FORMAT_R8_UNORM:
     case VK_FORMAT_R8G8_UNORM:
-    case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_B8G8R8A8_UNORM:
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
     case VK_FORMAT_R16_SFLOAT:
@@ -699,8 +708,10 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
         !(supported & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) ||
-        (usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT))
+    if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+        !(supported & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
         !(supported & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))

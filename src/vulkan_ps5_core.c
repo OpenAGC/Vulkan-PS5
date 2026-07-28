@@ -903,6 +903,9 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         !pCreateInfo->extent.depth || pCreateInfo->mipLevels != 1 ||
         !pCreateInfo->arrayLayers || pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT ||
         !format_bytes(pCreateInfo->format) ||
+        ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+         (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
+          pCreateInfo->tiling != VK_IMAGE_TILING_LINEAR)) ||
         (pCreateInfo->flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                                VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT |
                                VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
@@ -2939,6 +2942,7 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
         case VK_DESCRIPTOR_TYPE_SAMPLER:
         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
             if (!write->pImageInfo) continue;
             break;
         default:
@@ -3351,6 +3355,9 @@ static VkResult encode_buffer_descriptor(
     return VK_SUCCESS;
 }
 
+static VkResult encode_image_descriptor(
+    const VkPs5DescriptorValue *value, bool storage, void *destination);
+
 static VkResult prepare_compute_resource_tables(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     AgcGfx1013ResourceTableBinding *tables, uint32_t *table_count)
@@ -3378,7 +3385,8 @@ static VkResult prepare_compute_resource_tables(
                     mapping->byte_stride)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if (mapping->type != OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER &&
-            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER)
+            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
+            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         VkPs5DescriptorSet *set = command->compute_sets[mapping->set];
         if (!set) return VK_ERROR_INITIALIZATION_FAILED;
@@ -3389,12 +3397,18 @@ static VkResult prepare_compute_resource_tables(
             OpenAgcPsbcDescriptorType psbc_type;
             if (!value || !value->valid ||
                 !psbc_descriptor_type(layout_type, &psbc_type) ||
-                psbc_type != mapping->type || !value->buffer.buffer)
+                psbc_type != mapping->type ||
+                (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE ?
+                    !value->image.imageView : !value->buffer.buffer))
                 return VK_ERROR_INITIALIZATION_FAILED;
             size_t offset = mapping->byte_offset +
                 (size_t)array * mapping->byte_stride;
-            VkResult encode_result = encode_buffer_descriptor(value,
-                (uint8_t *)set->table_memory.cpu_address + offset);
+            void *destination =
+                (uint8_t *)set->table_memory.cpu_address + offset;
+            VkResult encode_result =
+                mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE ?
+                encode_image_descriptor(value, true, destination) :
+                encode_buffer_descriptor(value, destination);
             if (encode_result != VK_SUCCESS) return encode_result;
         }
         used_sets[mapping->set] = true;
@@ -3414,25 +3428,28 @@ static VkResult prepare_compute_resource_tables(
     return VK_SUCCESS;
 }
 
-static VkResult sampled_image_state(
-    const VkDescriptorImageInfo *info, AgcGfx1013Image2DState *state)
+static VkResult image_descriptor_state(
+    const VkDescriptorImageInfo *info, bool storage,
+    AgcGfx1013Image2DState *state)
 {
     VkPs5ImageView *view = info ? (VkPs5ImageView *)info->imageView : NULL;
     VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
     if (!view || !image || !image->memory ||
-        !(image->usage & VK_IMAGE_USAGE_SAMPLED_BIT) ||
+        !(image->usage & (storage ? VK_IMAGE_USAGE_STORAGE_BIT :
+            VK_IMAGE_USAGE_SAMPLED_BIT)) ||
         image->type != VK_IMAGE_TYPE_2D || image->tiling != VK_IMAGE_TILING_LINEAR ||
         image->samples != VK_SAMPLE_COUNT_1_BIT || image->mip_levels != 1u ||
         image->array_layers != 1u ||
-        (info->imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
-         info->imageLayout != VK_IMAGE_LAYOUT_GENERAL) ||
+        (storage ? info->imageLayout != VK_IMAGE_LAYOUT_GENERAL :
+            (info->imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+             info->imageLayout != VK_IMAGE_LAYOUT_GENERAL)) ||
         view->components.r != VK_COMPONENT_SWIZZLE_IDENTITY ||
         view->components.g != VK_COMPONENT_SWIZZLE_IDENTITY ||
         view->components.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
         view->components.a != VK_COMPONENT_SWIZZLE_IDENTITY)
         return VK_ERROR_FEATURE_NOT_PRESENT;
     uint32_t dst_x = 4u, dst_y = 5u, dst_z = 6u, dst_w = 7u;
-    if (view->format == VK_FORMAT_B8G8R8A8_UNORM) {
+    if (!storage && view->format == VK_FORMAT_B8G8R8A8_UNORM) {
         dst_x = 6u;
         dst_z = 4u;
     } else if (view->format != VK_FORMAT_R8G8B8A8_UNORM) {
@@ -3451,6 +3468,18 @@ static VkResult sampled_image_state(
         .dst_sel_w = dst_w,
         .sample_count = 1u,
     };
+    return VK_SUCCESS;
+}
+
+static VkResult encode_image_descriptor(
+    const VkPs5DescriptorValue *value, bool storage, void *destination)
+{
+    AgcGfx1013Image2DState image_state;
+    VkResult result = image_descriptor_state(
+        &value->image, storage, &image_state);
+    if (result != VK_SUCCESS) return result;
+    if (agcGfx1013Image2DDescriptorEncode(destination, &image_state) != AGC_OK)
+        return VK_ERROR_INITIALIZATION_FAILED;
     return VK_SUCCESS;
 }
 
@@ -3480,6 +3509,8 @@ static VkResult prepare_graphics_descriptor_tables(
         else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER)
             descriptor_size = sizeof(AgcGfx1013CombinedImageSamplerDescriptor);
         else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE)
+            descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
+        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE)
             descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
         else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER)
             descriptor_size = sizeof(AgcSamplerDescriptor);
@@ -3519,9 +3550,15 @@ static VkResult prepare_graphics_descriptor_tables(
                 memcpy(destination, &sampler->descriptor,
                        sizeof(sampler->descriptor));
             } else {
+                if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE) {
+                    VkResult image_result = encode_image_descriptor(
+                        value, true, destination);
+                    if (image_result != VK_SUCCESS) return image_result;
+                    continue;
+                }
                 AgcGfx1013Image2DState image_state;
-                VkResult image_result = sampled_image_state(
-                    &value->image, &image_state);
+                VkResult image_result = image_descriptor_state(
+                    &value->image, false, &image_state);
                 if (image_result != VK_SUCCESS) return image_result;
                 if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE) {
                     if (agcGfx1013Image2DDescriptorEncode(
