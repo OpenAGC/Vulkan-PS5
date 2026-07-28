@@ -195,6 +195,7 @@ FW 5.50 compute/triangle hardware gate:
 - Query qualification now uses explicit `lifecycle`, `reset`, and `full` probe
   stages. The lifecycle stage emits no query PM4 and passed FW `0x05500008` on
   2026-07-28 with the qualified triangle oracle (`green=18432`). The reset-only
-  and full begin/end stages remain hardware-unqualified; the full stage requires
-  `VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` and cannot run accidentally as part
-  of the Milestone 3 regression suite.
+  stage also passed with `green=18432`, qualifying the corrected command-reset
+  `WRITE_DATA` independently. Full begin/end remains hardware-unqualified; that
+  stage requires `VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` and cannot run
+  accidentally as part of the Milestone 3 regression suite.

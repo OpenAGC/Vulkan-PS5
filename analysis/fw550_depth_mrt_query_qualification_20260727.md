@@ -52,3 +52,9 @@ passed on FW `0x05500008` with `green=18432`; its retained log is
 `20260728T002915Z-query-lifecycle.log`. This proves the query allocation and
 host-reset lifecycle does not reproduce the hang. It does not qualify either
 the corrected reset packet or occlusion begin/end PM4.
+
+The reset probe then passed with `green=18432`; its retained log is
+`20260728T003040Z-query-reset.log`. This hardware-qualifies the corrected
+command-reset `WRITE_DATA` in isolation. Occlusion begin/end snapshots and
+`DB_COUNT_CONTROL` remain the only unqualified query packets and must be
+audited before the explicitly gated full probe is attempted.
