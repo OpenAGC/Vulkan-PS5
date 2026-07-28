@@ -28,11 +28,6 @@ case "$stage" in
         expected='^query_idle: PASS samples=0 available=1$'
         ;;
     full)
-        if [ "${VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY:-}" != YES ]; then
-            echo "full query begin/end PM4 previously hung FW 5.50" >&2
-            echo "set VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES to acknowledge the risk" >&2
-            exit 2
-        fi
         elf="$build_dir/vulkan_ps5_query_example.elf"
         expected='^query: PASS samples=[0-9]+ green=[0-9]+$'
         ;;

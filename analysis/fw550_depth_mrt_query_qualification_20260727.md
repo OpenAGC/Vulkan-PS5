@@ -74,3 +74,10 @@ responsive. This hardware-qualifies the begin/end ZPASS snapshots,
 `DB_COUNT_CONTROL` enable/disable, and EOP availability sequence when no
 rasterization occurs. Live counter increments during the qualified triangle
 draw are the sole remaining full-query hardware boundary.
+
+The full probe subsequently passed twice. Both runs returned
+`samples=18432 available=1`, exactly matching `green=18432`; retained logs are
+`20260728T003501Z-query-full.log` and
+`20260728T003511Z-query-full.log`. The console remained responsive. This
+qualifies live gfx1013 occlusion counting on FW `0x05500008`, and query was
+restored to the two-run `run_fw550_m3.sh` regression gate.

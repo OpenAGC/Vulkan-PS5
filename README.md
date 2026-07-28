@@ -87,15 +87,14 @@ query PM4. The `vulkan_ps5_query_reset_probe` adds only the corrected command
 reset `WRITE_DATA`. The `vulkan_ps5_query_idle_probe` adds occlusion begin/end
 snapshots around an empty render pass and requires an available zero result.
 The full target then counts a live draw. Run one stage explicitly; the full
-stage also requires a risk acknowledgement because an earlier unisolated query
-submission hung FW 5.50:
+stage is now part of the repeated Milestone 3 gate after passing twice on FW
+5.50. The narrower stages remain useful for packet-level regression diagnosis:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh lifecycle
 PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh reset
 PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh idle
-PS5_HOST=10.0.1.41 VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES \
-  examples/run_fw550_query_probes.sh full
+PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh full
 ```
 
 When the console is online, deploy either Prospero ELF through the foreground
@@ -108,11 +107,10 @@ PS5_HOST=10.0.1.41 examples/deploy_websrv.sh \
   build-prospero-m2/vulkan_ps5_triangle_example.elf vulkan_ps5_triangle
 ```
 
-The qualified-subset Milestone 3 runner checks websrv reachability, performs
+The Milestone 3 runner checks websrv reachability, performs
 two foreground runs of each sample, requires the exact compute, triangle,
-indexed-textured, depth, and MRT PASS oracles, and retains stdout under
-`examples/qualification-logs/`. Query probes are kept out of this runner until
-their PM4 is hardware-qualified:
+indexed-textured, depth, MRT, and query PASS oracles, and retains stdout under
+`examples/qualification-logs/`:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_m3.sh

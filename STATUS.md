@@ -199,7 +199,7 @@ FW 5.50 compute/triangle hardware gate:
   `WRITE_DATA` independently. An `idle` probe brackets no draw and expects an
   available zero result, isolating ZPASS/`DB_COUNT_CONTROL` before live sample
   counting. It passed with `samples=0 available=1`, qualifying the complete
-  begin/end/availability sequence without rasterization. Only live sample
-  counting remains hardware-unqualified; full requires
-  `VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` and cannot run accidentally as part
-  of the Milestone 3 regression suite.
+  begin/end/availability sequence without rasterization. The full live-draw
+  query then passed twice with `samples=18432 green=18432`; query is restored
+  to the repeated Milestone 3 regression suite. The staged probes remain for
+  isolating lifecycle, reset, idle-ZPASS, and live-counting regressions.

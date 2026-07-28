@@ -20,9 +20,10 @@ compute_elf="$build_dir/vulkan_ps5_compute_example.elf"
 triangle_elf="$build_dir/vulkan_ps5_triangle_example.elf"
 depth_elf="$build_dir/vulkan_ps5_depth_example.elf"
 mrt_elf="$build_dir/vulkan_ps5_mrt_example.elf"
+query_elf="$build_dir/vulkan_ps5_query_example.elf"
 indexed_textured_elf="$build_dir/vulkan_ps5_indexed_textured_example.elf"
 for elf in "$compute_elf" "$triangle_elf" "$depth_elf" \
-    "$mrt_elf" "$indexed_textured_elf"; do
+    "$mrt_elf" "$query_elf" "$indexed_textured_elf"; do
     if [ ! -f "$elf" ]; then
         echo "missing Prospero sample: $elf" >&2
         exit 2
@@ -70,6 +71,7 @@ run_sample depth "$depth_elf" \
     '^depth: PASS green=[0-9]+ red=[0-9]+ raw=[0-9]+/[0-9]+/[0-9]+$'
 run_sample mrt "$mrt_elf" \
     '^mrt: PASS target0=[0-9]+ target1=[0-9]+$'
-echo "FW550 Milestone 3 qualified subset: PASS (${run_count} each: compute, triangle, indexed-textured, depth, MRT)"
-echo "Run examples/run_fw550_query_probes.sh separately; query PM4 is not yet hardware-qualified."
+run_sample query "$query_elf" \
+    '^query: PASS samples=[0-9]+ green=[0-9]+$'
+echo "FW550 Milestone 3: PASS (${run_count} each: compute, triangle, indexed-textured, depth, MRT, query)"
 echo "logs: $log_dir"
