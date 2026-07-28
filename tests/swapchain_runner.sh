@@ -18,7 +18,8 @@ for arg do
                 'swapchain: 1800/1800 frames' \
                 'swapchain: cleanup begin' \
                 'swapchain: swapchain destroyed' \
-                'swapchain: PASS 1800 frames'
+                'swapchain: PASS 1800 frames' \
+                'swapchain: system exit app=0x16 result=0x0'
             ;;
     esac
 done
@@ -45,6 +46,7 @@ case " $* " in
     *" --pid 321 "*) ;;
     *) echo "runner did not use exact launched PID" >&2; exit 2 ;;
 esac
+printf '%s\n' "$*" >>"$FAKE_UV_LOG"
 echo "ps5debug-NG: no matching qualification process"
 EOF
 chmod +x "$test_root/bin/curl" "$test_root/bin/nc" "$test_root/bin/uv"
@@ -59,6 +61,7 @@ run_runner() {
     VULKAN_PS5_PROSPERO_BUILD="$test_root/build" \
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
+    FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_KLOG_MODE="$mode" \
         sh "$runner" >"$output" 2>&1
 }
@@ -70,10 +73,12 @@ fi
 grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
     "$test_root/clean.out" >/dev/null
 
+: >"$test_root/uv.log"
 if run_runner crash "$test_root/crash.out" "$test_root/crash-logs"; then
     echo "fatal PID-scoped klog unexpectedly passed" >&2
     exit 1
 fi
 grep -F 'scoped kernel log is not clean' "$test_root/crash.out" >/dev/null
+grep -F -- '--pid 321' "$test_root/uv.log" >/dev/null
 
 echo "swapchain runner safety gate: PASS"

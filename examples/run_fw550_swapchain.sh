@@ -48,7 +48,7 @@ kill_stale_process() {
     target_pid=$1
     uv run --project "$pyps4debug_dir" python \
         "$script_dir/ps5debug_kill_process.py" --pid "$target_pid" \
-        "$PS5_HOST" || true
+        "$PS5_HOST"
 }
 
 latest_eboot_pid() {
@@ -77,7 +77,7 @@ if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
     if [ -s "$klog" ]; then
         failed_pid=$(latest_eboot_pid "$klog")
         if [ -n "$failed_pid" ]; then
-            kill_stale_process "$failed_pid"
+            kill_stale_process "$failed_pid" || true
         fi
     fi
     sed -n '1,200p' "$log" >&2
@@ -92,10 +92,12 @@ if ! capture_klog; then
     exit 1
 fi
 sed -n '1,200p' "$log"
-if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null; then
+if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null || \
+   ! grep -E '^swapchain: system exit app=0x[0-9a-f]+ result=0x0$' \
+       "$log" >/dev/null; then
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
-        kill_stale_process "$failed_pid"
+        kill_stale_process "$failed_pid" || true
     fi
     echo "swapchain run did not produce its PASS oracle; log: $log" >&2
     exit 1
@@ -113,6 +115,7 @@ target_pid_hex=$(printf '%x' "$target_pid")
 if grep -Eq \
     "# proc ID: *${target_pid}$|mDBG: Sending signal\(pid: *${target_pid},|App Crash : PID=0x0*${target_pid_hex}([^0-9a-f]|$)|SYSTEM_XO_VIOLATION|VM resource leak" \
     "$target_klog"; then
+    kill_stale_process "$target_pid" || true
     sed -n '1,240p' "$target_klog" >&2
     echo "swapchain emitted PASS but its scoped kernel log is not clean: $target_klog" >&2
     exit 1
@@ -120,6 +123,7 @@ fi
 if ! uv run --project "$pyps4debug_dir" python \
     "$script_dir/ps5debug_kill_process.py" --assert-absent \
     --pid "$target_pid" "$PS5_HOST"; then
+    kill_stale_process "$target_pid" || true
     echo "swapchain process remained after PASS; klog: $target_klog" >&2
     exit 1
 fi

@@ -65,8 +65,9 @@ PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 
 The runner never retries automatically. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,
-XO faults, and VM leaks, and asks ps5debug-NG to prove that the exact launched
-PID no longer exists. On timeout it derives that PID from klog and asks
+XO faults, and VM leaks, requires a successful SystemService app-exit line,
+and asks ps5debug-NG to prove that the exact launched PID no longer exists. On
+timeout or a post-PASS safety failure it derives that PID from klog and asks
 ps5debug-NG to kill only that process before returning failure.
 
 The first FW 5.50 attempt stopped safely before registration: kernel evidence

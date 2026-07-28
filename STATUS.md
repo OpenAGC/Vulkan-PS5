@@ -427,4 +427,6 @@ Pending:
   recovery ELF refuses to act unless exactly one other `eboot.elf` exists. A
   new bounded run is required; no automatic retry is permitted. The runner now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
-  XO faults, and VM leaks, and requires exact-PID process absence before PASS.
+  XO faults, and VM leaks, requires an accepted SystemService app exit, and
+  requires exact-PID process absence before PASS. Post-PASS failures also
+  attempt cleanup of that exact PID.

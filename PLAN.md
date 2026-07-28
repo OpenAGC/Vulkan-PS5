@@ -180,8 +180,9 @@
   hardware qualified; the runner has no automatic retry and uses exact-PID
   ps5debug-NG cleanup only on a timeout/failure. The runner takes a bounded post-run
   klog snapshot, scopes it to the new eboot PID, rejects fatal signals, app
-  crashes, XO faults, or VM leaks, and requires ps5debug-NG to prove process
-  absence before reporting qualification PASS.
+  crashes, XO faults, or VM leaks, requires SystemService to accept the app
+  exit, and requires ps5debug-NG to prove process absence before reporting
+  qualification PASS. Post-PASS safety failures also trigger exact-PID cleanup.
   Exhausted acquisition now waits against a monotonic deadline instead of
   returning early, while present releases the swapchain lock during the
   bounded VSYNC wait. A host regression holds all three images, presents one
