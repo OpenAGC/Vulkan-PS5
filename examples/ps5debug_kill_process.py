@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded ps5debug-NG process checks for a named qualification process."""
+"""Bounded ps5debug-NG checks for an exact qualification PID or name."""
 
 import argparse
 import asyncio
@@ -14,15 +14,24 @@ async def main() -> int:
         action="store_true",
         help="fail if a matching process remains instead of killing it",
     )
+    parser.add_argument("--pid", type=int, help="match this exact process ID")
     parser.add_argument("host")
-    parser.add_argument("name")
+    parser.add_argument("name", nargs="?", help="match this exact process name")
     args = parser.parse_args()
+    if args.pid is None and args.name is None:
+        parser.error("provide --pid or name")
 
     client = PS4Debug(args.host, timeout=5.0)
     processes = await asyncio.wait_for(client.get_processes(), timeout=8.0)
-    matches = [process for process in processes if args.name in process.name]
+    matches = [
+        process
+        for process in processes
+        if (args.pid is not None and process.pid == args.pid)
+        or (args.pid is None and process.name == args.name)
+    ]
+    description = f"pid {args.pid}" if args.pid is not None else repr(args.name)
     if not matches:
-        print(f"ps5debug-NG: no process matching {args.name!r}")
+        print(f"ps5debug-NG: no process matching {description}")
         return 0
     if len(matches) != 1:
         print(f"ps5debug-NG: refusing ambiguous match: {matches}")

@@ -41,6 +41,10 @@ EOF
 
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
+case " $* " in
+    *" --pid 321 "*) ;;
+    *) echo "runner did not use exact launched PID" >&2; exit 2 ;;
+esac
 echo "ps5debug-NG: no matching qualification process"
 EOF
 chmod +x "$test_root/bin/curl" "$test_root/bin/nc" "$test_root/bin/uv"

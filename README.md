@@ -47,10 +47,12 @@ events, bounded waits, and teardown remain inside OpenAGC.
 
 `vulkan_ps5_swapchain_example` uses only standard Vulkan calls and runs 1,800
 acquire/submit/present frames with binary semaphores and a fence. Its host run,
-the eight-test ICD suite, runner safety simulation, and Validation Layers pass;
-its Prospero ELF links
-with `-lunwind -lc++abi -lc++ -lm`. Run exactly one bounded FW 5.50 gate after
-an explicit console-availability signal:
+the nine-test ICD suite, runner safety simulation, and Validation Layers pass;
+its Prospero ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`.
+The current candidate SHA-256 is
+`8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
+Run exactly one bounded FW 5.50 gate after an explicit console-availability
+signal:
 
 Finite image-acquisition timeouts use a monotonic deadline. The WSI regression
 also exhausts all three images, releases one from a delayed presentation
@@ -63,9 +65,9 @@ PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 
 The runner never retries automatically. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,
-XO faults, and VM leaks, and asks ps5debug-NG to prove that no matching process
-remains. On timeout it asks ps5debug-NG to kill only the matching qualification
-process before returning failure.
+XO faults, and VM leaks, and asks ps5debug-NG to prove that the exact launched
+PID no longer exists. On timeout it derives that PID from klog and asks
+ps5debug-NG to kill only that process before returning failure.
 
 The first FW 5.50 attempt stopped safely before registration: kernel evidence
 showed that byte verification touched the execute-only VideoOut text page
@@ -77,11 +79,17 @@ hardware-proven teardown order (close VideoOut, then delete its equeue), and the
 sample emits PASS only after swapchain, device, surface, and instance cleanup.
 The corrected run completed those cleanup checkpoints, but returning from the
 Prospero ELF entrypoint then jumped back into `main` (`RIP 0x4000bb`,
-`main+0xbb`) and caused SIGSEGV. A subsequent `thr_exit` candidate completed
-Vulkan cleanup without a surviving process, but did not complete hbldr's HTTP
-request. The Prospero sample now flushes output and uses libc's process-level
-`exit`; host builds still return normally. That correction requires one new
-bounded hardware run.
+`main+0xbb`) and caused SIGSEGV. Subsequent `thr_exit` and libc `exit`
+candidates completed Vulkan cleanup but left hbldr or the raw-ELF application
+lifecycle incomplete; the libc run (`20260728T060157Z-swapchain-run1.log`)
+left PID 145/app ID `0x16` owning a black screen. A guarded recovery payload
+called `sceSystemServiceKillApp` for that app and restored the home screen,
+which was confirmed visually. The Prospero sample now resolves its app ID with
+`sceSystemServiceGetAppStatus`, requests SystemService termination after all
+Vulkan cleanup, and keeps the main thread alive until the system completes it.
+`vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
+to act unless exactly one other `eboot.elf` exists. One new bounded hardware
+run is required.
 
 ## Standalone compute and triangle samples
 

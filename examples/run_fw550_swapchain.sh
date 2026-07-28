@@ -45,9 +45,15 @@ if ! curl -sS --connect-timeout 3 --max-time 5 \
 fi
 
 kill_stale_process() {
+    target_pid=$1
     uv run --project "$pyps4debug_dir" python \
-        "$script_dir/ps5debug_kill_process.py" "$PS5_HOST" \
-        vulkan_ps5_swa || true
+        "$script_dir/ps5debug_kill_process.py" --pid "$target_pid" \
+        "$PS5_HOST" || true
+}
+
+latest_eboot_pid() {
+    sed -n 's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*/\1/p' "$1" | \
+        tail -n 1
 }
 
 mkdir -p "$log_dir"
@@ -67,8 +73,13 @@ capture_klog() {
 echo "FW550 swapchain run 1/1"
 if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
     "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
-    kill_stale_process
     capture_klog || true
+    if [ -s "$klog" ]; then
+        failed_pid=$(latest_eboot_pid "$klog")
+        if [ -n "$failed_pid" ]; then
+            kill_stale_process "$failed_pid"
+        fi
+    fi
     sed -n '1,200p' "$log" >&2
     if [ -s "$klog" ]; then
         sed -n '1,240p' "$klog" >&2
@@ -82,13 +93,15 @@ if ! capture_klog; then
 fi
 sed -n '1,200p' "$log"
 if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null; then
-    kill_stale_process
+    failed_pid=$(latest_eboot_pid "$klog")
+    if [ -n "$failed_pid" ]; then
+        kill_stale_process "$failed_pid"
+    fi
     echo "swapchain run did not produce its PASS oracle; log: $log" >&2
     exit 1
 fi
 
-target_pid=$(sed -n \
-    's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*/\1/p' "$klog" | tail -n 1)
+target_pid=$(latest_eboot_pid "$klog")
 if [ -z "$target_pid" ]; then
     echo "kernel log did not identify the launched eboot PID; klog: $klog" >&2
     exit 1
@@ -106,7 +119,7 @@ if grep -Eq \
 fi
 if ! uv run --project "$pyps4debug_dir" python \
     "$script_dir/ps5debug_kill_process.py" --assert-absent \
-    "$PS5_HOST" vulkan_ps5_swa; then
+    --pid "$target_pid" "$PS5_HOST"; then
     echo "swapchain process remained after PASS; klog: $target_klog" >&2
     exit 1
 fi

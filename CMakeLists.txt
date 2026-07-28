@@ -390,6 +390,16 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(${example_target} PRIVATE vulkan_ps5_static)
   endforeach()
+  if(PROSPERO)
+    target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)
+    add_executable(vulkan_ps5_process_cleanup examples/process_cleanup/main.c)
+    set_target_properties(vulkan_ps5_process_cleanup PROPERTIES SUFFIX ".elf")
+    target_compile_features(vulkan_ps5_process_cleanup PRIVATE c_std_11)
+    target_compile_options(vulkan_ps5_process_cleanup PRIVATE
+      -Wall -Wextra -Wpedantic)
+    target_link_libraries(vulkan_ps5_process_cleanup PRIVATE
+      kernel_sys SceSystemService unwind c++abi c++ m)
+  endif()
 endif()
 
 install(TARGETS vulkan_ps5_static EXPORT VulkanPS5Targets

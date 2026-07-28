@@ -149,12 +149,12 @@
   FIFO mode, allocate three direct write-combined scanout images, and route all
   firmware patching, registration, event queues, bounded flip waits, and
   teardown through OpenAGC. The direct WSI test covers exhaustion,
-  synchronization, device groups, and recreation; all eight ICD tests, the
+  synchronization, device groups, and recreation; all nine ICD tests, the
   runner safety simulation, and the WSI-enabled VVL test pass without messages.
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
-  `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `889e55737b7ac386f025a4f6084bdf7ba36a44faee5fcfd8cdc91839b7f86347`.
+  `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
+  `8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -168,13 +168,17 @@
   flip-event deletion. The sample now prints PASS only after all Vulkan cleanup
   completes. The next bounded run reached all cleanup checkpoints and printed
   PASS, but returning from the ELF entrypoint jumped to `main+0xbb` and caused
-  SIGSEGV. A subsequent `thr_exit` candidate completed Vulkan cleanup and left
-  no process, but hbldr's HTTP request remained open until its 60-second bound.
-  The Prospero sample now flushes output and uses libc's process-level `exit`;
-  host builds keep their normal return path. One new bounded run remains before
-  this milestone
-  is hardware qualified; the runner has no automatic retry and uses ps5debug-NG
-  cleanup only on a timeout/failure. The runner now takes a bounded post-run
+  SIGSEGV. Subsequent `thr_exit` and libc `exit` candidates completed Vulkan
+  cleanup but did not release the raw-ELF application lifecycle. The libc run
+  (`20260728T060157Z-swapchain-run1.log`) left PID 145/app ID `0x16` on a black
+  screen. A guarded `sceSystemServiceKillApp` recovery restored the home screen
+  and was visually confirmed. The sample now resolves its app ID through
+  `sceSystemServiceGetAppStatus`, requests app-level termination only after
+  Vulkan cleanup, and remains alive until SystemService finishes the teardown.
+  A separately built recovery payload refuses to act unless exactly one other
+  `eboot.elf` exists. One new bounded run remains before this milestone is
+  hardware qualified; the runner has no automatic retry and uses exact-PID
+  ps5debug-NG cleanup only on a timeout/failure. The runner takes a bounded post-run
   klog snapshot, scopes it to the new eboot PID, rejects fatal signals, app
   crashes, XO faults, or VM leaks, and requires ps5debug-NG to prove process
   absence before reporting qualification PASS.

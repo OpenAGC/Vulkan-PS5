@@ -390,14 +390,15 @@ Implemented:
 - OpenAGC owns the FW 5.50 linear-registration patch, immediate byte-verified
   restoration, VideoOut registration, flip equeue, and deterministic teardown.
 - Direct host WSI tests cover enumeration, `VK_INCOMPLETE`, exhaustion,
-  acquire/present synchronization, device groups, and recreation. All eight ICD
+  acquire/present synchronization, device groups, and recreation. All nine ICD
   tests, the runner safety simulation, and the WSI-enabled Validation Layers
   test pass with zero messages.
   The WSI test also releases an image from a delayed presentation thread and
   proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
-  ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `889e55737b7ac386f025a4f6084bdf7ba36a44faee5fcfd8cdc91839b7f86347`.
+  ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate
+  SHA-256 is
+  `8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
 
 Pending:
 
@@ -416,9 +417,14 @@ Pending:
   caused SIGSEGV plus a `0x4000` VM resource leak. The `thr_exit` candidate
   (`20260728T055807Z-swapchain-run1.log`) then completed 1,800 frames and Vulkan
   teardown with no process left behind, but hbldr's HTTP request timed out after
-  60 seconds. The console remained responsive and no retry occurred. The
-  Prospero sample now flushes output and uses libc's process-level `exit`; host
-  builds still return normally. A new bounded run is required; no automatic
-  retry is permitted. The runner now takes a post-run PID-scoped klog snapshot,
-  rejects fatal signals, app crashes, XO faults, and VM leaks, and requires a
-  ps5debug-NG process-absence check before its final PASS.
+  60 seconds. The following libc `exit` candidate
+  (`20260728T060157Z-swapchain-run1.log`) also completed 1,800 frames and Vulkan
+  teardown but left PID 145/app ID `0x16` owning a black screen. A guarded
+  `sceSystemServiceKillApp` recovery removed that application and restored the
+  home screen, confirmed visually. The sample now resolves its app ID through
+  `sceSystemServiceGetAppStatus`, requests app-level termination after Vulkan
+  cleanup, and keeps the main thread alive until SystemService finishes. A
+  recovery ELF refuses to act unless exactly one other `eboot.elf` exists. A
+  new bounded run is required; no automatic retry is permitted. The runner now
+  takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
+  XO faults, and VM leaks, and requires exact-PID process absence before PASS.

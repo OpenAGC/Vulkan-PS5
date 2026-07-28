@@ -2,9 +2,36 @@
 
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 enum { FRAME_COUNT = 1800, IMAGE_COUNT = 3 };
+
+#ifdef OPENAGC_PROSPERO
+int sceKernelUsleep(unsigned int microseconds);
+int sceSystemServiceGetAppStatus(void *status);
+int sceSystemServiceKillApp(int app_id, int how, int reason, int core_dump);
+
+static void terminate_prospero_app(void) {
+    uint32_t status[0x100 / sizeof(uint32_t)] = {0};
+    const int status_result = sceSystemServiceGetAppStatus(status);
+    uint32_t app_id = status[2];
+    if (app_id < 0x10u || app_id == UINT32_MAX)
+        app_id = status[0];
+    if (status_result != 0 || app_id < 0x10u || app_id == UINT32_MAX) {
+        printf("swapchain: cannot resolve system app (status=0x%x)\n",
+               status_result);
+        fflush(NULL);
+        for (;;)
+            sceKernelUsleep(250000);
+    }
+
+    const int kill_result = sceSystemServiceKillApp((int)app_id, 0, 0, 0);
+    printf("swapchain: system exit app=0x%x result=0x%x\n",
+           app_id, kill_result);
+    fflush(NULL);
+    for (;;)
+        sceKernelUsleep(250000);
+}
+#endif
 
 #define REQUIRE(call) do { \
     result = (call); \
@@ -212,11 +239,9 @@ cleanup:
     if (instance) vkDestroyInstance(instance, NULL);
     if (result == VK_SUCCESS)
         printf("swapchain: PASS %u frames\n", FRAME_COUNT);
-    const int exit_code = result == VK_SUCCESS ? 0 : 1;
 #ifdef OPENAGC_PROSPERO
-    fflush(NULL);
-    exit(exit_code);
+    terminate_prospero_app();
 #else
-    return exit_code;
+    return result == VK_SUCCESS ? 0 : 1;
 #endif
 }
