@@ -574,10 +574,19 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   and loader/VVL variants pass with deterministic zero-allocation teardown.
   The complete host suite is now 17/17. The Prospero VMA candidate builds as a
   PIE with the exported `-lunwind -lc++abi -lc++ -lm` dependencies and SHA-256
-  `3d92ae5a6a37161ef6485ed74052849ea7f23dd8e190405d03ffdece97c061d8`.
+  `8c7d669a9bef3acfcb1054eeb0327e4d51d645338374fa1202a9e640dd5f2871`.
   Its bounded one-shot runner has clean/crash safety coverage, exact-PID fatal
-  checks and cleanup, and post-run websrv validation. Hardware execution is
-  still pending a fresh explicit FW 5.50 gate.
+  checks and cleanup, and post-run websrv validation. The first FW 5.50 run
+  printed the complete PASS oracle before normal C++ return/exit dispatch
+  faulted at `RIP 0x4000bb` (PID 154). The probe now flushes PASS and requests
+  application-level SystemService termination, matching the already qualified
+  raw-ELF lifecycle without running that broken destructor path. The next
+  single bounded run passed every allocation oracle, removed exact PID 155,
+  left websrv responsive, and emitted only the established raw-ELF `0x4000`
+  warning. Evidence is retained in
+  `20260728T075658Z-eden-vma-run1-target.klog` and
+  `20260728T075920Z-eden-vma-run1.log`; VMA runtime allocation patterns are
+  hardware-qualified at this scope.
 - The hidden sampler-anisotropy path now validates the Vulkan 1x-16x range,
   switches point/linear requests to gfx1013 anisotropic filter modes, and
   encodes the quantized maximum with OpenAGC's typed descriptor helper. Direct

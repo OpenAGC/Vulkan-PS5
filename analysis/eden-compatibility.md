@@ -70,7 +70,7 @@ does not turn a failed requirement into support.
 
 | Area | Current evidence | State |
 | --- | --- | --- |
-| VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; a Prospero PIE and bounded runner are prepared | Host/VVL pass; one fresh-console Prospero run pending |
+| VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
 | Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
@@ -90,12 +90,7 @@ does not turn a failed requirement into support.
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
    semantics are implemented and host-tested but still need a deterministic
    hardware filtering gate before promotion.
-3. Run the prepared standalone VMA consumer once on a fresh FW 5.50 console.
-   Its direct and loader/VVL host modes already match Eden's externally
-   synchronized dynamic allocator, all four buffer policies, images, manual
-   bind, and suballocation; the one-shot runner scopes crash checks and cleanup
-   to the deployed PID.
-4. Expand qualified uncompressed and BC format support, with D24 fallback kept
+3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
-5. Add only the allowed Eden changes: Prospero surface creation, build/link
+4. Add only the allowed Eden changes: Prospero surface creation, build/link
    integration, and static Vulkan entrypoint location.

@@ -496,7 +496,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       target_include_directories(vulkan_ps5_eden_vma_probe PRIVATE
         "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include")
       target_link_libraries(vulkan_ps5_eden_vma_probe PRIVATE
-        vulkan_ps5_static)
+        vulkan_ps5_static SceSystemService)
     endif()
   endif()
 endif()

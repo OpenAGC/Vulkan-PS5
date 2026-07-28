@@ -299,10 +299,14 @@
   suite is 17/17. A Prospero VMA consumer now builds and links through the
   exported ICD dependencies, including `-lunwind -lc++abi -lc++ -lm`; its
   SHA-256 is
-  `3d92ae5a6a37161ef6485ed74052849ea7f23dd8e190405d03ffdece97c061d8`.
-  The bounded one-shot runner has clean/crash coverage and exact-PID cleanup.
-  One fresh-console FW 5.50 run remains before treating the runtime portion as
-  hardware-qualified.
+  `8c7d669a9bef3acfcb1054eeb0327e4d51d645338374fa1202a9e640dd5f2871`.
+  The first hardware attempt completed every VMA oracle, then exposed the raw
+  Prospero C++ return-path fault at `RIP 0x4000bb`. The probe now terminates
+  through application-level SystemService after flushing PASS, bypassing that
+  broken destructor-dispatch path. Its next single bounded FW 5.50 run passed,
+  removed exact PID 155, kept websrv responsive, and contained only the proven
+  raw-ELF `0x4000` warning. The Eden allocator runtime patterns are therefore
+  hardware-qualified at this scope.
   Sampler anisotropy now has complete hidden-path descriptor semantics without
   premature advertisement. Vulkan validates the enabled ratio against the
   reported 1x-16x range, selects gfx1013 anisotropic point/linear filter modes,

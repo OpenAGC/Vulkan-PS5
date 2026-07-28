@@ -10,6 +10,37 @@
 #include <cstdio>
 #include <cstring>
 
+#if defined(OPENAGC_PROSPERO)
+extern "C" int sceSystemServiceGetAppStatus(void *status);
+extern "C" int sceSystemServiceKillApp(
+    int app_id, int how, int reason, int core_dump);
+extern "C" int sceKernelUsleep(unsigned int microseconds);
+
+[[noreturn]] static void prospero_clean_exit()
+{
+    uint32_t status[0x100 / sizeof(uint32_t)]{};
+    const int status_result = sceSystemServiceGetAppStatus(status);
+    uint32_t app_id = status[2];
+    if (app_id < 0x10u || app_id == UINT32_MAX)
+        app_id = status[0];
+    if (status_result != 0 || app_id < 0x10u || app_id == UINT32_MAX) {
+        std::printf("eden-vma: clean-exit status failure result=0x%x app=0x%x\n",
+                    status_result, app_id);
+        std::fflush(nullptr);
+        for (;;)
+            sceKernelUsleep(1000000);
+    }
+
+    std::fflush(nullptr);
+    const int result = sceSystemServiceKillApp((int)app_id, 0, 0, 0);
+    std::printf("eden-vma: clean-exit unexpectedly returned result=0x%x\n",
+                result);
+    std::fflush(nullptr);
+    for (;;)
+        sceKernelUsleep(1000000);
+}
+#endif
+
 struct BufferAllocation {
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -291,5 +322,8 @@ int main()
         "eden-vma: PASS VMA=%u.%u.%u dynamic-functions upload download stream device-local image manual-bind suballocation\n",
         VK_VERSION_MAJOR(VMA_VERSION), VK_VERSION_MINOR(VMA_VERSION),
         VK_VERSION_PATCH(VMA_VERSION));
+#if defined(OPENAGC_PROSPERO)
+    prospero_clean_exit();
+#endif
     return 0;
 }
