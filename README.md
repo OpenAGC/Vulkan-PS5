@@ -11,10 +11,10 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
-The current profile has 11 hard feature gaps. The latest closure is core
-`shaderCullDistance`: the FW 5.50 gate proves that an all-negative primitive is
-discarded while a separate positive-distance control remains, through the
-normal legacy feature-query/device-enable path.
+The current profile has 10 hard feature gaps. The latest closure is core
+`shaderImageGatherExtended`: the FW 5.50 gate proves four constant gather
+offsets through an exact-white checkerboard readback, using the normal legacy
+feature-query/device-enable path.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.

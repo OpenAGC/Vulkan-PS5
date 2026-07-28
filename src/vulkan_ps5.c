@@ -557,6 +557,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->samplerAnisotropy = VK_TRUE;
     features->shaderClipDistance = VK_TRUE;
     features->shaderCullDistance = VK_TRUE;
+    features->shaderImageGatherExtended = VK_TRUE;
     features->tessellationShader = VK_TRUE;
     features->wideLines = VK_TRUE;
 }

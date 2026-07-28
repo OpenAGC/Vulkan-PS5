@@ -23,13 +23,22 @@
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
 #endif
+#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+#include "vulkan_ps5_image_gather_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_image_gather_frag_spv
+#else
 #include "vulkan_ps5_indexed_textured_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_indexed_textured_frag_spv
+#endif
 
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
-#ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
+#ifdef VULKAN_PS5_IMAGE_GATHER_PROBE
+#define SAMPLE_NAME "shader_image_gather_extended"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
 #define SAMPLE_NAME "vertex_divisor"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
@@ -123,7 +132,17 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.shaderImageGatherExtended) {
+        printf("shader_image_gather_extended: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .shaderImageGatherExtended = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
     VkPhysicalDeviceShaderDrawParametersFeatures supported_draw_parameters = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
     };
@@ -201,7 +220,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
+#if defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
+        .pEnabledFeatures = &enabled_features,
+#elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
         .enabledExtensionCount = 1u,
         .ppEnabledExtensionNames = device_extensions,
 #elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
@@ -787,7 +808,18 @@ int main(void)
         TARGET_WIDTH / 2u];
 #endif
     int status = 0;
-#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+#ifdef VULKAN_PS5_IMAGE_GATHER_PROBE
+    if (covered != 18432u || opaque != covered || distinct_count != 1u ||
+        center != 0xffffffffu || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("shader_image_gather_extended: mismatch covered=%u opaque=%u colors=%u center=%08x\n",
+            covered, opaque, distinct_count, center);
+        status = 1;
+    } else {
+        printf("shader_image_gather_extended: PASS covered=%u center=%08x offsets=4\n",
+            covered, center);
+    }
+#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
     uint32_t green = 0u, blue = 0u, red = 0u, white = 0u, unexpected = 0u;
     uint32_t left_green = 0u, right_green = 0u;
     for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {

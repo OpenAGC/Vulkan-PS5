@@ -172,6 +172,7 @@ int main(void) {
     assert(features2.features.samplerAnisotropy == VK_TRUE);
     assert(features2.features.shaderClipDistance == VK_TRUE);
     assert(features2.features.shaderCullDistance == VK_TRUE);
+    assert(features2.features.shaderImageGatherExtended == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
     assert(features2.features.wideLines == VK_TRUE);
 
@@ -214,6 +215,7 @@ int main(void) {
     assert(features.samplerAnisotropy == VK_TRUE);
     assert(features.shaderClipDistance == VK_TRUE);
     assert(features.shaderCullDistance == VK_TRUE);
+    assert(features.shaderImageGatherExtended == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     assert(features.wideLines == VK_TRUE);
     features.depthBiasClamp = VK_FALSE;
@@ -229,6 +231,7 @@ int main(void) {
     features.samplerAnisotropy = VK_FALSE;
     features.shaderClipDistance = VK_FALSE;
     features.shaderCullDistance = VK_FALSE;
+    features.shaderImageGatherExtended = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     features.wideLines = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
@@ -314,6 +317,7 @@ int main(void) {
             .samplerAnisotropy = VK_TRUE,
             .shaderClipDistance = VK_TRUE,
             .shaderCullDistance = VK_TRUE,
+            .shaderImageGatherExtended = VK_TRUE,
             .tessellationShader = VK_TRUE,
             .wideLines = VK_TRUE,
         },
@@ -369,6 +373,7 @@ int main(void) {
         .samplerAnisotropy = VK_TRUE,
         .shaderClipDistance = VK_TRUE,
         .shaderCullDistance = VK_TRUE,
+        .shaderImageGatherExtended = VK_TRUE,
         .wideLines = VK_TRUE,
     };
     VkDeviceCreateInfo legacy_geometry_device_info = device_info;

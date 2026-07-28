@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 18 mandatory feature bits are true | 11 gaps |
+| Core/Features2 | 29 mandatory feature bits | 19 mandatory feature bits are true | 10 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,13 +63,13 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=11 limits=0 queues=0 total=11
+eden-profile: extensions=0 features=10 limits=0 queues=0 total=10
 ```
 
-The 11 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
+The 10 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
 `imageCubeArray`, `multiViewport`, `robustBufferAccess`,
-`sampleRateShading`, `shaderImageGatherExtended`,
-`shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
+`sampleRateShading`, `shaderStorageImageWriteWithoutFormat`,
+`vertexPipelineStoresAndAtomics`,
 `variablePointers`, and
 `variablePointersStorageBuffer`.
 
@@ -262,6 +262,20 @@ SystemService self-exit, no stale process, and only the known single
 `amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
 `82ffa08623bf7632635c0009f51b439f4ae861d699c5b052cebc9bf1343dcabf`.
 
+The core `shaderImageGatherExtended` contract is implemented and
+hardware-qualified. Legacy and Features2 queries report it, and device
+creation accepts the core feature request. The fragment probe executes
+`textureGatherOffsets` with four constant offsets over a checkerboard; the
+offsets make all four gathered red components select the same red texel, so
+the only valid covered result is opaque white. Both 31/31 host suites, runner
+safety coverage, and the complete Prospero build pass. The corrected internal
+gate (`20260728T125800Z-shader-image-gather-run1.log`) and final public legacy
+query/request gate (`20260728T130045Z-shader-image-gather-run1.log`) each
+reported exact `covered=18432 center=ffffffff offsets=4`, matching
+SystemService self-exit, no stale process, and only the known single
+`amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
+`de628e54eb7929f484715b0bec441fe8501ccf3c5560c1f01f3479926a2aa679`.
+
 ## Runtime compatibility
 
 | Area | Current evidence | State |
@@ -294,7 +308,7 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    Typed OpenAGC topology/primitive-size state and exact readback have also
    qualified `largePoints`, static/dynamic `wideLines`, fragment demote with
    post-demote derivative participation, vertex-generated clip distance, and
-   primitive cull distance.
+   primitive cull distance, and four-offset extended image gather.
    Indirect draw recording is no longer a stub. Compiler metadata includes
    DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
    packets. The earlier submission fault was the zero-initialized non-indexed

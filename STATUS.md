@@ -430,6 +430,21 @@ Implemented and host-verified:
   the exact oracle, clean SystemService self-exit, exact-PID absence, and only
   the known single `amount=0x4000` baseline warning. Public ELF SHA-256 is
   `82ffa08623bf7632635c0009f51b439f4ae861d699c5b052cebc9bf1343dcabf`.
+- Core `shaderImageGatherExtended` is reported through legacy and Features2
+  queries and accepted at device creation. The fragment probe uses
+  `textureGatherOffsets` with four constant offsets over a nearest-filtered,
+  clamp-to-edge checkerboard. Correct extended-gather lowering redirects all
+  four red components to the same red texel, producing exactly 18,432 opaque
+  white pixels with center `0xffffffff` and no other color. Both 31/31 normal
+  and ASAN/UBSAN suites pass, as does the complete Prospero build with
+  `-lunwind -lc++abi -lc++ -lm`. The first internal run
+  (`20260728T125653Z-shader-image-gather-run1.log`) already produced the exact
+  pixels but exposed a verifier-label placement error; the corrected internal
+  gate (`20260728T125800Z-shader-image-gather-run1.log`) and final public
+  query/request gate (`20260728T130045Z-shader-image-gather-run1.log`) passed
+  the exact oracle, clean SystemService self-exit, exact-PID absence, and only
+  the known single `amount=0x4000` baseline warning. Public ELF SHA-256 is
+  `de628e54eb7929f484715b0bec441fe8501ccf3c5560c1f01f3479926a2aa679`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
