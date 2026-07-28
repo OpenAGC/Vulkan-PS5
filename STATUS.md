@@ -289,7 +289,7 @@ Implemented and host-verified:
   A standalone bounded probe requires opaque green on the disabled target and
   half-intensity magenta (`0x7f7f007f` or `0x80800080`, the two legal 8-bit
   UNORM tie results) on the constant-factor target, then
-  exits through SystemService. Both host suites pass 23/23. Its current
+  exits through SystemService. Both host suites pass 24/24. Its current
   diagnostic Prospero ELF SHA-256 is
   `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`,
   and `independentBlend` remains false. The first bounded run reached the
@@ -306,7 +306,7 @@ Implemented and host-verified:
   `VK_DYNAMIC_STATE_DEPTH_BIAS`, `vkCmdSetDepthBias` records command-local
   state, and OpenAGC emits exact D16/D32 format scaling plus clamp and
   front/back slope/constant registers. Exact PM4 and pipeline regressions pass
-  in both 23/23 host suites. The bounded depth-bias-clamp probe uses an
+  in both 24/24 host suites. The bounded depth-bias-clamp probe uses an
   oversized constant with a 0.125 clamp and requires D32 values 0.375 and
   0.875 instead of the unbiased 0.25 and 0.75, followed by the shared
   matching-self-kill lifecycle. The Prospero ELF links
@@ -320,7 +320,7 @@ Implemented and host-verified:
   through OpenAGC's exact `0x0c080000` clip-control mask.
   The established depth sample shader now uses 0.25/0.75 instead of
   -0.5/0.5, preserving its raw D32 oracle under correct Vulkan clip space.
-  Exact PM4 and pipeline regressions pass in both 23/23 host suites. The
+  Exact PM4 and pipeline regressions pass in both 24/24 host suites. The
   bounded depth-clamp probe requires a negative-Z green triangle at exact D32
   zero and a normal red control at exact 0.25, followed by the shared
   matching-self-kill lifecycle. The Prospero ELF links
@@ -332,6 +332,18 @@ Implemented and host-verified:
   enabling Vulkan clip control. OpenAGC `c0dd5b4` fixes that double transform;
   exact Vulkan-PS5 PM4 regression coverage locks the corrected values. Public
   `depthClamp` remains false until one corrected bounded FW 5.50 run passes.
+- Static logic operations are host-complete for baseline, indexed, indirect,
+  geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
+  to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
+  while logic state is active, and disabled logic state restores COPY. Pipeline
+  rejection and exact XOR `CB_COLOR_CONTROL=0x00660010` regressions pass in both
+  24/24 host suites. The bounded probe initializes mapped RGBA8 pixels to
+  `0x55aa33cc`, draws green with XOR, and requires exact `0xaaaacccc` triangle
+  coverage plus unchanged background through the shared matching-self-kill
+  lifecycle. Its Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
+  SHA-256
+  `a60b0210dbe5836ffb0ed30082c6fc33ddfc0ff80cab9d9a60e172c7746d83b7`.
+  Public `logicOp` remains false until one bounded FW 5.50 run passes.
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50
@@ -602,7 +614,7 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   two and rejects zero. Legacy EXT and promoted property queries report
   `UINT32_MAX` for the nonzero compiler range; Features2 explicitly returns
   both divisor feature bits false, and device creation rejects either bit.
-  Both 23/23 normal and ASAN/UBSAN suites, openagc-psbc host tests, and both
+  Both 24/24 normal and ASAN/UBSAN suites, openagc-psbc host tests, and both
   Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains unadvertised
   until deterministic hardware readback qualifies it.
 - The bounded vertex-divisor hardware candidate is ready. It draws four
@@ -611,7 +623,7 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   blue and vertex-rate handling produces multiple colors. The runner permits
   one launch, scopes fatal klog checks and cleanup to the exact PID, proves
   post-return absence and websrv availability, and accepts only the established
-  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 23 host
+  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 24 host
   tests pass; the Prospero candidate SHA-256 is
   `7105fbd6960cf97ac12e7e66bed5a34d71310a715aaea615bd8210d3aaea8c49`.
 - Eden's actual VMA allocation model is now covered by a configurable,

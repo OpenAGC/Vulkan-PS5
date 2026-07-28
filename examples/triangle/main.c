@@ -6,7 +6,10 @@
 
 #include "vulkan_ps5_triangle_frag_spv.h"
 #include "vulkan_ps5_triangle_vert_spv.h"
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "logic_op"
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
 #include "vulkan_ps5_tess_control_spv.h"
 #include "vulkan_ps5_tess_evaluation_spv.h"
 #define SAMPLE_LABEL "tessellation"
@@ -20,6 +23,8 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 #define GREEN_RGBA8 0xff00ff00u
+#define LOGIC_BACKGROUND_RGBA8 0x55aa33ccu
+#define LOGIC_XOR_RGBA8 0xaaaaccccu
 
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
 typedef struct TessellationHullProbe {
@@ -205,7 +210,13 @@ int main(void)
     VK_CHECK(vkAllocateMemory(device, &memory_info, NULL, &memory));
     VK_CHECK(vkBindImageMemory(device, image, memory, 0));
     VK_CHECK(vkMapMemory(device, memory, 0, requirements.size, 0, &mapped));
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+    for (size_t word = 0u;
+         word < requirements.size / sizeof(uint32_t); ++word)
+        ((uint32_t *)mapped)[word] = LOGIC_BACKGROUND_RGBA8;
+#else
     memset(mapped, 0, (size_t)requirements.size);
+#endif
     const VkMappedMemoryRange mapped_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .memory = memory,
@@ -477,6 +488,10 @@ int main(void)
     };
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+        .logicOpEnable = VK_TRUE,
+        .logicOp = VK_LOGIC_OP_XOR,
+#endif
         .attachmentCount = 1,
         .pAttachments = &blend_attachment,
     };
@@ -577,12 +592,24 @@ int main(void)
 
     const uint32_t *pixels = mapped;
     uint32_t green_count = 0;
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+    uint32_t background_count = 0;
+#endif
     uint32_t unexpected_count = 0;
     for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+        if (pixels[i] == LOGIC_XOR_RGBA8)
+            ++green_count;
+        else if (pixels[i] == LOGIC_BACKGROUND_RGBA8)
+            ++background_count;
+        else
+            ++unexpected_count;
+#else
         if (pixels[i] == GREEN_RGBA8)
             ++green_count;
         else if (pixels[i] != 0u)
             ++unexpected_count;
+#endif
     }
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
@@ -651,7 +678,13 @@ int main(void)
     image_ok = green_count == 0u && unexpected_count == 0u && center == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
 #else
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_LOGIC_OP_PROBE)
+    image_ok = green_count >= 16000u && green_count <= 21000u &&
+        background_count + green_count == TARGET_WIDTH * TARGET_HEIGHT &&
+        unexpected_count == 0u && center == LOGIC_XOR_RGBA8 &&
+        pixels[0] == LOGIC_BACKGROUND_RGBA8 &&
+        pixels[TARGET_WIDTH - 1u] == LOGIC_BACKGROUND_RGBA8;
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     image_ok = green_count >= 6000u && green_count <= 8500u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
@@ -686,6 +719,9 @@ int main(void)
         printf("query: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
             query_result, (unsigned long long)query_data[0],
             (unsigned long long)query_data[1], green_count, unexpected_count);
+#elif defined(VULKAN_PS5_LOGIC_OP_PROBE)
+        printf("logic_op: mismatch xor=%u background=%u unexpected=%u center=%08x\n",
+            green_count, background_count, unexpected_count, center);
 #else
         printf(SAMPLE_LABEL ": mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
@@ -703,6 +739,9 @@ int main(void)
 #elif defined(VULKAN_PS5_QUERY_SAMPLE)
         printf("query: PASS samples=%llu green=%u\n",
             (unsigned long long)query_data[0], green_count);
+#elif defined(VULKAN_PS5_LOGIC_OP_PROBE)
+        printf("logic_op: PASS xor=%u background=%u center=%08x\n",
+            green_count, background_count, center);
 #else
         printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);
 #endif
@@ -738,5 +777,8 @@ int main(void)
     vkFreeMemory(device, memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(OPENAGC_PROSPERO) && defined(VULKAN_PS5_LOGIC_OP_PROBE)
+    vulkan_ps5_system_service_exit(SAMPLE_LABEL);
+#endif
     return status;
 }

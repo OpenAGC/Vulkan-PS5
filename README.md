@@ -63,7 +63,7 @@ non-indexed DrawID pipelines into single packets and is host-checked for stable
 BaseVertex/BaseInstance register locations, the exact DrawIndex `0,0,1,0,1`
 sequence, and indexed/non-indexed initiators. PM4 tests now walk packet
 boundaries, so address payloads cannot impersonate packet headers under
-sanitizers. Both normal and ASAN/UBSAN suites pass 23/23, and the bounded runner
+sanitizers. Both normal and ASAN/UBSAN suites pass 24/24, and the bounded runner
 requires the shared matching-self-kill lifecycle before accepting the gate.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
@@ -613,14 +613,21 @@ state, fill rasterization without culling, and static per-target blending and
 color write masks. Vulkan blend factors and operations, separate alpha state,
 four blend constants, and up to eight independent attachment records translate
 to OpenAGC's typed gfx1013 blend state before baseline, geometry, indirect, and
-tessellation draws. Dual-source factors and logic operations remain rejected.
+tessellation draws. Dual-source factors remain rejected.
 The public `independentBlend` bit stays false pending deterministic hardware
 readback. The standalone `vulkan_ps5_independent_blend_probe` renders the same
 triangle to two attachments: target zero must remain opaque green with blending
 disabled, while target one must become half-intensity magenta through
 constant-color/alpha factors. The 8-bit UNORM tie may encode as `0x7f7f007f`
 or `0x80800080`; no other value is accepted. Its bounded runner requires
-the shared self-kill lifecycle. Static and `VK_DYNAMIC_STATE_DEPTH_BIAS`
+the shared self-kill lifecycle. Static `logicOpEnable` pipelines map all 16
+core Vulkan operations to OpenAGC's typed gfx1013 ROP3 state and suppress
+attachment blending while active. Disabled logic state restores COPY. The
+bounded `vulkan_ps5_logic_op_probe` XORs the green fragment value over mapped
+`0x55aa33cc` destination pixels and accepts only exact `0xaaaacccc` coverage,
+proving that both source and destination participate. Public `logicOp` remains
+false until that FW 5.50 hardware gate passes. Static and
+`VK_DYNAMIC_STATE_DEPTH_BIAS`
 pipelines translate constant, clamp, and slope factors to OpenAGC's typed D16
 or D32 depth-bias state for every graphics draw path. The standalone
 `vulkan_ps5_depth_bias_clamp_probe` applies a deliberately oversized constant

@@ -179,6 +179,10 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/depth_clamp_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.depth_clamp_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.logic_op_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/logic_op_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.logic_op_runner PROPERTIES TIMEOUT 15)
     add_test(NAME vulkan_ps5.ps5debug_process_identity
       COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
@@ -346,6 +350,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
     "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
+  add_executable(vulkan_ps5_logic_op_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_logic_op_probe PRIVATE
+    VULKAN_PS5_LOGIC_OP_PROBE=1)
   add_executable(vulkan_ps5_geometry_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -535,6 +545,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
+      vulkan_ps5_logic_op_probe
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
       vulkan_ps5_depth_clamp_probe
@@ -551,6 +562,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endif()
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_triangle_example
+      vulkan_ps5_logic_op_probe
       vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
@@ -575,6 +587,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_depth_bias_clamp_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_depth_clamp_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_logic_op_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_independent_blend_probe PRIVATE
       SceSystemService)

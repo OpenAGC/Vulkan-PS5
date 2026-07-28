@@ -765,6 +765,15 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &static_bias_info, NULL,
                                      &static_bias_pipeline) == VK_SUCCESS);
+    VkPipelineColorBlendStateCreateInfo logic_blend = blend;
+    logic_blend.logicOpEnable = VK_TRUE;
+    logic_blend.logicOp = VK_LOGIC_OP_XOR;
+    VkGraphicsPipelineCreateInfo logic_info = graphics_info;
+    logic_info.pColorBlendState = &logic_blend;
+    VkPipeline logic_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &logic_info, NULL,
+                                     &logic_pipeline) == VK_SUCCESS);
     const VkPipelineShaderStageCreateInfo geometry_stages[] = {
         graphics_stages[0],
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
@@ -884,6 +893,9 @@ int main(int argc, char **argv)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_bias_pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      logic_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
@@ -976,6 +988,7 @@ int main(int argc, char **argv)
     bool found_dual_export = false, found_depth_surface = false;
     bool found_independent_blend = false, found_blend_mask = false;
     bool found_blend_constants = false;
+    bool found_logic_op = false;
     bool found_depth_control = false, found_stencil_control = false;
     bool found_depth_bias_format = false, found_depth_bias_values = false;
     bool found_depth_bias_enable = false;
@@ -1075,6 +1088,9 @@ int main(int argc, char **argv)
                 dwords[i + 4] == 0x3f400000u &&
                 dwords[i + 5] == 0x3f800000u;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_CB_COLOR_CONTROL) {
+            found_logic_op |= dwords[i + 2] == 0x00660010u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] ==
                        AGC_REG_PA_SU_POLY_OFFSET_DB_FMT_CNTL) {
             found_depth_bias_format |= packet_length == 3u &&
@@ -1162,7 +1178,7 @@ int main(int argc, char **argv)
            found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
            found_independent_blend && found_blend_mask &&
-           found_blend_constants &&
+           found_blend_constants && found_logic_op &&
            found_depth_bias_format && found_depth_bias_values &&
            found_depth_bias_enable &&
            found_vulkan_clip_control && found_depth_clamp &&
@@ -1213,6 +1229,7 @@ int main(int argc, char **argv)
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
+    vkDestroyPipeline(device, logic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);

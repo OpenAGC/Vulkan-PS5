@@ -196,6 +196,8 @@ int main(int argc, char **argv) {
     };
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_TRUE,
+        .logicOp = VK_LOGIC_OP_XOR,
         .attachmentCount = 1,
         .pAttachments = &blend_attachment,
     };
@@ -215,6 +217,16 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    VkPipelineColorBlendStateCreateInfo invalid_logic_blend = blend;
+    invalid_logic_blend.logicOp = (VkLogicOp)VK_LOGIC_OP_MAX_ENUM;
+    VkGraphicsPipelineCreateInfo invalid_logic_info = graphics_info;
+    invalid_logic_info.pColorBlendState = &invalid_logic_blend;
+    VkPipeline invalid_logic_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &invalid_logic_info, NULL,
+                                     &invalid_logic_pipeline) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_logic_pipeline == VK_NULL_HANDLE);
 
     const VkVertexInputBindingDescription instance_bindings[] = {
         {0, 8, VK_VERTEX_INPUT_RATE_VERTEX},

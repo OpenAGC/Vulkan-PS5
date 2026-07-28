@@ -692,6 +692,38 @@ static bool blend_operation(VkBlendOp source, AgcGfx1013BlendOp *destination)
     return true;
 }
 
+static bool logic_operation(VkLogicOp source, AgcGfx1013LogicOp *destination)
+{
+    if (!destination)
+        return false;
+    switch (source) {
+    case VK_LOGIC_OP_CLEAR: *destination = AGC_GFX1013_LOGIC_CLEAR; break;
+    case VK_LOGIC_OP_AND: *destination = AGC_GFX1013_LOGIC_AND; break;
+    case VK_LOGIC_OP_AND_REVERSE:
+        *destination = AGC_GFX1013_LOGIC_AND_REVERSE; break;
+    case VK_LOGIC_OP_COPY: *destination = AGC_GFX1013_LOGIC_COPY; break;
+    case VK_LOGIC_OP_AND_INVERTED:
+        *destination = AGC_GFX1013_LOGIC_AND_INVERTED; break;
+    case VK_LOGIC_OP_NO_OP: *destination = AGC_GFX1013_LOGIC_NO_OP; break;
+    case VK_LOGIC_OP_XOR: *destination = AGC_GFX1013_LOGIC_XOR; break;
+    case VK_LOGIC_OP_OR: *destination = AGC_GFX1013_LOGIC_OR; break;
+    case VK_LOGIC_OP_NOR: *destination = AGC_GFX1013_LOGIC_NOR; break;
+    case VK_LOGIC_OP_EQUIVALENT:
+        *destination = AGC_GFX1013_LOGIC_EQUIVALENT; break;
+    case VK_LOGIC_OP_INVERT: *destination = AGC_GFX1013_LOGIC_INVERT; break;
+    case VK_LOGIC_OP_OR_REVERSE:
+        *destination = AGC_GFX1013_LOGIC_OR_REVERSE; break;
+    case VK_LOGIC_OP_COPY_INVERTED:
+        *destination = AGC_GFX1013_LOGIC_COPY_INVERTED; break;
+    case VK_LOGIC_OP_OR_INVERTED:
+        *destination = AGC_GFX1013_LOGIC_OR_INVERTED; break;
+    case VK_LOGIC_OP_NAND: *destination = AGC_GFX1013_LOGIC_NAND; break;
+    case VK_LOGIC_OP_SET: *destination = AGC_GFX1013_LOGIC_SET; break;
+    default: return false;
+    }
+    return true;
+}
+
 static bool color_blend_state(
     const VkPipelineColorBlendStateCreateInfo *source,
     uint32_t target_count, AgcGfx1013ColorBlendState *destination)
@@ -701,10 +733,19 @@ static bool color_blend_state(
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     if (!source || !destination || !target_count ||
         target_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
+        source->logicOpEnable > VK_TRUE ||
         source->attachmentCount != target_count || !source->pAttachments)
         return false;
     memset(destination, 0, sizeof(*destination));
     destination->target_count = target_count;
+    destination->logic_enable = source->logicOpEnable;
+    if (source->logicOpEnable) {
+        if (!logic_operation(source->logicOp,
+                &destination->logic_operation))
+            return false;
+    } else {
+        destination->logic_operation = AGC_GFX1013_LOGIC_COPY;
+    }
     memcpy(destination->constants, source->blendConstants,
         sizeof(destination->constants));
     for (uint32_t i = 0u; i < target_count; ++i) {
@@ -714,9 +755,10 @@ static bool color_blend_state(
             &destination->targets[i];
         if (attachment->colorWriteMask & ~component_mask)
             return false;
-        target->enable = attachment->blendEnable;
+        target->enable = source->logicOpEnable ? VK_FALSE :
+            attachment->blendEnable;
         target->write_mask = attachment->colorWriteMask;
-        if (!attachment->blendEnable) {
+        if (!target->enable) {
             target->color_source = AGC_GFX1013_BLEND_ONE;
             target->color_destination = AGC_GFX1013_BLEND_ZERO;
             target->color_operation = AGC_GFX1013_BLEND_OP_ADD;
@@ -1939,7 +1981,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             raster->lineWidth != 1.0f ||
             multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
             multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
-            multisample->alphaToOneEnable || blend->logicOpEnable ||
+            multisample->alphaToOneEnable ||
             !blend->attachmentCount ||
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             !blend->pAttachments)
