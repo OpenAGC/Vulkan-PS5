@@ -54,3 +54,10 @@ An exact-green readback therefore isolates the compiler-selected
 start-vertex/start-instance packet locations from the rejected DrawID paths.
 The host suite passes 20/20 and the Prospero link includes `-lunwind`,
 `-lc++abi`, `-lc++`, and `-lm`.
+
+The first deployment attempt at `20260728T085707Z` did not launch the ELF:
+the initial websrv readiness check passed, but the port-2121 upload connection
+timed out. The captured klog was empty, contained no native-game EXEC record,
+and the web endpoint was unavailable afterward. This is infrastructure-only
+evidence and neither passes nor fails the indirect-parameter hardware gate. No
+retry was made.
