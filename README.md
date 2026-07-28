@@ -625,8 +625,13 @@ core Vulkan operations to OpenAGC's typed gfx1013 ROP3 state and suppress
 attachment blending while active. Disabled logic state restores COPY. The
 bounded `vulkan_ps5_logic_op_probe` XORs the green fragment value over mapped
 `0x55aa33cc` destination pixels and accepts only exact `0xaaaacccc` coverage,
-proving that both source and destination participate. Public `logicOp` remains
-false until that FW 5.50 hardware gate passes. Static and
+proving that both source and destination participate. Both the internal-path
+and public query/request FW 5.50 gates passed with exact readback, clean
+target-process self-exit, and only the established 0x4000 baseline VM warning.
+`logicOp` is advertised and accepted through legacy and Features2 paths; the
+public-path ELF SHA-256 is
+`aee2fa93057571ee294862c822c11f1c4ca924b55938c315e51d93968cae21e1`.
+Static and
 `VK_DYNAMIC_STATE_DEPTH_BIAS`
 pipelines translate constant, clamp, and slope factors to OpenAGC's typed D16
 or D32 depth-bias state for every graphics draw path. The standalone

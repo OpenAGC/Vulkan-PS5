@@ -358,13 +358,16 @@ Implemented and host-verified:
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
   while logic state is active, and disabled logic state restores COPY. Pipeline
   rejection and exact XOR `CB_COLOR_CONTROL=0x00660010` regressions pass in both
-  24/24 host suites. The bounded probe initializes mapped RGBA8 pixels to
+  25/25 host suites. The bounded probe initializes mapped RGBA8 pixels to
   `0x55aa33cc`, draws green with XOR, and requires exact `0xaaaacccc` triangle
   coverage plus unchanged background through the shared matching-self-kill
-  lifecycle. Its Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
-  SHA-256
-  `a60b0210dbe5836ffb0ed30082c6fc33ddfc0ff80cab9d9a60e172c7746d83b7`.
-  Public `logicOp` remains false until one bounded FW 5.50 run passes.
+  lifecycle. Both the internal-path and public query/request FW 5.50 runs
+  passed with 18,432 XOR pixels, 47,104 unchanged pixels, exact center
+  `0xaaaacccc`, target-process self-exit, and only the established 0x4000
+  baseline VM warning. `logicOp` is advertised and accepted through legacy
+  and Features2 paths. Its public-path Prospero ELF links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `aee2fa93057571ee294862c822c11f1c4ca924b55938c315e51d93968cae21e1`.
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50

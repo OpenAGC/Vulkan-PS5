@@ -52,13 +52,13 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=23 limits=0 queues=0 total=25
+eden-profile: extensions=2 features=22 limits=0 queues=0 total=24
 ```
 
-The 23 feature gaps are `depthBiasClamp`,
+The 22 feature gaps are `depthBiasClamp`,
 `drawIndirectFirstInstance`, `dualSrcBlend`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `independentBlend`, `largePoints`,
-`logicOp`, `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
+`multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
 `samplerAnisotropy`, `sampleRateShading`,
 `shaderClipDistance`, `shaderCullDistance`, `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
@@ -93,18 +93,22 @@ center pixels and accepts only the two legal half-intensity encodings. Public
 `independentBlend` therefore remains false; dual-source blend remains a
 separate unsupported feature.
 
-The host-side `logicOp` contract is now complete without advertising the
-feature. Every one of the 16 core `VkLogicOp` values maps to OpenAGC's typed
+The `logicOp` contract is implemented and hardware-qualified. Every one of the
+16 core `VkLogicOp` values maps to OpenAGC's typed
 gfx1013 ROP3 truth table. Active logic state suppresses per-target blending,
 while disabled state restores COPY; baseline, indexed, indirect, geometry, and
 tessellation draw paths all restore the pipeline state. Pipeline rejection and
-exact `CB_COLOR_CONTROL=0x00660010` XOR regressions pass in both 24/24 host
+exact `CB_COLOR_CONTROL=0x00660010` XOR regressions pass in both 25/25 host
 configurations. The bounded probe fills mapped RGBA8 destination pixels with
 `0x55aa33cc`, draws green through XOR, and requires exact `0xaaaacccc` triangle
 coverage plus unchanged background before the shared matching-self-kill exit.
-Its Prospero ELF links the required runtime set and has SHA-256
-`a60b0210dbe5836ffb0ed30082c6fc33ddfc0ff80cab9d9a60e172c7746d83b7`.
-Public `logicOp` remains false pending one bounded FW 5.50 run.
+The internal-path and final public query/request FW 5.50 runs both produced
+18,432 XOR pixels, 47,104 unchanged pixels, the exact center value, and clean
+target-process self-exit. Target-only klogs contained only the established
+0x4000 baseline VM warning. `logicOp` is now advertised and accepted through
+legacy and Features2 paths. The public-path Prospero ELF links the required
+runtime set and has SHA-256
+`aee2fa93057571ee294862c822c11f1c4ca924b55938c315e51d93968cae21e1`.
 
 The host-side `depthBiasClamp` contract is now implemented without advertising
 the feature. Static pipelines and `VK_DYNAMIC_STATE_DEPTH_BIAS` both preserve

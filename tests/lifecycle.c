@@ -140,6 +140,7 @@ int main(void) {
     assert(features2.features.depthClamp == VK_TRUE);
     assert(features2.features.fillModeNonSolid == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
+    assert(features2.features.logicOp == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
 
@@ -148,11 +149,13 @@ int main(void) {
     assert(features.depthClamp == VK_TRUE);
     assert(features.fillModeNonSolid == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
+    assert(features.logicOp == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     features.depthClamp = VK_FALSE;
     features.fillModeNonSolid = VK_FALSE;
     features.geometryShader = VK_FALSE;
+    features.logicOp = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
@@ -213,6 +216,7 @@ int main(void) {
             .depthClamp = VK_TRUE,
             .fillModeNonSolid = VK_TRUE,
             .geometryShader = VK_TRUE,
+            .logicOp = VK_TRUE,
             .occlusionQueryPrecise = VK_TRUE,
             .tessellationShader = VK_TRUE,
         },
@@ -253,6 +257,7 @@ int main(void) {
         .depthClamp = VK_TRUE,
         .fillModeNonSolid = VK_TRUE,
         .geometryShader = VK_TRUE,
+        .logicOp = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
     };
     VkDeviceCreateInfo legacy_geometry_device_info = device_info;

@@ -128,6 +128,16 @@ int main(void)
     const VkPhysicalDeviceFeatures enabled_features = {
         .fillModeNonSolid = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_LOGIC_OP_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.logicOp) {
+        printf("logic_op: logicOp is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .logicOp = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
@@ -183,6 +193,7 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+    defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
     defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
     defined(VULKAN_PS5_TESSELLATION_SAMPLE) || \
     defined(VULKAN_PS5_QUERY_SAMPLE)
