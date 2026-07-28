@@ -79,9 +79,12 @@ int main(void) {
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(features11.shaderDrawParameters == VK_FALSE);
+    assert(features2.features.tessellationShader == VK_TRUE);
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
+    assert(features.tessellationShader == VK_TRUE);
+    features.tessellationShader = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
         assert(feature_bits[i] == VK_FALSE);
@@ -129,13 +132,30 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
         .hostQueryReset = VK_TRUE,
     };
+    VkPhysicalDeviceFeatures2 enabled_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &enabled_host_query_reset,
+        .features = {
+            .tessellationShader = VK_TRUE,
+        },
+    };
     VkDeviceGroupDeviceCreateInfo group_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO,
-        .pNext = &enabled_host_query_reset,
+        .pNext = &enabled_features2,
         .physicalDeviceCount = 1,
         .pPhysicalDevices = &physical,
     };
     device_info.pNext = &group_info;
+    VkPhysicalDeviceFeatures unsupported_features = {
+        .geometryShader = VK_TRUE,
+    };
+    VkDeviceCreateInfo unsupported_device_info = device_info;
+    unsupported_device_info.pNext = NULL;
+    unsupported_device_info.pEnabledFeatures = &unsupported_features;
+    VkDevice unsupported_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
+                          &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_device == VK_NULL_HANDLE);
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
     VkQueue queue = VK_NULL_HANDLE;

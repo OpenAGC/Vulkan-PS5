@@ -82,8 +82,12 @@
   independent run after a fresh console-availability signal reproduced every
   hull and image oracle (`20260728T034211Z-tessellation-run1.log`) and left the
   console responsive. Patch-output tessellation is now hardware-qualified at
-  this scope and can advance through its standard `tessellationShader`
-  advertisement and device-feature request path.
+  this scope. The ICD now advertises `tessellationShader` through both physical
+  device feature queries, accepts that feature through legacy and Features2
+  device creation while continuing to reject every unadvertised core feature,
+  and makes the standalone sample request it explicitly. Both seven-test host
+  configurations and the Prospero cross-build pass. One bounded hardware smoke
+  of the feature-requesting ELF remains after a fresh console signal.
 
 ## Summary
 

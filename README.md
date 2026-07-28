@@ -76,18 +76,18 @@ patch-output reads as the only material difference from OpenAGC's passing
 path. The basic hardware gate now uses OpenAGC's qualified constant-position
 shader dataflow. Its Prospero ELF also cross-links with the required target
 runtimes. Two independent FW 5.500.008 launches each produced exactly 7200
-green pixels, hardware-qualifying the basic standalone workload.
-`tessellationShader` remains false until patch-output reads are fixed and
-separately hardware-qualified.
+green pixels, hardware-qualifying the basic standalone workload. The later
+patch-output-read qualification below completed the requirement for exposing
+the core tessellation feature.
 
-The current unqualified candidate derives its TCS/TES offchip layout words
+The qualified patch-output candidate derives its TCS/TES offchip layout words
 from openagc-psbc API v5 metadata and OpenAGC's typed layout builder rather
 than reusing the OpenAGC fixture constant. Pipeline creation also supplies the
 adjacent TES module while compiling TCS and the adjacent TCS module while
 compiling TES or TES+GS. The compiler links that non-executable interface
 module so both separately emitted programs share one offchip location remap.
 Host command-recording tests cover the linked compiler path and derived PM4
-values; the public feature bit remains disabled until the restored patch-output
+values; the public feature bit was kept disabled until the restored patch-output
 sample passes the bounded hardware gate twice. The first bounded API v5 FW
 5.500.008 run returned safely and left the console responsive, but its target
 remained zeroed, so no retry was attempted.
@@ -159,9 +159,17 @@ oracle reported exactly 7200 green pixels. The runner returned normally, and
 no retry was attempted. A second independent fresh-console run reproduced all
 hull markers, positions, and exactly 7200 green pixels
 (`20260728T034211Z-tessellation-run1.log`); the console remained responsive.
-The restored patch-output path is hardware-qualified at this scope and is
-ready for standard `tessellationShader` feature advertisement and device
-feature-request validation.
+The restored patch-output path is hardware-qualified at this scope. The ICD now
+returns `tessellationShader = VK_TRUE` from both core feature-query forms and
+accepts it from `pEnabledFeatures` or `VkPhysicalDeviceFeatures2`, while still
+rejecting unadvertised core features. Lifecycle regressions cover the Features2
+success path and an unsupported-feature rejection. The standalone sample now
+queries and requests tessellation explicitly. Both host configurations pass all
+seven tests, and its rebuilt Prospero ELF links with `-lunwind`, `-lc++abi`,
+`-lc++`, and `-lm` and has SHA-256
+`a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d`.
+One bounded hardware smoke of this feature-requesting ELF remains after a fresh
+console-availability signal.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

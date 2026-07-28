@@ -31,7 +31,9 @@ Capability evidence:
 - OpenAGC's verified PS5 memory profiles use a 4 GB write-back/onion range with
   4 KB alignment and a 12 GB write-combined/garlic range with 2 MB alignment.
 - Remaining shader-stage limits use conservative gfx10/RADV bounds and do not
-  enable the corresponding optional Vulkan features before shader qualification.
+  enable corresponding optional Vulkan features before shader qualification.
+  `tessellationShader` is the first shader-stage core feature enabled after its
+  patch-output path passed the repeated FW 5.50 gate.
 
 ## Milestone 2: runtime shader pipelines
 
@@ -55,8 +57,8 @@ Implemented:
 
 Deliberately unavailable before later milestones:
 
-- Geometry and tessellation feature advertisement before repeated hardware
-  qualification.
+- Geometry feature advertisement until its standard feature-request path is
+  enabled and verified.
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
 
@@ -108,8 +110,8 @@ Implemented and host-verified:
   unqualified. The revised basic workload passed twice on FW 5.500.008 with
   exactly 7200 green pixels (`20260728T013019Z-tessellation-run1.log` and
   `20260728T013031Z-tessellation-run1.log`) and is hardware-qualified at that
-  scope. `tessellationShader` remains false until patch-output reads are fixed
-  and hardware-qualified.
+  scope. At that checkpoint `tessellationShader` remained false pending the
+  patch-output work and repeated qualification described below.
   The patch-output-read candidate no longer uses the fixture-specific
   `TCS_OFFCHIP_LAYOUT` constant. openagc-psbc reports the linked LS/HS
   output counts, patch/control-point counts, primitive mode, and tess-factor
@@ -182,8 +184,15 @@ Implemented and host-verified:
   retry was attempted. A second independent fresh-console run reproduced the
   complete hull and image oracle (`20260728T034211Z-tessellation-run1.log`)
   and left the console responsive. Patch-output tessellation is now
-  hardware-qualified at this scope and can be exposed through the normal
-  `tessellationShader` feature path.
+  hardware-qualified at this scope. The ICD advertises `tessellationShader`
+  through both feature-query forms and accepts it through legacy or Features2
+  device creation, while rejecting every other unadvertised core feature. The
+  lifecycle test covers Features2 acceptance and unsupported geometry-feature
+  rejection. The standalone sample now queries and requests tessellation
+  explicitly. Both seven-test host configurations and the Prospero cross-build
+  pass; the new feature-requesting ELF has SHA-256
+  `a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d` and
+  awaits one bounded hardware smoke after a fresh console signal.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

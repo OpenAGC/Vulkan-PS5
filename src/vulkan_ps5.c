@@ -510,10 +510,15 @@ vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
     if (pProperties) fill_properties(pProperties);
 }
 
+static void fill_features(VkPhysicalDeviceFeatures *features) {
+    memset(features, 0, sizeof(*features));
+    features->tessellationShader = VK_TRUE;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures *pFeatures) {
     (void)physicalDevice;
-    if (pFeatures) memset(pFeatures, 0, sizeof(*pFeatures));
+    if (pFeatures) fill_features(pFeatures);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -772,7 +777,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                              VkPhysicalDeviceFeatures2 *pFeatures) {
     (void)physicalDevice;
     if (!pFeatures) return;
-    memset(&pFeatures->features, 0, sizeof(pFeatures->features));
+    fill_features(&pFeatures->features);
     for (VkBaseOutStructure *next = (VkBaseOutStructure *)pFeatures->pNext;
          next; next = next->pNext) {
         switch (next->sType) {
@@ -945,20 +950,24 @@ vkGetPhysicalDeviceExternalSemaphoreProperties(
     pExternalSemaphoreProperties->externalSemaphoreFeatures = 0;
 }
 
-static VkBool32 features_requested(const VkPhysicalDeviceFeatures *features) {
+static VkBool32 unsupported_features_requested(const VkPhysicalDeviceFeatures *features) {
     if (!features) return VK_FALSE;
-    const VkBool32 *bits = (const VkBool32 *)features;
-    for (size_t i = 0; i < sizeof(*features) / sizeof(*bits); ++i)
-        if (bits[i]) return VK_TRUE;
+    VkPhysicalDeviceFeatures supported;
+    fill_features(&supported);
+    const VkBool32 *requested_bits = (const VkBool32 *)features;
+    const VkBool32 *supported_bits = (const VkBool32 *)&supported;
+    for (size_t i = 0; i < sizeof(*features) / sizeof(*requested_bits); ++i)
+        if (requested_bits[i] && !supported_bits[i]) return VK_TRUE;
     return VK_FALSE;
 }
 
-static VkBool32 device_feature_chain_requested(const void *pNext) {
+static VkBool32 unsupported_device_features_requested(const void *pNext) {
     for (const VkBaseInStructure *next = (const VkBaseInStructure *)pNext;
          next; next = next->pNext) {
         switch (next->sType) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
-            if (features_requested(&((const VkPhysicalDeviceFeatures2 *)next)->features))
+            if (unsupported_features_requested(
+                    &((const VkPhysicalDeviceFeatures2 *)next)->features))
                 return VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES: {
@@ -1041,8 +1050,8 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
                 sizeof(device_extensions) / sizeof(device_extensions[0])))
             return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
-    if (features_requested(pCreateInfo->pEnabledFeatures) ||
-        device_feature_chain_requested(pCreateInfo->pNext))
+    if (unsupported_features_requested(pCreateInfo->pEnabledFeatures) ||
+        unsupported_device_features_requested(pCreateInfo->pNext))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkResult chain_result = validate_device_create_chain(physicalDevice, pCreateInfo->pNext);
     if (chain_result != VK_SUCCESS) return chain_result;

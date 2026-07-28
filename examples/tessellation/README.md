@@ -58,4 +58,9 @@ positions, and exactly 7200 green pixels
 (`20260728T034030Z-tessellation-run1.log` and
 `20260728T034211Z-tessellation-run1.log`). Both returned normally and left the
 console responsive. This patch-output-read path is now hardware-qualified at
-the sample's scope.
+the sample's scope. The ICD consequently advertises `tessellationShader`, and
+this sample now queries that bit and enables it during ordinary Vulkan device
+creation before constructing the pipeline. The feature-requesting Prospero ELF
+has SHA-256
+`a1fce3414f4fadac09ff10148d76302bac504ac3befd119e059bd3330877d30d` and
+awaits one bounded hardware smoke after a fresh console-availability signal.
