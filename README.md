@@ -61,11 +61,11 @@ swapchain lock across the VSYNC wait.
 PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 ```
 
-The runner never retries automatically. It captures klog across the launch,
-scopes it to the new eboot PID, rejects fatal signals, app crashes, XO faults,
-and VM leaks, and asks ps5debug-NG to prove that no matching process remains.
-On timeout it asks ps5debug-NG to kill only the matching qualification process
-before returning failure.
+The runner never retries automatically. It takes a bounded post-run klog
+snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,
+XO faults, and VM leaks, and asks ps5debug-NG to prove that no matching process
+remains. On timeout it asks ps5debug-NG to kill only the matching qualification
+process before returning failure.
 
 The first FW 5.50 attempt stopped safely before registration: kernel evidence
 showed that byte verification touched the execute-only VideoOut text page
@@ -77,9 +77,11 @@ hardware-proven teardown order (close VideoOut, then delete its equeue), and the
 sample emits PASS only after swapchain, device, surface, and instance cleanup.
 The corrected run completed those cleanup checkpoints, but returning from the
 Prospero ELF entrypoint then jumped back into `main` (`RIP 0x4000bb`,
-`main+0xbb`) and caused SIGSEGV. The Prospero sample now terminates through the
-SDK's proven `thr_exit` path after flushing output; host builds still return
-normally. That process-exit correction requires one new bounded hardware run.
+`main+0xbb`) and caused SIGSEGV. A subsequent `thr_exit` candidate completed
+Vulkan cleanup without a surviving process, but did not complete hbldr's HTTP
+request. The Prospero sample now flushes output and uses libc's process-level
+`exit`; host builds still return normally. That correction requires one new
+bounded hardware run.
 
 ## Standalone compute and triangle samples
 

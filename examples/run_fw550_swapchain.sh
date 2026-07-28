@@ -9,7 +9,6 @@ build_dir=${VULKAN_PS5_PROSPERO_BUILD:-$repo_dir/build-prospero-m2}
 log_dir=${VULKAN_PS5_FW550_LOG_DIR:-$script_dir/qualification-logs}
 websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-60}
 klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
-klog_startup_delay=${VULKAN_PS5_KLOG_STARTUP_DELAY:-1}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf="$build_dir/vulkan_ps5_swapchain_example.elf"
@@ -25,9 +24,9 @@ case "$klog_port" in
         exit 2
         ;;
 esac
-case "$klog_startup_delay:$klog_settle_delay" in
-    *[!0-9:]*|:*|*:)
-        echo "kernel-log delays must be non-negative integers" >&2
+case "$klog_settle_delay" in
+    ''|*[!0-9]*)
+        echo "VULKAN_PS5_KLOG_SETTLE_DELAY must be a non-negative integer" >&2
         exit 2
         ;;
 esac
@@ -56,37 +55,31 @@ timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-swapchain-run1.log"
 klog="$log_dir/${timestamp}-swapchain-run1.klog"
 target_klog="$log_dir/${timestamp}-swapchain-run1-target.klog"
-klog_pid=
-stop_klog() {
-    if [ -n "$klog_pid" ]; then
-        kill "$klog_pid" 2>/dev/null || true
-        wait "$klog_pid" 2>/dev/null || true
-        klog_pid=
+capture_klog() {
+    sleep "$klog_settle_delay"
+    nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1
+    if [ ! -s "$klog" ]; then
+        echo "kernel-log snapshot is empty: $klog" >&2
+        return 1
     fi
 }
-trap 'stop_klog' EXIT
-
-nc "$PS5_HOST" "$klog_port" >"$klog" 2>&1 &
-klog_pid=$!
-sleep "$klog_startup_delay"
-if ! kill -0 "$klog_pid" 2>/dev/null; then
-    stop_klog
-    echo "kernel-log stream is unreachable at ${PS5_HOST}:${klog_port}" >&2
-    exit 1
-fi
 
 echo "FW550 swapchain run 1/1"
 if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
     "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
     kill_stale_process
-    sleep "$klog_settle_delay"
-    stop_klog
+    capture_klog || true
     sed -n '1,200p' "$log" >&2
+    if [ -s "$klog" ]; then
+        sed -n '1,240p' "$klog" >&2
+    fi
     echo "swapchain run failed; log: $log" >&2
     exit 1
 fi
-sleep "$klog_settle_delay"
-stop_klog
+if ! capture_klog; then
+    echo "swapchain output completed but klog could not be verified" >&2
+    exit 1
+fi
 sed -n '1,200p' "$log"
 if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null; then
     kill_stale_process

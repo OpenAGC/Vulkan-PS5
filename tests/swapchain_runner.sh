@@ -37,7 +37,6 @@ case "${FAKE_KLOG_MODE:-clean}" in
         ;;
     *) exit 2 ;;
 esac
-exec tail -f /dev/null
 EOF
 
 cat >"$test_root/bin/uv" <<'EOF'
@@ -55,7 +54,6 @@ run_runner() {
     PYPS4DEBUG_DIR="$test_root/pyps4debug" \
     VULKAN_PS5_PROSPERO_BUILD="$test_root/build" \
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
-    VULKAN_PS5_KLOG_STARTUP_DELAY=1 \
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_KLOG_MODE="$mode" \
         sh "$runner" >"$output" 2>&1

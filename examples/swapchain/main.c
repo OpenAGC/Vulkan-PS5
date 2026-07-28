@@ -2,10 +2,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
-
-#ifdef OPENAGC_PROSPERO
-#include <sys/thr.h>
-#endif
+#include <stdlib.h>
 
 enum { FRAME_COUNT = 1800, IMAGE_COUNT = 3 };
 
@@ -218,9 +215,7 @@ cleanup:
     const int exit_code = result == VK_SUCCESS ? 0 : 1;
 #ifdef OPENAGC_PROSPERO
     fflush(NULL);
-    long thread_state = exit_code;
-    thr_exit(&thread_state);
-    __builtin_unreachable();
+    exit(exit_code);
 #else
     return exit_code;
 #endif

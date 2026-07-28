@@ -397,7 +397,7 @@ Implemented:
   proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `7e714ae4861f27b13306e39264e1c2715c73720bdc8dc6820f46d0ae3be6d642`.
+  `889e55737b7ac386f025a4f6084bdf7ba36a44faee5fcfd8cdc91839b7f86347`.
 
 Pending:
 
@@ -413,9 +413,12 @@ Pending:
   PASS only after complete Vulkan teardown. The corrected run
   (`20260728T054859Z-swapchain-run1.log`) reached both cleanup checkpoints, but
   returning from the ELF entrypoint jumped to `main+0xbb` (`RIP 0x4000bb`) and
-  caused SIGSEGV plus a `0x4000` VM resource leak. The Prospero sample now
-  flushes output and uses the SDK's hardware-proven `thr_exit` termination;
-  host builds still return normally. A new bounded run is required; no
-  automatic retry is permitted. The runner now captures and PID-scopes klog,
+  caused SIGSEGV plus a `0x4000` VM resource leak. The `thr_exit` candidate
+  (`20260728T055807Z-swapchain-run1.log`) then completed 1,800 frames and Vulkan
+  teardown with no process left behind, but hbldr's HTTP request timed out after
+  60 seconds. The console remained responsive and no retry occurred. The
+  Prospero sample now flushes output and uses libc's process-level `exit`; host
+  builds still return normally. A new bounded run is required; no automatic
+  retry is permitted. The runner now takes a post-run PID-scoped klog snapshot,
   rejects fatal signals, app crashes, XO faults, and VM leaks, and requires a
   ps5debug-NG process-absence check before its final PASS.

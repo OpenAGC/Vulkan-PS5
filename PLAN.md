@@ -154,7 +154,7 @@
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `7e714ae4861f27b13306e39264e1c2715c73720bdc8dc6820f46d0ae3be6d642`.
+  `889e55737b7ac386f025a4f6084bdf7ba36a44faee5fcfd8cdc91839b7f86347`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -168,14 +168,16 @@
   flip-event deletion. The sample now prints PASS only after all Vulkan cleanup
   completes. The next bounded run reached all cleanup checkpoints and printed
   PASS, but returning from the ELF entrypoint jumped to `main+0xbb` and caused
-  SIGSEGV. The Prospero sample now flushes output and terminates through the
-  SDK's hardware-proven `thr_exit` path instead of returning; host builds keep
-  their normal return path. One new bounded run remains before this milestone
+  SIGSEGV. A subsequent `thr_exit` candidate completed Vulkan cleanup and left
+  no process, but hbldr's HTTP request remained open until its 60-second bound.
+  The Prospero sample now flushes output and uses libc's process-level `exit`;
+  host builds keep their normal return path. One new bounded run remains before
+  this milestone
   is hardware qualified; the runner has no automatic retry and uses ps5debug-NG
-  cleanup only on a timeout/failure. The runner now captures klog for the whole
-  launch, scopes it to the new eboot PID, rejects fatal signals, app crashes,
-  XO faults, or VM leaks, and requires ps5debug-NG to prove process absence
-  before reporting qualification PASS.
+  cleanup only on a timeout/failure. The runner now takes a bounded post-run
+  klog snapshot, scopes it to the new eboot PID, rejects fatal signals, app
+  crashes, XO faults, or VM leaks, and requires ps5debug-NG to prove process
+  absence before reporting qualification PASS.
   Exhausted acquisition now waits against a monotonic deadline instead of
   returning early, while present releases the swapchain lock during the
   bounded VSYNC wait. A host regression holds all three images, presents one
