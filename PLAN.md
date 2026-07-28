@@ -119,14 +119,15 @@
   `316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
   One bounded FW 5.50 run is pending a fresh console-availability signal; the
   repeated gate remains required before the feature is considered stable.
-  The first such FW 5.500.008 run passed every deterministic oracle
-  (`20260728T043915Z-tessellation-run1.log`): the hull markers and copied LDS
+  Two independent FW 5.500.008 runs passed every deterministic oracle
+  (`20260728T043915Z-tessellation-run1.log` and
+  `20260728T044035Z-tessellation-run1.log`): the hull markers and copied LDS
   positions matched, TES wrote marker `0x54455300` and copied all three exact
-  offchip positions, and the image contained exactly 7200 green pixels. The
-  process returned normally and a bounded post-run websrv probe confirmed the
-  console remained responsive. No retry was attempted. One independent run
-  after another fresh console-availability signal is still required to close
-  the repeated qualification gate.
+  offchip positions, and each image contained exactly 7200 green pixels. Both
+  processes returned normally, bounded post-run websrv probes confirmed the
+  console remained responsive, and neither candidate was retried. This closes
+  the repeated qualification gate for the correction and public
+  `tessellationShader` feature path at the current standalone scope.
 
 ## Summary
 

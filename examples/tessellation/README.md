@@ -98,11 +98,13 @@ with `-lunwind -lc++abi -lc++ -lm`. The current candidate has SHA-256
 It has not yet run on hardware: one bounded run requires a fresh explicit
 console-availability signal, and no automatic retry is permitted.
 
-Its first bounded FW 5.500.008 run passed
-(`20260728T043915Z-tessellation-run1.log`). The hull probe reported all three
-markers and exact LDS positions; TES reported marker `0x54455300` and the exact
-three offchip control-point positions; the mapped image contained exactly 7200
-green pixels. The application returned normally, and a bounded post-run websrv
-request confirmed that the console remained responsive. The runner did not
-retry it. A second independent run after a new explicit console-availability
-signal is required before this correction is considered stable.
+Two independent bounded FW 5.500.008 runs passed
+(`20260728T043915Z-tessellation-run1.log` and
+`20260728T044035Z-tessellation-run1.log`). Both hull probes reported all three
+markers and exact LDS positions; both TES probes reported marker `0x54455300`
+and the exact three offchip control-point positions; each mapped image contained
+exactly 7200 green pixels. Both applications returned normally, and bounded
+post-run websrv requests confirmed that the console remained responsive. The
+runner did not retry either launch. The repeated hardware gate now qualifies
+the corrected offchip-ring profile and the sample's ordinary
+`tessellationShader` feature-request path at this scope.
