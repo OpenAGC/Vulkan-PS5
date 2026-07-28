@@ -26,6 +26,9 @@ else()
 endif()
 set(OPENAGC_PSBC_LIBRARY "${_OPENAGC_PSBC_DEFAULT_LIBRARY}" CACHE FILEPATH
     "Path to the openagc-psbc runtime compiler archive")
+set(VULKAN_MEMORY_ALLOCATOR_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../VulkanMemoryAllocator" CACHE PATH
+    "Path to VulkanMemoryAllocator (used by the Eden compatibility test only)")
 option(VULKAN_PS5_BUILD_SHARED "Build the loader-compatible host ICD" ON)
 option(VULKAN_PS5_BUILD_TESTS "Build host lifecycle tests" ON)
 option(VULKAN_PS5_BUILD_EXAMPLES "Build standalone Vulkan examples" ON)
@@ -120,6 +123,22 @@ if(VULKAN_PS5_BUILD_TESTS)
   target_link_libraries(vulkan_ps5_eden_profile_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.eden_profile_report
     COMMAND vulkan_ps5_eden_profile_test)
+  if(EXISTS "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include/vk_mem_alloc.h")
+    enable_language(CXX)
+    add_executable(vulkan_ps5_eden_vma_test tests/eden_vma.cpp)
+    target_compile_features(vulkan_ps5_eden_vma_test PRIVATE cxx_std_20)
+    target_include_directories(vulkan_ps5_eden_vma_test PRIVATE
+      "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include")
+    if(APPLE)
+      target_compile_options(vulkan_ps5_eden_vma_test PRIVATE
+        -Wno-nullability-completeness)
+    endif()
+    target_link_libraries(vulkan_ps5_eden_vma_test PRIVATE vulkan_ps5_static)
+    add_test(NAME vulkan_ps5.eden_vma COMMAND vulkan_ps5_eden_vma_test)
+  else()
+    message(WARNING
+      "VulkanMemoryAllocator not found; vulkan_ps5.eden_vma is disabled")
+  endif()
   if(UNIX)
     add_test(NAME vulkan_ps5.swapchain_runner
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/swapchain_runner.sh"
@@ -208,6 +227,27 @@ if(VULKAN_PS5_BUILD_TESTS)
         "${VULKAN_VALIDATION_LAYER_LIBRARY}" DIRECTORY)
       set_tests_properties(vulkan_ps5.validation PROPERTIES ENVIRONMENT
         "VK_ICD_FILENAMES=${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_icd.json;VK_LAYER_PATH=${VULKAN_VALIDATION_LAYER_MANIFEST_DIR};DYLD_LIBRARY_PATH=${VULKAN_VALIDATION_LAYER_LIBRARY_DIR}")
+      if(EXISTS "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include/vk_mem_alloc.h")
+        add_executable(vulkan_ps5_eden_vma_validation_test tests/eden_vma.cpp)
+        target_compile_features(vulkan_ps5_eden_vma_validation_test
+          PRIVATE cxx_std_20)
+        target_compile_definitions(vulkan_ps5_eden_vma_validation_test
+          PRIVATE VULKAN_PS5_ENABLE_VALIDATION=1)
+        target_include_directories(vulkan_ps5_eden_vma_validation_test PRIVATE
+          "${VULKAN_HEADERS_ROOT}/include"
+          "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include")
+        if(APPLE)
+          target_compile_options(vulkan_ps5_eden_vma_validation_test PRIVATE
+            -Wno-nullability-completeness)
+        endif()
+        target_link_libraries(vulkan_ps5_eden_vma_validation_test PRIVATE
+          "${VULKAN_LOADER_LIBRARY}")
+        add_test(NAME vulkan_ps5.eden_vma_validation
+          COMMAND vulkan_ps5_eden_vma_validation_test)
+        set_tests_properties(vulkan_ps5.eden_vma_validation PROPERTIES
+          ENVIRONMENT
+            "VK_ICD_FILENAMES=${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_icd.json;VK_LAYER_PATH=${VULKAN_VALIDATION_LAYER_MANIFEST_DIR};DYLD_LIBRARY_PATH=${VULKAN_VALIDATION_LAYER_LIBRARY_DIR}")
+      endif()
     endif()
   endif()
 endif()

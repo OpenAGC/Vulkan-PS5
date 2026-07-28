@@ -284,6 +284,16 @@
   host tests pass, and the Prospero candidate SHA-256 is
   `445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`.
   Public advertisement still awaits one fresh-console FW 5.50 run.
+  Eden's allocator contract now has a real, external-style VMA consumer rather
+  than direct-Vulkan approximations. The test uses dynamic Vulkan function
+  lookup, external synchronization, Eden's 64/256 MiB block preference, mapped
+  upload/download/stream policies, device-local buffer and image policies,
+  within-budget allocation, block suballocation, and both manual allocate/bind
+  paths. `VULKAN_MEMORY_ALLOCATOR_ROOT` is test-only and configurable; VMA 3.3
+  uses Eden's exact AUTO manual policy, while VMA 3.4 uses its required explicit
+  equivalent. Both direct-static and loader/VVL modes pass, the full host suite
+  is 16/16, and the Prospero ICD/examples still build. A Prospero VMA consumer
+  run remains before treating the runtime portion as hardware-qualified.
 
 ## Summary
 

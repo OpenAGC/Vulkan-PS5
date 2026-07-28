@@ -555,3 +555,13 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   single raw-ELF `0x4000` warning. Its clean/crash safety test and all 14 host
   tests pass; the Prospero candidate SHA-256 is
   `445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`.
+- Eden's actual VMA allocation model is now covered by a configurable,
+  test-only consumer. It supplies only dynamic instance/device proc lookup,
+  enables external synchronization, selects Eden's preferred large-block size,
+  and exercises mapped upload, download, and stream buffers; device-local
+  buffers and images; within-budget allocations; shared block suballocation;
+  and the manual `vmaAllocateMemoryForBuffer`/`vmaBindBufferMemory2` and raw
+  requirements paths. VMA 3.3 keeps Eden's exact AUTO manual usage; the newer
+  available VMA 3.4 header uses its required explicit equivalent. Direct ICD
+  and loader/VVL variants pass with deterministic zero-allocation teardown.
+  The complete host suite is now 16/16 and the Prospero build remains clean.

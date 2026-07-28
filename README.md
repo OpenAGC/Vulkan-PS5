@@ -18,6 +18,11 @@ The runtime compiler and graphics-pipeline path also accept instance-rate
 vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
 the extension remains hidden pending one run of the prepared deterministic
 hardware readback gate.
+Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
+consumer matching Eden's dynamic-dispatch, externally synchronized upload,
+download, stream, device-local, image, manual-bind, and suballocation patterns;
+it passes both direct and loader/VVL host modes without adding VMA to the SDK's
+public dependencies.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and

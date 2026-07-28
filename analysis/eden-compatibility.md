@@ -70,7 +70,7 @@ does not turn a failed requirement into support.
 
 | Area | Current evidence | State |
 | --- | --- | --- |
-| VMA | Vulkan 1.1 memory-requirements/bind v2 entrypoints and two device-local host-visible heaps exist; the installed-package consumer does not exercise Eden's VMA allocation patterns | Dedicated consumer coverage missing |
+| VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass | Host/VVL pass; Prospero execution pending |
 | Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
@@ -88,8 +88,9 @@ does not turn a failed requirement into support.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths.
-3. Add a standalone VMA consumer matching Eden's externally synchronized,
-   dynamic-function allocator and its upload/download/device-local patterns.
+3. Run the completed standalone VMA consumer on Prospero. Its direct and
+   loader/VVL host modes already match Eden's externally synchronized dynamic
+   allocator, all four buffer policies, images, manual bind, and suballocation.
 4. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
 5. Add only the allowed Eden changes: Prospero surface creation, build/link
