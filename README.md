@@ -92,6 +92,13 @@ sample passes the bounded hardware gate twice. The first bounded API v5 FW
 5.500.008 run returned safely and left the console responsive, but its target
 remained zeroed, so no retry was attempted.
 
+The next host-qualified correction uses openagc-psbc API v6 to carry RADV's
+pipeline-specific hull LDS byte requirement into OpenAGC. The tessellation
+binder encodes that allocation in `SPI_SHADER_PGM_RSRC2_HS`, enabling the
+separate LS-front/HS-back memory path used when a TCS reads VS outputs. This
+state is covered by command-recording tests but has not been launched on
+hardware yet.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

@@ -128,6 +128,12 @@ Implemented and host-verified:
   responsive afterward. Interface linking alone therefore did not fix patch
   reads; no automatic retry was attempted and this candidate remains
   unqualified.
+  Local comparison with Mesa then identified that RADV patches the hull LDS
+  allocation at draw time, while the ICD had bound the compiler record with a
+  zero `SPI_SHADER_PGM_RSRC2_HS.LDS_SIZE`. openagc-psbc API v6 now reports the
+  required byte count and the ICD passes it to OpenAGC's typed tessellation
+  binder. Host command tests require a nonzero encoded allocation. This next
+  candidate has not been launched on hardware.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

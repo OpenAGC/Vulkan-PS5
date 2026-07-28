@@ -1535,6 +1535,8 @@ static VkResult build_tessellation_layouts(VkPs5Pipeline *pipeline)
             evaluation->tessellation_patch_count ||
         !control->tessellation_input_control_points ||
         !control->tessellation_output_control_points ||
+        !control->tessellation_lds_size ||
+        control->tessellation_lds_size > 65536u ||
         control->tessellation_output_control_points !=
             evaluation->tessellation_output_control_points)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -3369,6 +3371,8 @@ static void record_tessellation_draw(
                 pipeline->tess_ring_descriptor_address,
             .tcs_offchip_layout = pipeline->tcs_offchip_layout,
             .tes_offchip_layout = pipeline->tes_offchip_layout,
+            .hull_lds_size =
+                pipeline->stages[0].metadata.tessellation_lds_size,
             .primitive_type = pipeline->primitive_type,
         },
         .frame = &draw_frame,

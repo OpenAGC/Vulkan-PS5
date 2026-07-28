@@ -750,13 +750,14 @@ int main(int argc, char **argv)
     assert(count > 200);
     assert(has_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                               AGC_REG_SPI_SHADER_USER_DATA_HS_0 + 11u,
-                              0x228a2108u));
+                              0x210a2108u));
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
-                                0x228a2108u) >= 2u);
+                                0x210a2108u) >= 2u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;
     bool found_tess_ring_base = false, found_tess_ring_base_hi = false;
+    bool found_tess_hull_lds = false;
     bool found_color_target = false, found_color_target_1 = false;
     bool found_dual_export = false, found_depth_surface = false;
     bool found_depth_control = false, found_stencil_control = false;
@@ -788,6 +789,11 @@ int main(int argc, char **argv)
                    i + 2 < count && dwords[i + 1] == AGC_REG_CB_COLOR0_BASE) {
             found_color_target |=
                 dwords[i + 2] == (uint32_t)(image_address >> 8);
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_SH_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_SPI_SHADER_PGM_RSRC2_HS) {
+            found_tess_hull_lds |=
+                (dwords[i + 2] & (0x1ffu << 18u)) != 0u;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
@@ -847,7 +853,8 @@ int main(int argc, char **argv)
     assert(found_dispatch && found_draw && found_tess_draw &&
            found_tess_context && found_tess_ring_size &&
            found_tess_offchip && found_tess_ring_base &&
-           found_tess_ring_base_hi && found_frame && found_color_target &&
+           found_tess_ring_base_hi && found_tess_hull_lds &&
+           found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
