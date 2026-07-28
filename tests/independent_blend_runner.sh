@@ -13,7 +13,8 @@ cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
 for arg do
     case "$arg" in
-        */hbldr*) printf '%s\n' 'independent_blend: PASS target0=18432 target1=18432 color1=80800080' ;;
+        */hbldr*) printf 'independent_blend: PASS target0=18432 target1=18432 color1=%s\n' \
+            "${FAKE_BLEND_COLOR:-80800080}" ;;
     esac
 done
 EOF
@@ -67,6 +68,9 @@ if grep -F -- '--pid 902' "$test_root/uv.log" >/dev/null; then
     echo "independent-blend runner targeted the later ShellUI PID" >&2
     exit 1
 fi
+
+FAKE_BLEND_COLOR=7f7f007f run_runner clean "$test_root/low-half.out"
+grep -F 'FW550 independent-blend probe: CLEAN' "$test_root/low-half.out" >/dev/null
 
 if run_runner crash "$test_root/crash.out"; then
     echo "fatal independent-blend klog unexpectedly passed" >&2

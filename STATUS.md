@@ -287,10 +287,16 @@ Implemented and host-verified:
   requires distinct disabled/enabled MRT targets, exact control words, target
   mask `0x6f`, and exact float constants in normal and ASAN/UBSAN builds.
   A standalone bounded probe requires opaque green on the disabled target and
-  exact half-intensity magenta `0x80800080` on the constant-factor target, then
+  half-intensity magenta (`0x7f7f007f` or `0x80800080`, the two legal 8-bit
+  UNORM tie results) on the constant-factor target, then
   exits through SystemService. Both host suites pass 21/21, its Prospero ELF
-  SHA-256 is `91467f1d00bfa9e4493f48eb8a56b0168f699ebb80aa42484e9e7d183afcab6b`,
-  and `independentBlend` remains false until its one hardware gate passes.
+  current diagnostic ELF SHA-256 is
+  `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`,
+  and `independentBlend` remains false. The first bounded run reached the
+  matching self-kill lifecycle without a fatal GPU signature, but its older
+  single-value oracle rejected all target-one pixels before logging their
+  value; the next candidate records center pixels and accepts only the two
+  legal half-intensity encodings.
   Begin/end
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
   enables every active slot, and fragment export context carries the real MRT

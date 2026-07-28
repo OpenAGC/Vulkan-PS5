@@ -614,8 +614,9 @@ tessellation draws. Dual-source factors and logic operations remain rejected.
 The public `independentBlend` bit stays false pending deterministic hardware
 readback. The standalone `vulkan_ps5_independent_blend_probe` renders the same
 triangle to two attachments: target zero must remain opaque green with blending
-disabled, while target one must become exact half-intensity magenta
-`0x80800080` through constant-color/alpha factors. Its bounded runner requires
+disabled, while target one must become half-intensity magenta through
+constant-color/alpha factors. The 8-bit UNORM tie may encode as `0x7f7f007f`
+or `0x80800080`; no other value is accepted. Its bounded runner requires
 the shared self-kill lifecycle. Static depth compare/write and front/back stencil state are translated
 to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment

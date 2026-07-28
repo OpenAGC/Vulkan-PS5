@@ -10,7 +10,9 @@
 #if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
 #include "../system_service_exit.h"
 #define SAMPLE_NAME "independent_blend"
-#define TARGET1_COLOR 0x80800080u
+#define TARGET1_COLOR_LOW 0x7f7f007fu
+#define TARGET1_COLOR_HIGH 0x80800080u
+#define TARGET1_COLOR TARGET1_COLOR_HIGH
 #else
 #define SAMPLE_NAME "mrt"
 #define TARGET1_COLOR MAGENTA
@@ -305,7 +307,8 @@ int main(void)
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 2, ranges));
 
-    const uint32_t expected[] = {GREEN, TARGET1_COLOR};
+    uint32_t expected[] = {GREEN, TARGET1_COLOR};
+    uint32_t centers[2] = {0, 0};
     uint32_t counts[2] = {0, 0};
     uint32_t unexpected[2] = {0, 0};
     int status = 0;
@@ -316,14 +319,29 @@ int main(void)
             else if (pixels[i] != 0) ++unexpected[target];
         }
         uint32_t center = pixels[(HEIGHT / 2) * WIDTH + WIDTH / 2];
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+        if (target == 1u && (center == TARGET1_COLOR_LOW ||
+                            center == TARGET1_COLOR_HIGH)) {
+            expected[target] = center;
+            counts[target] = 0u;
+            unexpected[target] = 0u;
+            for (uint32_t i = 0; i < WIDTH * HEIGHT; ++i) {
+                if (pixels[i] == expected[target]) ++counts[target];
+                else if (pixels[i] != 0) ++unexpected[target];
+            }
+        }
+#endif
+        centers[target] = center;
         if (counts[target] < 16000 || counts[target] > 21000 ||
             unexpected[target] != 0 || center != expected[target] ||
             pixels[0] != 0 || pixels[WIDTH - 1] != 0)
             status = 1;
     }
     if (status)
-        printf(SAMPLE_NAME ": mismatch target0=%u/%u target1=%u/%u\n",
-               counts[0], unexpected[0], counts[1], unexpected[1]);
+        printf(SAMPLE_NAME ": mismatch target0=%u/%u/%08x "
+               "target1=%u/%u/%08x expected1=%08x\n",
+               counts[0], unexpected[0], centers[0],
+               counts[1], unexpected[1], centers[1], expected[1]);
     else {
 #if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
         printf(SAMPLE_NAME ": PASS target0=%u target1=%u color1=%08x\n",

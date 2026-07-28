@@ -75,14 +75,20 @@ regression uses one disabled full-mask target and one enabled GB-only target,
 requiring distinct control words, target mask `0x6f`, and all four constants.
 Both normal and ASAN/UBSAN suites pass 21/21 and the Prospero build passes.
 The standalone MRT gate now requires target zero to retain opaque green while
-target one resolves to exact half-intensity magenta `0x80800080` through
-constant-color/alpha factors, followed by the shared SystemService lifecycle.
+target one resolves to half-intensity magenta through constant-color/alpha
+factors, followed by the shared SystemService lifecycle. Since exact 0.5 is a
+tie when converted to 8-bit UNORM, the gate accepts only `0x7f7f007f` or
+`0x80800080`.
 Its runner covers clean, fatal, NUL-containing, PID-reuse, and exact-identity
 paths. Both host configurations pass 21/21; Prospero ELF SHA-256 is
-`91467f1d00bfa9e4493f48eb8a56b0168f699ebb80aa42484e9e7d183afcab6b`.
-Public `independentBlend` remains false until its one bounded hardware run
-passes; dual-source blend and logic operations remain separate unsupported
-features.
+`8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`.
+The first bounded hardware run produced the correct target-zero coverage and
+nonzero target-one coverage, then completed the matching self-kill lifecycle
+without a fatal GPU signature. Its obsolete single-value oracle rejected the
+target-one pixels without logging their value. The next candidate logs both
+center pixels and accepts only the two legal half-intensity encodings. Public
+`independentBlend` therefore remains false; dual-source blend and logic
+operations remain separate unsupported features.
 
 ## Runtime compatibility
 
