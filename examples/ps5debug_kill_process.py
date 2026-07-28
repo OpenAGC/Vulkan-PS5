@@ -7,6 +7,13 @@ import asyncio
 from ps4debug import PS4Debug
 
 
+def process_matches(process, pid: int | None, name: str | None) -> bool:
+    """Match a PID and optional name conjunctively to reject PID reuse."""
+    if pid is not None:
+        return process.pid == pid and (name is None or process.name == name)
+    return process.name == name
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -26,10 +33,15 @@ async def main() -> int:
     matches = [
         process
         for process in processes
-        if (args.pid is not None and process.pid == args.pid)
-        or (args.pid is None and process.name == args.name)
+        if process_matches(process, args.pid, args.name)
     ]
-    description = f"pid {args.pid}" if args.pid is not None else repr(args.name)
+    description = (
+        f"pid {args.pid} named {args.name!r}"
+        if args.pid is not None and args.name is not None
+        else f"pid {args.pid}"
+        if args.pid is not None
+        else repr(args.name)
+    )
     if not matches:
         print(f"ps5debug-NG: no process matching {description}")
         return 0

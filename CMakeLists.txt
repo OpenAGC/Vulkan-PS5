@@ -165,6 +165,8 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/indirect_draw_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.indirect_draw_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.ps5debug_process_identity
+      COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/eden_vma_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")

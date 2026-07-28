@@ -25,7 +25,22 @@ Shaders that do not consume DrawIndex retain the native PS5 multi packet.
 
 The corrected Prospero candidate is
 `cbd05b90dc471644f7e278236abff26845124e69cb0562d8d7727f650b0e87b8`.
-All 19 host tests pass and the required Prospero libraries are linked. Public
-`multiDrawIndirect`, `drawIndirectFirstInstance`, and `shaderDrawParameters`
-remain false until this corrected candidate passes one fresh bounded FW 5.50
-run.
+Its bounded run also failed during submission and reset the GPU. The actual
+native-game process was PID 157; after the crash ShellUI restarted as PID 158.
+The old runner selected the newest generic `/app0/eboot.bin` EXEC record, then
+the cleanup helper trusted PID 158 after it had been reused and killed
+`SceShellUI`. Evidence is retained in:
+
+- `examples/qualification-logs/20260728T084428Z-indirect-draw-run1.log`
+- `examples/qualification-logs/20260728T084428Z-indirect-draw-run1.klog`
+
+Every FW 5.50 runner now selects only EXEC records carrying
+`category=native_game`. Cleanup and absence checks require the PID and exact
+`eboot.bin` process name to match conjunctively, so PID reuse cannot target a
+system process. Host regressions include a later fake `category=shell_ui`
+record and a direct PID/name mismatch test.
+
+Public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+`shaderDrawParameters` remain false. The sequential-single-packet candidate
+must not be repeated; the submission fault needs a materially narrower probe
+before another bounded hardware run.

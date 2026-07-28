@@ -29,11 +29,11 @@ fi
 
 kill_exact_pid() {
     uv run --project "$pyps4debug_dir" python \
-        "$script_dir/ps5debug_kill_process.py" --pid "$1" "$PS5_HOST"
+        "$script_dir/ps5debug_kill_process.py" --pid "$1" "$PS5_HOST" eboot.bin
 }
 
 latest_eboot_pid() {
-    sed -n 's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*/\1/p' "$1" | \
+    sed -n 's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*category=native_game.*/\1/p' "$1" | \
         tail -n 1
 }
 
@@ -85,7 +85,7 @@ fi
 
 if ! uv run --project "$pyps4debug_dir" python \
     "$script_dir/ps5debug_kill_process.py" --assert-absent \
-    --pid "$target_pid" "$PS5_HOST"; then
+    --pid "$target_pid" "$PS5_HOST" eboot.bin; then
     kill_exact_pid "$target_pid" || true
     echo "Eden VMA process remained after return: $target_klog" >&2
     exit 1

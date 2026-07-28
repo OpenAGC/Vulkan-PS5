@@ -26,7 +26,10 @@ and 16x-anisotropic draws sample the same high-frequency stripe texture with an
 elongated footprint, and the mapped-memory oracle requires the anisotropic
 half's mean absolute deviation from neutral gray to fall materially below the
 bilinear control. Its runner permits one launch and applies the established
-exact-PID crash, cleanup, warning, and console-response checks.
+PID-and-process-name crash, cleanup, warning, and console-response checks.
+Qualification runners select only `category=native_game` EXEC records and
+require cleanup targets to retain the exact `eboot.bin` identity, preventing a
+reused PID from targeting ShellUI or another system process.
 Single and multi `vkCmdDrawIndirect`/`vkCmdDrawIndexedIndirect` recording now
 uses OpenAGC's application-neutral gfx1013 indirect-draw wrapper instead of a
 no-op. The ICD validates usage, alignment, stride, range, and index bindings,

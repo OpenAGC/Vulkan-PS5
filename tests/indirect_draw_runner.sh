@@ -20,7 +20,8 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
-printf '%s\n' '<323> EXEC /app0/eboot.bin [system], vm#1'
+printf '%s\n' '<323> EXEC /app0/eboot.bin [system], vm#1 category=native_game'
+printf '%s\n' '<324> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean) ;;
     crash) printf '%s\n' '# proc ID: 323' ;;
@@ -31,7 +32,7 @@ EOF
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
-    *" --pid 323 "*) ;;
+    *" --pid 323 "*" eboot.bin "*) ;;
     *) echo "indirect runner did not use exact PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"
@@ -58,6 +59,10 @@ run_runner clean "$test_root/clean.out"
 grep -F 'FW550 indirect-draw: PASS (multi/draw-parameters readback and clean PID-scoped klog)' \
     "$test_root/clean.out" >/dev/null
 grep -F -- '--assert-absent --pid 323' "$test_root/uv.log" >/dev/null
+if grep -F -- '--pid 324' "$test_root/uv.log" >/dev/null; then
+    echo "indirect runner targeted the later ShellUI PID" >&2
+    exit 1
+fi
 
 if run_runner crash "$test_root/crash.out"; then
     echo "fatal indirect-draw klog unexpectedly passed" >&2

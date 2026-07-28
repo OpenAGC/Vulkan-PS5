@@ -26,7 +26,8 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
-printf '<321> EXEC /app0/eboot.bin [system], vm#1\n'
+printf '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game\n'
+printf '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui\n'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean)
         printf '%s\n' \
@@ -56,7 +57,7 @@ EOF
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
-    *" --pid 321 "*) ;;
+    *" --pid 321 "*" eboot.bin "*) ;;
     *) echo "runner did not use exact launched PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"

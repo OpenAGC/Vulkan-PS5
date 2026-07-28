@@ -95,9 +95,11 @@ does not turn a failed requirement into support.
    feature advertisement and device-enable handling can be promoted. Indirect
    draw recording is no longer a stub. Compiler metadata now includes DrawIndex,
    and DrawID-using multi draws expand into hardware-qualified single packets.
-   Its paired multi-draw/nonzero-first-instance/DrawID exact-color gate awaits
-   one fresh-console run before the three related core bits are promoted. The
-   rejected 10-dword packet experiment and GPU-reset evidence are documented in
+   Its paired multi-draw/nonzero-first-instance/DrawID exact-color gate faulted
+   during submission even after reverting to sequential qualified single
+   packets, so the same candidate must not be repeated. A narrower diagnostic
+   is required before the three related core bits are promoted. The rejected
+   packet experiments, GPU-reset evidence, and PID-reuse runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.

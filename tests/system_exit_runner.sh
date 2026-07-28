@@ -27,7 +27,8 @@ EOF
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
 printf '%s\n' \
-    '<321> EXEC /app0/eboot.bin [system], vm#1' \
+    '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game' \
+    '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui' \
     '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00002016' \
     '[AppMgr] All processes exited'
 case "${FAKE_KLOG_MODE:-baseline}" in
@@ -44,7 +45,7 @@ EOF
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
-    *" --pid 321 "*) ;;
+    *" --pid 321 "*" eboot.bin "*) ;;
     *) echo "probe runner did not use exact PID" >&2; exit 2 ;;
 esac
 echo "ps5debug-NG: no process matching pid 321"

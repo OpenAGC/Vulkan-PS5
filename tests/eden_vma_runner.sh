@@ -20,7 +20,8 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
-printf '%s\n' '<777> EXEC /app0/eboot.bin [system], vm#1'
+printf '%s\n' '<777> EXEC /app0/eboot.bin [system], vm#1 category=native_game'
+printf '%s\n' '<778> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean) ;;
     crash) printf '%s\n' '# proc ID: 777' ;;
@@ -31,7 +32,7 @@ EOF
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
-    *" --pid 777 "*) ;;
+    *" --pid 777 "*" eboot.bin "*) ;;
     *) echo "Eden VMA runner did not use exact PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"

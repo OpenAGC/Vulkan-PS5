@@ -20,7 +20,8 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
-printf '%s\n' '<321> EXEC /app0/eboot.bin [system], vm#1'
+printf '%s\n' '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game'
+printf '%s\n' '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean) ;;
     crash) printf '%s\n' '# proc ID: 321' ;;
@@ -31,7 +32,7 @@ EOF
 cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
-    *" --pid 321 "*) ;;
+    *" --pid 321 "*" eboot.bin "*) ;;
     *) echo "mirror runner did not use exact PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"
