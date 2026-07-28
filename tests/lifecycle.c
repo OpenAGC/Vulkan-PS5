@@ -41,9 +41,17 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES,
         .pNext = &subgroup,
     };
+    VkPhysicalDeviceFloatControlsProperties float_controls = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES,
+        .pNext = &maintenance,
+    };
+    VkPhysicalDeviceDriverProperties driver = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+        .pNext = &float_controls,
+    };
     VkPhysicalDeviceIDProperties id = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES,
-        .pNext = &maintenance,
+        .pNext = &driver,
     };
     VkPhysicalDeviceProperties2 properties2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -51,25 +59,43 @@ int main(void) {
     };
     vkGetPhysicalDeviceProperties2(physical, &properties2);
     assert(id.deviceUUID[0] != 0);
+    assert(driver.driverID == VK_DRIVER_ID_MESA_RADV);
+    assert(strcmp(driver.driverName, "Vulkan-PS5") == 0);
+    assert(driver.conformanceVersion.major == 0);
+    assert(driver.conformanceVersion.minor == 0);
+    assert(driver.conformanceVersion.subminor == 0);
+    assert(driver.conformanceVersion.patch == 0);
+    assert(float_controls.denormBehaviorIndependence ==
+           VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE);
+    assert(float_controls.roundingModeIndependence ==
+           VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE);
+    assert(float_controls.shaderSignedZeroInfNanPreserveFloat32 == VK_FALSE);
     assert(maintenance.maxMemoryAllocationSize == 12ull * 1024 * 1024 * 1024);
     assert(subgroup.subgroupSize == 32);
 
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 2);
-    VkExtensionProperties extensions[2];
+    assert(extension_count == 4);
+    VkExtensionProperties extensions[4];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
     VkBool32 has_swapchain = VK_FALSE;
+    VkBool32 has_driver_properties = VK_FALSE;
+    VkBool32 has_shader_float_controls = VK_FALSE;
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
             VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
         has_swapchain |= strcmp(extensions[i].extensionName,
             VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0;
+        has_driver_properties |= strcmp(extensions[i].extensionName,
+            VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME) == 0;
+        has_shader_float_controls |= strcmp(extensions[i].extensionName,
+            VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME) == 0;
     }
-    assert(has_host_query_reset && has_swapchain);
+    assert(has_host_query_reset && has_swapchain && has_driver_properties &&
+           has_shader_float_controls);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -134,9 +160,13 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = 3,
         .ppEnabledExtensionNames =
-            (const char *const[]){VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME},
+            (const char *const[]){
+                VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+                VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
+                VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+            },
     };
     VkPhysicalDeviceHostQueryResetFeatures enabled_host_query_reset = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,

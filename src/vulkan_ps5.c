@@ -287,6 +287,10 @@ static const VkExtensionProperties device_extensions[] = {
     { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
     { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
       VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
+    { VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
+      VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION },
+    { VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+      VK_KHR_SHADER_FLOAT_CONTROLS_SPEC_VERSION },
 };
 
 static VkBool32 extension_supported(const char *name,
@@ -766,6 +770,36 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                 (VkPhysicalDeviceMaintenance3Properties *)next;
             maintenance->maxPerSetDescriptors = 1024;
             maintenance->maxMemoryAllocationSize = capabilities.memory_profiles[1].size;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES: {
+            VkPhysicalDeviceDriverProperties *driver =
+                (VkPhysicalDeviceDriverProperties *)next;
+            void *saved_next = driver->pNext;
+            memset(driver, 0, sizeof(*driver));
+            driver->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+            driver->pNext = saved_next;
+            driver->driverID = VK_DRIVER_ID_MESA_RADV;
+            strncpy(driver->driverName, "Vulkan-PS5",
+                    VK_MAX_DRIVER_NAME_SIZE - 1);
+            strncpy(driver->driverInfo,
+                    "OpenAGC gfx1013 experimental Vulkan ICD",
+                    VK_MAX_DRIVER_INFO_SIZE - 1);
+            driver->conformanceVersion = (VkConformanceVersion){0, 0, 0, 0};
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES: {
+            VkPhysicalDeviceFloatControlsProperties *controls =
+                (VkPhysicalDeviceFloatControlsProperties *)next;
+            void *saved_next = controls->pNext;
+            memset(controls, 0, sizeof(*controls));
+            controls->sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES;
+            controls->pNext = saved_next;
+            controls->denormBehaviorIndependence =
+                VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
+            controls->roundingModeIndependence =
+                VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES: {

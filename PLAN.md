@@ -249,6 +249,13 @@
   nonzero mode for closure. The accompanying matrix also records the runtime
   VMA, format, shader, presentation, and allowed Eden-integration work without
   weakening or special-casing Eden's requirements.
+  The first application-neutral reduction implements the query-only
+  `VK_KHR_driver_properties` and `VK_KHR_shader_float_controls` contracts.
+  Driver metadata reports the experimental ACO/gfx1013 identity with
+  conformance `0.0.0.0`; float execution-mode capabilities stay false until
+  separately qualified. Lifecycle and VVL tests cover enumeration,
+  Properties2 output, and device enablement. The live profile is 28 gaps: two
+  extensions and 26 features.
 
 ## Summary
 

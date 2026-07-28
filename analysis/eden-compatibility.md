@@ -17,7 +17,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | Requirement | Eden requirement | Current evidence | State |
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
-| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | None are enumerated | 4 gaps |
+| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | Driver properties and conservative float-control properties are enumerated, queryable, and accepted at device creation | 2 gaps |
 | Core/Features2 | 29 mandatory feature bits | `geometryShader`, `tessellationShader`, and `hostQueryReset` are true | 26 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
@@ -27,7 +27,7 @@ build/vulkan_ps5_eden_profile_test --strict
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=4 features=26 limits=0 queues=0 total=30
+eden-profile: extensions=2 features=26 limits=0 queues=0 total=28
 ```
 
 The 26 feature gaps are `depthBiasClamp`, `depthClamp`,
@@ -55,9 +55,10 @@ does not turn a failed requirement into support.
 
 ## Implementation order
 
-1. Complete the four planned mandatory extension contracts, starting with the
-   query-only driver/float-control properties and then sampler mirror clamp and
-   vertex divisors with real pipeline semantics.
+1. Complete the two remaining mandatory extension contracts: sampler mirror
+   clamp and vertex divisors with real sampler/pipeline semantics. The
+   query-only driver/float-control contracts are complete and tested; float
+   execution-mode capabilities remain conservatively false.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths.

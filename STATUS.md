@@ -514,6 +514,12 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   bits. `vulkan_ps5_eden_profile_test` reports every name and a stable category
   summary; its normal reporting mode is registered with CTest and `--strict`
   remains nonzero until the profile is actually complete.
+- `VK_KHR_driver_properties` now identifies the experimental gfx1013/ACO path
+  with a deliberately non-conformant `0.0.0.0` version.
+  `VK_KHR_shader_float_controls` exposes a complete, conservative property
+  record with no unqualified execution-mode capabilities. Enumeration,
+  Properties2 chaining, and device enablement are lifecycle-tested. The live
+  profile is now two extension plus 26 feature gaps, total 28.
 - Runtime audit also identifies missing Eden VMA-pattern coverage, a 19-format
   subset with no BC/D24/storage-image support, and the still-missing Prospero
   surface/build/static-entrypoint integration in Eden itself.

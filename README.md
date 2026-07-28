@@ -9,6 +9,8 @@ standard-Vulkan consumer on both host and FW 5.50.
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test; the initial Eden suitability baseline is
 30 hard gaps rather than an application-specific bypass.
+Query-complete driver-properties and conservative shader-float-controls
+support reduce the live count to 28.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
