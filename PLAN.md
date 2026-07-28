@@ -320,7 +320,7 @@
   lingering process, or unavailable websrv. Host sampler tests plus runner
   clean/crash simulations pass in the 18/18 suite; the Prospero candidate links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `33b9420a963cf485481e5a42ca19e7b652ecadd32df5e319f542c24ff3185922`.
+  `28f7a3ec4ddd68b4f835a7dd7db0243b57d6509679e3055e4e3cdd93c59ae835`.
   The feature remains false until one fresh-console hardware gate qualifies the
   filtering result and the standard feature-query/request path is promoted.
   Vulkan indirect graphics commands now record through OpenAGC's existing
@@ -333,8 +333,16 @@
   `DRAW_INDIRECT`, `DRAW_INDIRECT_MULTI`, and
   `DRAW_INDEX_INDIRECT_MULTI`, plus an out-of-range rejection. The complete
   host suite and Prospero static build pass. `multiDrawIndirect` and
-  `drawIndirectFirstInstance` remain false until a distinct hardware oracle
-  qualifies multi-command execution and nonzero first-instance semantics.
+  `drawIndirectFirstInstance` remain false. Their deterministic probe is now
+  prepared: two commands use `firstVertex = 1` to skip an off-screen decoy and
+  `firstInstance = 1,2`; `gl_InstanceIndex` shifts them into separate halves
+  and selects exact green/blue texels. The readback requires balanced
+  5,000-6,500-pixel triangles with no red fallback or unexpected pixels, so a
+  missing second command, base vertex, or first instance cannot pass. Its
+  one-shot runner has clean/crash exact-PID coverage. The 19-test host suite
+  passes, the Prospero ELF links `-lunwind -lc++abi -lc++ -lm`, and SHA-256 is
+  `e4668308a8d3477253427080c0cd647120153f9dfe6b38f670b163742c51a42d`.
+  One fresh-console hardware run remains before either bit can be promoted.
 
 ## Summary
 

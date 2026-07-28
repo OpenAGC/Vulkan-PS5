@@ -598,7 +598,7 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   The one-shot runner has clean/crash exact-PID coverage and the full host suite
   passes 18/18. The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
   SHA-256
-  `33b9420a963cf485481e5a42ca19e7b652ecadd32df5e319f542c24ff3185922`.
+  `28f7a3ec4ddd68b4f835a7dd7db0243b57d6509679e3055e4e3cdd93c59ae835`.
   `samplerAnisotropy` remains `VK_FALSE` until one fresh explicit FW 5.50 run
   passes and the normal feature-query/request contract is enabled.
 - `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect` now use OpenAGC's typed
@@ -609,5 +609,14 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   validated; zero draw count remains a legal no-op. Host recording verifies
   the single non-indexed, multi non-indexed, and multi indexed PM4 opcodes plus
   range rejection. All 18 tests and the Prospero static build pass.
-  `multiDrawIndirect` and `drawIndirectFirstInstance` stay `VK_FALSE` pending a
-  deterministic hardware execution/readback gate.
+  A deterministic hardware gate now packs two commands into one indirect
+  buffer. Both use `firstVertex = 1` to skip a decoy; nonzero first instances
+  1 and 2 make the shader place exact green and blue triangles in opposite
+  target halves. The oracle rejects a missing command, ignored base/instance,
+  red fallback, unexpected color, unequal coverage, or damaged background.
+  The bounded runner has clean/crash exact-PID safety coverage, all 19 host
+  tests pass, and the Prospero ELF links `-lunwind -lc++abi -lc++ -lm` with
+  SHA-256
+  `e4668308a8d3477253427080c0cd647120153f9dfe6b38f670b163742c51a42d`.
+  `multiDrawIndirect` and `drawIndirectFirstInstance` stay `VK_FALSE` pending
+  one fresh explicit FW 5.50 run.

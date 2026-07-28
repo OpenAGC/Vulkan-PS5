@@ -6,14 +6,25 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "vulkan_ps5_indexed_textured_frag_spv.h"
+#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+#include "vulkan_ps5_indirect_draw_vert_spv.h"
+#define SAMPLE_VERTEX_SPV vulkan_ps5_indirect_draw_vert_spv
+#else
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
+#define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
+#endif
+#include "vulkan_ps5_indexed_textured_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_indexed_textured_frag_spv
 
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
 #ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
 #define SAMPLE_NAME "vertex_divisor"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+#define SAMPLE_NAME "indirect_draw"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
@@ -214,6 +225,13 @@ int main(void)
         {{ 0.75f, -0.75f}, {0.75f, 0.25f}},
         {{ 0.00f,  0.75f}, {0.25f, 0.75f}},
     };
+#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+    const Vertex vertices[4] = {
+        {{9.0f, 9.0f}, {0.25f, 0.25f}},
+        {{-0.35f, -0.50f}, {0.25f, 0.25f}},
+        {{ 0.35f, -0.50f}, {0.25f, 0.25f}},
+        {{ 0.00f,  0.50f}, {0.25f, 0.25f}},
+    };
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
     const Vertex vertices[7] = {
         {{9.0f, 9.0f}, {0.0f, 0.5f}},
@@ -260,6 +278,24 @@ int main(void)
         {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, index_memory, 0, VK_WHOLE_SIZE},
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 2, upload_ranges));
+#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+    const VkDrawIndirectCommand indirect_commands[2] = {
+        {3u, 1u, 1u, 1u},
+        {3u, 1u, 1u, 2u},
+    };
+    VkBuffer indirect_buffer;
+    VkDeviceMemory indirect_memory;
+    void *indirect_mapped;
+    VK_CHECK(create_buffer(physical, device, sizeof(indirect_commands),
+        VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, &indirect_buffer,
+        &indirect_memory, &indirect_mapped));
+    memcpy(indirect_mapped, indirect_commands, sizeof(indirect_commands));
+    const VkMappedMemoryRange indirect_range = {
+        VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, indirect_memory, 0,
+        VK_WHOLE_SIZE,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &indirect_range));
+#endif
 
     const VkImageViewCreateInfo target_view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -418,13 +454,13 @@ int main(void)
 
     const VkShaderModuleCreateInfo vertex_shader_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = sizeof(vulkan_ps5_indexed_textured_vert_spv),
-        .pCode = vulkan_ps5_indexed_textured_vert_spv,
+        .codeSize = sizeof(SAMPLE_VERTEX_SPV),
+        .pCode = SAMPLE_VERTEX_SPV,
     };
     const VkShaderModuleCreateInfo fragment_shader_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = sizeof(vulkan_ps5_indexed_textured_frag_spv),
-        .pCode = vulkan_ps5_indexed_textured_frag_spv,
+        .codeSize = sizeof(SAMPLE_FRAGMENT_SPV),
+        .pCode = SAMPLE_FRAGMENT_SPV,
     };
     VkShaderModule vertex_shader, fragment_shader;
     VK_CHECK(vkCreateShaderModule(device, &vertex_shader_info, NULL, &vertex_shader));
@@ -588,6 +624,10 @@ int main(void)
     VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
 #endif
+#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+    vkCmdDrawIndirect(command, indirect_buffer, 0u, 2u,
+                      sizeof(VkDrawIndirectCommand));
+#else
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3,
 #ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
@@ -596,6 +636,7 @@ int main(void)
         1,
 #endif
         0, 0, 0);
+#endif
 #ifdef VULKAN_PS5_ANISOTROPY_PROBE
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &descriptor_sets[1], 0, NULL);
@@ -636,12 +677,36 @@ int main(void)
         if (!found && distinct_count < 64u)
             distinct[distinct_count++] = pixel;
     }
-#ifndef VULKAN_PS5_ANISOTROPY_PROBE
+#if !defined(VULKAN_PS5_ANISOTROPY_PROBE) && \
+    !defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
 #endif
     int status = 0;
-#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+    uint32_t green = 0u, blue = 0u, red = 0u, unexpected = 0u;
+    for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+        if (pixels[i] == 0xff00ff00u)
+            green++;
+        else if (pixels[i] == 0xffff0000u)
+            blue++;
+        else if (pixels[i] == 0xff0000ffu)
+            red++;
+        else if (pixels[i] != 0u)
+            unexpected++;
+    }
+    if (green < 5000u || green > 6500u || blue < 5000u || blue > 6500u ||
+        green + 64u < blue || blue + 64u < green || red != 0u ||
+        unexpected != 0u || covered != green + blue || opaque != covered ||
+        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("indirect_draw: mismatch green=%u blue=%u red=%u unexpected=%u covered=%u\n",
+            green, blue, red, unexpected, covered);
+        status = 1;
+    } else {
+        printf("indirect_draw: PASS green=%u blue=%u firstVertex=1 firstInstance=1,2 draws=2\n",
+            green, blue);
+    }
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
     uint32_t linear_count = 0u, anisotropic_count = 0u;
     uint64_t linear_sum = 0u, anisotropic_sum = 0u;
     uint64_t linear_deviation = 0u, anisotropic_deviation = 0u;
@@ -742,6 +807,11 @@ int main(void)
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);
     vkDestroyImageView(device, target_view, NULL);
+#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+    vkUnmapMemory(device, indirect_memory);
+    vkDestroyBuffer(device, indirect_buffer, NULL);
+    vkFreeMemory(device, indirect_memory, NULL);
+#endif
     vkUnmapMemory(device, index_memory);
     vkUnmapMemory(device, vertex_memory);
     vkDestroyBuffer(device, index_buffer, NULL);

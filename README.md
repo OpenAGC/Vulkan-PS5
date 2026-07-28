@@ -32,7 +32,10 @@ uses OpenAGC's application-neutral gfx1013 indirect-draw wrapper instead of a
 no-op. The ICD validates usage, alignment, stride, range, and index bindings,
 and supplies compiler-selected base-vertex/start-instance user-SGPR locations.
 The optional `multiDrawIndirect` and `drawIndirectFirstInstance` bits remain
-false pending deterministic hardware readback.
+false pending deterministic hardware readback. A bounded probe is prepared:
+one multi-draw buffer uses `firstVertex = 1` to skip a decoy and nonzero
+`firstInstance` values 1 and 2 to produce separate exact green/blue triangles.
+Its mapped oracle fails if either command or either indirect argument is lost.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;
