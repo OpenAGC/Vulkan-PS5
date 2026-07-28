@@ -154,7 +154,7 @@
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
+  `d94722b2c9473b8407769b9b1fe044dd5796c6d5f78bbba7ccec15cfb6975c90`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -189,6 +189,12 @@
   hypothesis. OpenAGC `0c22e06` now restores the VideoOut text range to its
   exact original execute-only protection instead of read/execute, allowing the
   kernel to coalesce the temporary writable mapping.
+  The next gate (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
+  falsifying that hypothesis too. All 27 retained OpenAGC graphics klogs carry
+  the identical one-page warning. OpenAGC `4f66aa7` now explicitly unregisters
+  the flip event before closing VideoOut and deleting its still-live equeue; a
+  fresh bounded run will distinguish that resource from a FW 5.50/raw-ELF
+  baseline warning.
   A separately built recovery payload refuses to act unless exactly one other
   `eboot.elf` exists. One new bounded run remains before this milestone is
   hardware qualified; the runner has no automatic retry and uses exact-PID

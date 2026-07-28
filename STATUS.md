@@ -398,7 +398,7 @@ Implemented:
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate
   SHA-256 is
-  `8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
+  `d94722b2c9473b8407769b9b1fe044dd5796c6d5f78bbba7ccec15cfb6975c90`.
 
 Pending:
 
@@ -438,8 +438,13 @@ Pending:
   after another otherwise clean 1,800-frame lifecycle, falsifying the trailer
   hypothesis. OpenAGC `0c22e06` now restores the temporarily writable VideoOut
   text range to its original execute-only protection instead of read/execute,
-  allowing the kernel to coalesce the mapping. A new
-  bounded run is required; no automatic retry is permitted. The runner now
+  allowing the kernel to coalesce the mapping. The next gate
+  (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
+  falsifying that hypothesis too. All 27 retained OpenAGC graphics klogs carry
+  the identical one-page warning. OpenAGC `4f66aa7` now explicitly unregisters
+  the flip event before closing VideoOut and deleting its still-live equeue. A
+  fresh bounded run will distinguish that resource from a FW 5.50/raw-ELF
+  baseline; no automatic retry is permitted. The runner now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
   XO faults, and VM leaks, requires a self-requested kernel `KillApp()` followed
   by `All processes exited`, and

@@ -50,7 +50,7 @@ acquire/submit/present frames with binary semaphores and a fence. Its host run,
 the nine-test ICD suite, runner safety simulation, and Validation Layers pass;
 its Prospero ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`.
 The current candidate SHA-256 is
-`8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
+`d94722b2c9473b8407769b9b1fe044dd5796c6d5f78bbba7ccec15cfb6975c90`.
 Run exactly one bounded FW 5.50 gate after an explicit console-availability
 signal:
 
@@ -107,6 +107,12 @@ and the bounded websrv response, but reproduced the same warning. This falsified
 the trailer hypothesis. OpenAGC had restored the temporarily writable
 execute-only VideoOut text range as read/execute; `0c22e06` now restores its
 exact original execute-only protection so the kernel can coalesce the mapping.
+The next gate (`20260728T063634Z-swapchain-run1.log`) reproduced the warning,
+falsifying that mapping hypothesis as well. All 27 retained OpenAGC graphics
+klogs contain the identical one-page warning. OpenAGC `4f66aa7` now balances
+the remaining flip-event lifecycle explicitly—unregister event, close
+VideoOut, then delete the still-live equeue. A fresh bounded run will determine
+whether that removes the warning or confirms a FW 5.50/raw-ELF baseline.
 `vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
 to act unless exactly one other `eboot.elf` exists. One new bounded hardware
 run is required.
