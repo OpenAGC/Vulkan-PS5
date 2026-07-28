@@ -92,11 +92,12 @@ int main(void) {
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 5);
-    VkExtensionProperties extensions[5];
+    assert(extension_count == 6);
+    VkExtensionProperties extensions[6];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
+    VkBool32 has_vertex_divisor = VK_FALSE;
     VkBool32 has_swapchain = VK_FALSE;
     VkBool32 has_driver_properties = VK_FALSE;
     VkBool32 has_sampler_mirror_clamp = VK_FALSE;
@@ -104,6 +105,8 @@ int main(void) {
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
             VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
+        has_vertex_divisor |= strcmp(extensions[i].extensionName,
+            VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) == 0;
         has_swapchain |= strcmp(extensions[i].extensionName,
             VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0;
         has_driver_properties |= strcmp(extensions[i].extensionName,
@@ -113,8 +116,9 @@ int main(void) {
         has_shader_float_controls |= strcmp(extensions[i].extensionName,
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME) == 0;
     }
-    assert(has_host_query_reset && has_swapchain && has_driver_properties &&
-           has_sampler_mirror_clamp && has_shader_float_controls);
+    assert(has_host_query_reset && has_vertex_divisor && has_swapchain &&
+           has_driver_properties && has_sampler_mirror_clamp &&
+           has_shader_float_controls);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -137,7 +141,7 @@ int main(void) {
     };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
-    assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_FALSE);
+    assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
     assert(features11.shaderDrawParameters == VK_FALSE);
     assert(features2.features.depthBiasClamp == VK_TRUE);
@@ -148,6 +152,20 @@ int main(void) {
     assert(features2.features.logicOp == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
+
+    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor_features_ext = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT,
+        .vertexAttributeInstanceRateDivisor = VK_FALSE,
+        .vertexAttributeInstanceRateZeroDivisor = VK_TRUE,
+    };
+    VkPhysicalDeviceFeatures2 features2_ext = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &divisor_features_ext,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &features2_ext);
+    assert(divisor_features_ext.vertexAttributeInstanceRateDivisor == VK_TRUE);
+    assert(divisor_features_ext.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
@@ -206,10 +224,11 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 4,
+        .enabledExtensionCount = 5,
         .ppEnabledExtensionNames =
             (const char *const[]){
                 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+                VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
                 VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME,
                 VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
                 VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
@@ -219,9 +238,15 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
         .hostQueryReset = VK_TRUE,
     };
+    VkPhysicalDeviceVertexAttributeDivisorFeatures enabled_divisor = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
+        .pNext = &enabled_host_query_reset,
+        .vertexAttributeInstanceRateDivisor = VK_TRUE,
+    };
     VkPhysicalDeviceFeatures2 enabled_features2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &enabled_host_query_reset,
+        .pNext = &enabled_divisor,
         .features = {
             .depthBiasClamp = VK_TRUE,
             .depthClamp = VK_TRUE,
@@ -253,15 +278,10 @@ int main(void) {
     VkPhysicalDeviceVertexAttributeDivisorFeatures unsupported_divisor = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
-        .vertexAttributeInstanceRateDivisor = VK_TRUE,
+        .vertexAttributeInstanceRateZeroDivisor = VK_TRUE,
     };
     unsupported_device_info.pNext = &unsupported_divisor;
     unsupported_device_info.pEnabledFeatures = NULL;
-    assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
-                          &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
-    assert(unsupported_device == VK_NULL_HANDLE);
-    unsupported_divisor.vertexAttributeInstanceRateDivisor = VK_FALSE;
-    unsupported_divisor.vertexAttributeInstanceRateZeroDivisor = VK_TRUE;
     assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
                           &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(unsupported_device == VK_NULL_HANDLE);

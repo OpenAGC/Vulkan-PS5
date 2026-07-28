@@ -123,6 +123,27 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
+#if defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
+    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT supported_divisor = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 supported_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &supported_divisor,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &supported_features);
+    if (!supported_divisor.vertexAttributeInstanceRateDivisor ||
+        supported_divisor.vertexAttributeInstanceRateZeroDivisor) {
+        printf("vertex_divisor: required divisor feature contract is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT enabled_divisor = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT,
+        .vertexAttributeInstanceRateDivisor = VK_TRUE,
+    };
+#endif
     float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -134,12 +155,20 @@ int main(void)
     const char *const device_extensions[] = {
         VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
     };
+#elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
+    const char *const device_extensions[] = {
+        VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
+    };
 #endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
+        .enabledExtensionCount = 1u,
+        .ppEnabledExtensionNames = device_extensions,
+#elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
+        .pNext = &enabled_divisor,
         .enabledExtensionCount = 1u,
         .ppEnabledExtensionNames = device_extensions,
 #endif

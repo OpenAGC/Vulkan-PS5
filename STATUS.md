@@ -642,20 +642,23 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   rejected rather than silently miscompiled. The compiler regression verifies
   the start-instance SGPR, and the Vulkan pipeline regression compiles divisor
   two and rejects zero. Legacy EXT and promoted property queries report
-  `UINT32_MAX` for the nonzero compiler range; Features2 explicitly returns
-  both divisor feature bits false, and device creation rejects either bit.
-  Both 24/24 normal and ASAN/UBSAN suites, openagc-psbc host tests, and both
-  Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains unadvertised
-  until deterministic hardware readback qualifies it.
-- The bounded vertex-divisor hardware candidate is ready. It draws four
+  `UINT32_MAX` for the nonzero compiler range; legacy EXT and promoted Features2
+  queries expose instance-rate divisor support while zero divisor and
+  nonzero-first-instance support remain false. Device creation accepts the
+  proven feature and rejects zero divisor. Both 25-test normal and ASAN/UBSAN
+  suites, openagc-psbc host tests, and both Prospero builds pass.
+  `VK_EXT_vertex_attribute_divisor` is enumerated and accepted.
+- The bounded vertex-divisor hardware gate draws four
   overlapping instances from red/white/green/blue instance data: divisor two
   must leave an exact-white single-color triangle, while divisor one leaves
   blue and vertex-rate handling produces multiple colors. The runner permits
   one launch, scopes fatal klog checks and cleanup to the exact PID, proves
   post-return absence and websrv availability, and accepts only the established
-  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 24 host
-  tests pass; the Prospero candidate SHA-256 is
-  `7105fbd6960cf97ac12e7e66bed5a34d71310a715aaea615bd8210d3aaea8c49`.
+  single raw-ELF `0x4000` warning. Both the internal-path and public
+  extension/feature-enabled FW 5.50 runs produced 18,432 exact-white pixels
+  with center `0xffffffff`, matching self-exit, no stale process, and clean
+  target-only klog. The public-path Prospero ELF SHA-256 is
+  `5647b97d9ad8944028c4e242c49503a36f307ecc9ff603d765aec2f56b0c1503`.
 - Eden's actual VMA allocation model is now covered by a configurable,
   test-only consumer. It supplies only dynamic instance/device proc lookup,
   enables external synchronization, selects Eden's preferred large-block size,

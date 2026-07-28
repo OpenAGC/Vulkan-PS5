@@ -17,7 +17,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | Requirement | Eden requirement | Current evidence | State |
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
-| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | Driver properties, mirror clamp, and conservative float-control properties are enumerated, queryable, and accepted at device creation | 1 gap |
+| Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All four are enumerated, queryable, and accepted at device creation | Pass |
 | Core/Features2 | 29 mandatory feature bits | Eight core feature bits plus `hostQueryReset` are true | 20 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
@@ -35,27 +35,28 @@ SystemService self-exit, no stale process, and clean target-only klog.
 creation. The public-path Prospero ELF SHA-256 is
 `6b591dfe79c69f32cc9efdb641ab686183b0c7c0e032df7f3892f6e3357ce78f`.
 
-The vertex-divisor software contract is also implemented but not yet
-advertised. openagc-psbc API v8 passes input rate and divisor state into RADV's
+The vertex-divisor contract is implemented, hardware-qualified, and advertised.
+openagc-psbc API v8 passes input rate and divisor state into RADV's
 gfx1013 lowering, and Vulkan pipeline creation consumes
 `VkPipelineVertexInputDivisorStateCreateInfoEXT` with divisor-one defaults and
 nonzero-divisor validation. Compiler and pipeline regressions pass on host and
 both components build for Prospero. Legacy EXT and promoted properties report
-the compiler's `UINT32_MAX` nonzero range; Features2 returns divisor and
-zero-divisor support false, and device creation rejects either unsupported
-request. A deterministic hardware readback probe followed by feature promotion
-and extension enumeration is still required.
-The probe and one-shot runner are now prepared: four overlapping instances
-must resolve to an exact-white triangle only when divisor two is honored. Its
-runner safety regression and both full 24-test host suites pass. Prospero
-candidate SHA-256 is
-`7105fbd6960cf97ac12e7e66bed5a34d71310a715aaea615bd8210d3aaea8c49`;
-one fresh-console FW 5.50 run remains before public promotion.
+the compiler's `UINT32_MAX` nonzero range. Both feature-query paths expose
+nonzero instance-rate divisor support while zero divisor and
+nonzero-first-instance support remain false; device creation accepts the former
+and rejects the latter. The probe and one-shot runner require four overlapping
+instances to resolve to an exact-white triangle only when divisor two is
+honored. Its
+runner safety regression and both full 25-test host suites pass. Both the
+internal-path and extension/feature-enabled FW 5.50 gates produced 18,432
+exact-white pixels with center `0xffffffff`, clean SystemService self-exit, no
+stale process, and clean target-only klog. The public-path Prospero ELF SHA-256
+is `5647b97d9ad8944028c4e242c49503a36f307ecc9ff603d765aec2f56b0c1503`.
 
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=1 features=20 limits=0 queues=0 total=21
+eden-profile: extensions=0 features=20 limits=0 queues=0 total=20
 ```
 
 The 20 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
@@ -196,13 +197,10 @@ timeout.
 
 ## Implementation order
 
-1. Complete the remaining mandatory extension contract: vertex divisors with
-   real compiler and pipeline semantics. The
-   query-only driver/float-control contracts are complete and tested; float
-   execution-mode capabilities remain conservatively false. Mirror clamp is
-   hardware-qualified and enumerated. Vertex-divisor compiler and pipeline
-   semantics and bounded readback gate are prepared; the one hardware run and
-   public query contract remain.
+1. Preserve all four completed mandatory extension contracts. Driver and
+   conservative float-control properties are query-complete, and mirror clamp
+   plus vertex divisors are hardware-qualified. Float execution-mode
+   capabilities remain conservatively false.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor

@@ -17,12 +17,14 @@ with exact center `0xff808080`, clean process exit, and clean target-only klog.
 The public-path Prospero ELF SHA-256 is
 `6b591dfe79c69f32cc9efdb641ab686183b0c7c0e032df7f3892f6e3357ce78f`.
 The runtime compiler and graphics-pipeline path also accept instance-rate
-vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
-the extension remains hidden pending one run of the prepared deterministic
-hardware readback gate. The legacy EXT and promoted property chains report the
-nonzero compiler range, Features2 explicitly keeps divisor and zero-divisor
-support false, and device creation rejects either unsupported request until
-that gate qualifies public promotion.
+vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors. Both
+the internal-path and extension/feature-enabled FW 5.50 gates produced an
+exact-white 18,432-pixel triangle with center `0xffffffff` for divisor two over
+four instances, followed by clean process exit and clean target-only klog. The
+extension is enumerated; legacy EXT and promoted feature queries expose
+nonzero divisor support while zero divisor and nonzero-first-instance support
+remain false. The public-path ELF SHA-256 is
+`5647b97d9ad8944028c4e242c49503a36f307ecc9ff603d765aec2f56b0c1503`.
 Sampler creation also carries validated 1x-16x anisotropy into gfx1013's
 anisotropic point/linear modes and maximum-ratio field. The public
 `samplerAnisotropy` bit remains false until a deterministic hardware readback
