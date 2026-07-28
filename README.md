@@ -3,7 +3,8 @@
 Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
 current implementation includes the host-testable Milestone 1 ICD, the
 Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3 OpenAGC
-DCB path, and the host-qualified Milestone 4 headless-surface/swapchain path.
+DCB path, and the hardware-qualified Milestone 4 headless-surface/swapchain
+path.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
@@ -36,6 +37,41 @@ sufficient—the packages must be built and installed into the SDK prefix.
 
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
+
+## Reusable installed SDK
+
+The Milestone 5 package test installs Vulkan-Headers, OpenAGC, the runtime
+shader compiler, and Vulkan-PS5 into a fresh prefix, moves that prefix, and
+then configures a separately copied consumer with only:
+
+```cmake
+find_package(VulkanPS5 CONFIG REQUIRED)
+target_link_libraries(application PRIVATE VulkanPS5::ICD)
+```
+
+The consumer includes `<vulkan/vulkan.h>` and exercises an ordinary Vulkan
+1.1 instance/device lifecycle. The relocation test rejects CMake metadata or
+consumer link commands containing a source-workspace path and verifies that
+the relocated `libvulkan_ps5.a`, `libopenagc.a`, and
+`libopenagc_psbc.a` archives are used. Its Prospero mode also verifies the
+transitive `kernel`, `SceAgcDriver`, `SceVideoOut`, `unwind`, `c++abi`, `c++`,
+and `m` links. The sample links `SceSystemService` itself solely for safe raw
+ELF termination.
+
+Run the host relocation check through CTest, or run the Prospero check
+directly:
+
+```sh
+ctest --test-dir build -R vulkan_ps5.package_relocation --output-on-failure
+sh tests/package_relocation.sh . build-prospero-m2 ../Vulkan-Headers \
+  /path/to/ps5-payload-sdk/toolchain/prospero.cmake \
+  build-prospero-m2/vulkan_ps5_package_consumer.elf
+```
+
+The Prospero toolchain searches packages only below its find roots, so the
+test registers the relocated SDK as an additional `CMAKE_FIND_ROOT_PATH`.
+Applications using an SDK installed directly in the payload sysroot need no
+such override.
 
 ## Headless surface and swapchain sample
 

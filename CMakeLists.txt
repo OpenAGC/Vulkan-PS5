@@ -125,6 +125,11 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/system_exit_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.system_exit_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.package_relocation
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_relocation.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
+        "${VULKAN_HEADERS_ROOT}")
+    set_tests_properties(vulkan_ps5.package_relocation PROPERTIES TIMEOUT 90)
   endif()
   find_program(GLSLANG_VALIDATOR glslangValidator)
   if(GLSLANG_VALIDATOR)

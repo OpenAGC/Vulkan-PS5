@@ -464,3 +464,31 @@ Qualification history:
   The warning is therefore FW 5.50/raw-ELF bookkeeping. Combined with the
   balanced 1,800-frame swapchain run, this closes the Milestone 4 hardware
   gate.
+
+## Milestone 5: reusable installed SDK (host and Prospero package qualified)
+
+Implemented and verified:
+
+- The independent package consumer includes only `<vulkan/vulkan.h>`, calls
+  standard Vulkan 1.1 entrypoints, and completes instance, physical-device,
+  queue-family, and logical-device lifecycle checks.
+- `vulkan_ps5.package_relocation` installs Vulkan-Headers, OpenAGC,
+  `libopenagc_psbc.a`, and `libvulkan_ps5.a` into a fresh prefix, moves the
+  complete SDK, and builds the consumer from a separately copied source tree.
+- The test rejects source-workspace paths in installed CMake metadata and the
+  external consumer's link command. The host relocation run passes and the
+  complete host suite passes 11/11.
+- The Prospero relocation run passes using the relocated
+  `VulkanPS5::ICD` target. Its link audit proves the three relocated archives
+  plus transitive `-lkernel`, `-lSceAgcDriver`, `-lSceVideoOut`, `-lunwind`,
+  `-lc++abi`, `-lc++`, and `-lm`. `SceSystemService` remains an explicit
+  application lifecycle dependency rather than an ICD dependency.
+- The normal Prospero driver/examples build remains clean after the package
+  test was added. The retained installed-package ELF has SHA-256
+  `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
+
+Remaining Milestone 5 gate:
+
+- Execute the installed-package consumer once on FW 5.50 after a fresh
+  `ps5 up` signal, require its `package-consumer: PASS result=0` marker and the
+  same bounded self-KillApp/process-removal safety checks used by the WSI gate.

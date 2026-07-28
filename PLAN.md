@@ -220,6 +220,18 @@
   bounded VSYNC wait. A host regression holds all three images, presents one
   from another thread after 10 ms, and proves a waiting acquire wakes with the
   released image.
+  Milestone 5 package closure is now host- and cross-build-qualified. A fresh
+  install/relocation test moves Vulkan-Headers, OpenAGC, openagc-psbc, and
+  Vulkan-PS5 before configuring a separately copied consumer. That consumer
+  includes only `<vulkan/vulkan.h>`, finds only `VulkanPS5::ICD`, and exercises
+  a standard instance/device lifecycle. The harness rejects source-workspace
+  paths in installed metadata and link commands. Host passes as part of the
+  11/11 suite; the Prospero run proves relocated archive use plus transitive
+  `kernel`, `SceAgcDriver`, `SceVideoOut`, `unwind`, `c++abi`, `c++`, and `m`
+  links. The retained installed-package ELF SHA-256 is
+  `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
+  The remaining closure gate is one bounded FW 5.50 execution of that
+  installed-package ELF after a fresh console-availability signal.
 
 ## Summary
 
