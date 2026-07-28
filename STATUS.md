@@ -404,6 +404,20 @@ Implemented and host-verified:
   `amount=0x4000` baseline warning. Public log
   `20260728T122623Z-shader-demote-run1.log`; ELF SHA-256 is
   `f9980eb6bcf1dbf96bc587fae7dd2e43be84dddfa2a8b13ac6ce6ba22e4d7327`.
+- Core `shaderClipDistance` is now reported through legacy and Features2
+  queries and accepted at device creation. The vertex probe exports
+  `gl_ClipDistance[0] = position.x`; correct clipping retains exactly 9,216
+  green pixels, leaves the left sample zero, and colors the right sample
+  green. A first run used an out-of-triangle right sample and correctly
+  reported the expected pixel count; the corrected oracle then passed both
+  the internal gate (`20260728T123525Z-shader-clip-distance-run1.log`) and the
+  final public query/request gate
+  (`20260728T123848Z-shader-clip-distance-run1.log`). Both 29/29 normal and
+  ASAN/UBSAN suites pass, as does the complete Prospero build with
+  `-lunwind -lc++abi -lc++ -lm`. The console self-exited cleanly and target
+  klogs contained only the known single `amount=0x4000` baseline warning.
+  Public ELF SHA-256 is
+  `64a4246ff57161364aa84cacb9377fe42b0e886ffce61851ab9329c88c163a31`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled
