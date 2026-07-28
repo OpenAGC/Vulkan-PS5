@@ -210,6 +210,16 @@ has SHA-256
 This candidate still requires a fresh-console, single bounded hardware run;
 the driver does not treat the nondeterministic offchip path as qualified yet.
 
+The first bounded FW 5.500.008 run of that full-ring candidate passed every
+oracle (`20260728T043915Z-tessellation-run1.log`). All three hull markers and
+copied LDS positions matched, TES wrote marker `0x54455300` and copied the exact
+three offchip control-point positions, and the image contained exactly 7200
+green pixels. The process returned normally and a bounded post-run websrv check
+confirmed that the console remained responsive. No retry was attempted. One
+more independent run after a fresh console-availability signal is required
+before the offchip correction and public feature exposure are considered
+stable.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

@@ -223,6 +223,13 @@ Implemented and host-verified:
   `316ee53df2a1b29d7dcd1c5f1c4adb3cfe0d0f07bb66f2ea41cb1d88eda9e09b`.
   Hardware qualification is pending one bounded run after a fresh explicit
   console-availability signal; no feature-stability claim is made yet.
+  That first bounded FW 5.500.008 run passed the complete hull, TES, and image
+  oracles (`20260728T043915Z-tessellation-run1.log`): all three hull markers and
+  LDS positions matched, TES wrote `0x54455300` and read the exact three
+  offchip positions, and rasterization produced exactly 7200 green pixels. The
+  process returned normally, a bounded websrv check confirmed the console was
+  responsive, and no retry was attempted. A second independent fresh-console
+  run remains mandatory before declaring the correction stable.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
