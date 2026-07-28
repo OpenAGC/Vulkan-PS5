@@ -198,6 +198,8 @@ FW 5.50 compute/triangle hardware gate:
   stage also passed with `green=18432`, qualifying the corrected command-reset
   `WRITE_DATA` independently. An `idle` probe brackets no draw and expects an
   available zero result, isolating ZPASS/`DB_COUNT_CONTROL` before live sample
-  counting. Idle and full remain hardware-unqualified; full requires
+  counting. It passed with `samples=0 available=1`, qualifying the complete
+  begin/end/availability sequence without rasterization. Only live sample
+  counting remains hardware-unqualified; full requires
   `VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES` and cannot run accidentally as part
   of the Milestone 3 regression suite.

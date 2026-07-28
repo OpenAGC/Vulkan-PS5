@@ -67,3 +67,10 @@ pass prologue applies register defaults before `vkCmdBeginQuery`, so it does not
 overwrite the query's count-control state before the draw. An additional
 `idle` probe now emits begin/end and availability without a draw and requires
 an available zero count before the live-draw probe is attempted.
+
+The idle probe passed with `samples=0 available=1`; its retained log is
+`20260728T003428Z-query-idle.log`. The fence completed and the console remained
+responsive. This hardware-qualifies the begin/end ZPASS snapshots,
+`DB_COUNT_CONTROL` enable/disable, and EOP availability sequence when no
+rasterization occurs. Live counter increments during the qualified triangle
+draw are the sole remaining full-query hardware boundary.
