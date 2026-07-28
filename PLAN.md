@@ -35,6 +35,9 @@
   idle begin/end, and live counting before the final full suite. The retained
   `20260728T003630Z` gate passed compute, triangle, indexed-textured, depth,
   MRT, and query twice each with exact deterministic oracles.
+  Completion audit requires the repeated depth gate to cover S8 hardware, not
+  only host-verified stencil PM4; the depth sample now uses combined D32+S8 and
+  cross-checks `REPLACE 0x5a` writes against color coverage.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 

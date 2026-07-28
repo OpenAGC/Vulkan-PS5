@@ -62,11 +62,13 @@ triangle coverage, fully opaque sampled pixels, at least 16 distinct colors,
 an interior center sample, and untouched background corners.
 
 `vulkan_ps5_depth_example` combines a mapped linear RGBA8 target with an
-OpenAGC-laid-out optimal D32 attachment. One near green triangle must occlude
+OpenAGC-laid-out optimal D32+S8 attachment. One near green triangle must occlude
 an overlapping far red triangle while a separate far red triangle passes over
-the initialized depth value. Its oracle checks exact interior colors, coverage,
-and raw clear/near/far D32 words. Generic-host execution intentionally reports
-unchanged memory because that backend does not execute GPU commands.
+the initialized depth value. Passing fragments replace stencil with `0x5a`.
+Its oracle checks exact interior colors, coverage, raw clear/near/far D32 words,
+and requires the S8 write count to equal final green-plus-red coverage.
+Generic-host execution intentionally reports unchanged memory because that
+backend does not execute GPU commands.
 
 `vulkan_ps5_mrt_example` draws one triangle to two linear RGBA8 attachments.
 Its fragment shader exports green to location 0 and magenta to location 1;

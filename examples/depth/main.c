@@ -96,7 +96,7 @@ int main(void)
     const VkImageCreateInfo depth_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT,
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
         .extent = {WIDTH, HEIGHT, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -112,7 +112,7 @@ int main(void)
     vkGetImageMemoryRequirements(device, depth_image, &depth_requirements);
     uint32_t depth_type = host_type(physical, depth_requirements.memoryTypeBits);
     if (depth_type == UINT32_MAX || depth_requirements.alignment != 65536u) {
-        printf("depth: incompatible D32 memory requirements\n");
+        printf("depth: incompatible D32+S8 memory requirements\n");
         return 1;
     }
     const VkMemoryAllocateInfo depth_memory_info = {
@@ -147,8 +147,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = depth_image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT,
-        .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT |
+            VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1},
     };
     VkImageView color_view, depth_view;
     VK_CHECK(vkCreateImageView(device, &color_view_info, NULL, &color_view));
@@ -158,9 +159,9 @@ int main(void)
          VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
          VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
          VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_GENERAL},
-        {0, VK_FORMAT_D32_SFLOAT, VK_SAMPLE_COUNT_1_BIT,
+        {0, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_SAMPLE_COUNT_1_BIT,
          VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
-         VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE,
          VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL},
     };
     const VkAttachmentReference color_ref = {
@@ -247,8 +248,21 @@ int main(void)
         .depthTestEnable = VK_TRUE,
         .depthWriteEnable = VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
-        .front = {.compareOp = VK_COMPARE_OP_ALWAYS},
-        .back = {.compareOp = VK_COMPARE_OP_ALWAYS},
+        .stencilTestEnable = VK_TRUE,
+        .front = {
+            .passOp = VK_STENCIL_OP_REPLACE,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .compareMask = 0xffu,
+            .writeMask = 0xffu,
+            .reference = 0x5au,
+        },
+        .back = {
+            .passOp = VK_STENCIL_OP_REPLACE,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .compareMask = 0xffu,
+            .writeMask = 0xffu,
+            .reference = 0x5au,
+        },
     };
     const VkPipelineColorBlendAttachmentState color_blend = {
         .colorWriteMask = 0xfu,
@@ -332,17 +346,23 @@ int main(void)
         else if (depth_words[i] == 0x3e800000u) ++near_depth;
         else if (depth_words[i] == 0x3f400000u) ++far_depth;
     }
+    uint32_t stencil_written = 0;
+    const uint8_t *depth_bytes = depth_data;
+    for (size_t i = 0; i < depth_requirements.size; ++i)
+        if (depth_bytes[i] == 0x5au) ++stencil_written;
     uint32_t left = pixels[128u * WIDTH + 77u];
     uint32_t right = pixels[128u * WIDTH + 192u];
     int status = green < 5000u || red < 4000u || other != 0u ||
         left != GREEN || right != RED || clear_depth == 0u ||
-        near_depth < 1000u || far_depth < 1000u;
+        near_depth < 1000u || far_depth < 1000u ||
+        stencil_written != green + red;
     if (status)
-        printf("depth: mismatch green=%u red=%u other=%u left=%08x right=%08x raw=%u/%u/%u\n",
-            green, red, other, left, right, clear_depth, near_depth, far_depth);
+        printf("depth: mismatch green=%u red=%u other=%u left=%08x right=%08x raw=%u/%u/%u stencil=%u\n",
+            green, red, other, left, right, clear_depth, near_depth, far_depth,
+            stencil_written);
     else
-        printf("depth: PASS green=%u red=%u raw=%u/%u/%u\n",
-            green, red, clear_depth, near_depth, far_depth);
+        printf("depth: PASS green=%u red=%u raw=%u/%u/%u stencil=%u\n",
+            green, red, clear_depth, near_depth, far_depth, stencil_written);
 
     vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, pool, NULL);

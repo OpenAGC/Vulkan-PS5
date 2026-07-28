@@ -68,7 +68,7 @@ run_sample triangle "$triangle_elf" '^triangle: PASS [0-9]+ green pixels$'
 run_sample indexed_textured "$indexed_textured_elf" \
     '^indexed_textured: PASS [0-9]+ pixels [0-9]+\+ colors$'
 run_sample depth "$depth_elf" \
-    '^depth: PASS green=[0-9]+ red=[0-9]+ raw=[0-9]+/[0-9]+/[0-9]+$'
+    '^depth: PASS green=[0-9]+ red=[0-9]+ raw=[0-9]+/[0-9]+/[0-9]+ stencil=[0-9]+$'
 run_sample mrt "$mrt_elf" \
     '^mrt: PASS target0=[0-9]+ target1=[0-9]+$'
 run_sample query "$query_elf" \
