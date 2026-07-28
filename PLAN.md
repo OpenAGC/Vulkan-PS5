@@ -2,6 +2,12 @@
 
 ## Progress
 
+- Milestone 6 `sampleRateShading` closure is complete for 4x optimal RGBA8
+  color attachments. Full 4-iteration and partial 2-iteration semantics pass
+  38/38 normal and sanitizer tests, VVL resource coverage, and repeated exact
+  FW 5.50 SSBO gates. Two Eden feature gaps remain: `imageCubeArray` and
+  `multiViewport`.
+
 - Milestone 6 `robustBufferAccess` closure is complete. Byte-bounded raw
   UBO/SSBO descriptors and per-attribute vertex bounds pass 38/38 normal and
   sanitizer tests plus repeated compute and sparse-vertex FW 5.50 gates. Three
@@ -457,7 +463,16 @@
   `20260728T161845Z-robust-buffer-run1.log`,
   `20260728T161642Z-robust-vertex-run1.log`, and
   `20260728T161917Z-robust-vertex-run1.log`.
-- The live Eden compatibility profile is now three feature gaps.
+- `sampleRateShading` is hardware-qualified at both 1.0 and 0.5 minimum rates
+  on a 4x RGBA8 attachment. Repeated full-rate gates produce stable sample-ID
+  counts `18,336/18,528/18,432/18,432` and 73,728 total invocations; repeated
+  partial-rate gates produce exactly 36,960 invocations with intact guards.
+  Evidence is retained in `20260728T164229Z-sample-rate-shading-run1.log`,
+  `20260728T164256Z-sample-rate-shading-run1.log`,
+  `20260728T164808Z-partial-sample-rate-shading-run1.log`, and
+  `20260728T164841Z-partial-sample-rate-shading-run1.log`.
+- The live Eden compatibility profile is now two feature gaps:
+  `imageCubeArray` and `multiViewport`.
 
 ## Test Plan and Assumptions
 

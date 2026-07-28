@@ -564,6 +564,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->multiDrawIndirect = VK_TRUE;
     features->occlusionQueryPrecise = VK_TRUE;
     features->samplerAnisotropy = VK_TRUE;
+    features->sampleRateShading = VK_TRUE;
     features->shaderClipDistance = VK_TRUE;
     features->shaderCullDistance = VK_TRUE;
     features->shaderImageGatherExtended = VK_TRUE;
@@ -738,6 +739,12 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     pImageFormatProperties->maxArrayLayers = type == VK_IMAGE_TYPE_3D ? 1 :
         capabilities.max_image_array_layers;
     pImageFormatProperties->sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+    if (format == VK_FORMAT_R8G8B8A8_UNORM && type == VK_IMAGE_TYPE_2D &&
+        tiling == VK_IMAGE_TILING_OPTIMAL &&
+        (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
+        !(usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)))
+        pImageFormatProperties->sampleCounts |= VK_SAMPLE_COUNT_4_BIT;
     pImageFormatProperties->maxResourceSize = capabilities.memory_profiles[0].size;
     return VK_SUCCESS;
 }

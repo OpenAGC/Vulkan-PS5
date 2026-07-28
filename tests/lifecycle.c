@@ -233,6 +233,7 @@ int main(void) {
     assert(features.multiDrawIndirect == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.samplerAnisotropy == VK_TRUE);
+    assert(features.sampleRateShading == VK_TRUE);
     assert(features.shaderClipDistance == VK_TRUE);
     assert(features.shaderCullDistance == VK_TRUE);
     assert(features.shaderImageGatherExtended == VK_TRUE);
@@ -253,6 +254,7 @@ int main(void) {
     features.multiDrawIndirect = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
     features.samplerAnisotropy = VK_FALSE;
+    features.sampleRateShading = VK_FALSE;
     features.shaderClipDistance = VK_FALSE;
     features.shaderCullDistance = VK_FALSE;
     features.shaderImageGatherExtended = VK_FALSE;

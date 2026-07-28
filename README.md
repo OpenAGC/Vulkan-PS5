@@ -319,6 +319,17 @@ exact 18,432-pixel blue triangle. Run their bounded FW 5.50 gates with
 `PS5_HOST=10.0.1.41 examples/run_fw550_robust_buffer.sh` and
 `PS5_HOST=10.0.1.41 examples/run_fw550_robust_vertex.sh`.
 
+`vulkan_ps5_sample_rate_shading_probe` creates an ordinary 4x optimal-tiled
+RGBA8 color attachment, requests `sampleRateShading`, and uses `gl_SampleID`
+atomics to prove four invocations per covered pixel. The partial companion
+uses `minSampleShading=0.5` without sample builtins and proves the two-iteration
+rate independently. Their bounded gates are
+`examples/run_fw550_sample_rate_shading.sh` and
+`examples/run_fw550_partial_sample_rate_shading.sh`. Current 4x image exposure
+is intentionally limited to single-layer RGBA8 color attachments without
+sampled, transfer, or resolve usage until those paths are separately
+qualified.
+
 The same option builds `vulkan_ps5_triangle_example`. It renders a solid-green
 triangle into a mapped 256x256 linear RGBA8 attachment through an ordinary
 render pass, waits for completion, invalidates the allocation, and verifies the

@@ -62,8 +62,10 @@ typedef struct VkPs5Image {
     VkDeviceSize alignment;
     VkDeviceSize depth_plane_offset;
     VkDeviceSize stencil_plane_offset;
+    AgcGfx1013ColorSurfaceLayout color_layout;
     AgcGfx1013DepthSurfaceLayout depth_layout;
     AgcGfx1013DepthSurfaceFormat depth_format;
+    VkBool32 is_msaa_color_surface;
     VkBool32 is_depth_surface;
     VkDeviceSize size;
     VkDeviceMemory memory;
@@ -117,6 +119,7 @@ typedef struct VkPs5RenderPass {
         uint32_t color_attachments[AGC_GFX1013_MAX_COLOR_TARGETS];
         uint32_t depth_stencil_attachment;
         VkImageLayout depth_stencil_layout;
+        VkSampleCountFlagBits samples;
     } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
 
@@ -160,6 +163,7 @@ typedef struct VkPs5Pipeline {
     uint32_t vertex_attribute_offsets[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
     uint32_t vertex_attribute_sizes[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
     AgcGfx1013ColorBlendState color_blend;
+    AgcGfx1013SampleState sample_state;
     AgcGfx1013PolygonMode polygon_mode;
     AgcGfx1013PrimitiveSizeState primitive_size;
     VkBool32 line_width_dynamic;
@@ -906,7 +910,9 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         pCreateInfo->sType != VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO ||
         !pCreateInfo->extent.width || !pCreateInfo->extent.height ||
         !pCreateInfo->extent.depth || pCreateInfo->mipLevels != 1 ||
-        !pCreateInfo->arrayLayers || pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT ||
+        !pCreateInfo->arrayLayers ||
+        (pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT &&
+         pCreateInfo->samples != VK_SAMPLE_COUNT_4_BIT) ||
         !format_bytes(pCreateInfo->format) ||
         ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
          (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
@@ -936,6 +942,42 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     AgcGfx1013DepthSurfaceFormat depth_format;
     bool is_depth_format = depth_surface_format(
         pCreateInfo->format, &depth_format);
+    if (pCreateInfo->samples == VK_SAMPLE_COUNT_4_BIT) {
+        AgcGfx1013ColorTargetFormat target_format;
+        if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
+            pCreateInfo->extent.depth != 1u ||
+            pCreateInfo->arrayLayers != 1u ||
+            pCreateInfo->tiling != VK_IMAGE_TILING_OPTIMAL ||
+            pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
+            !(pCreateInfo->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+            (pCreateInfo->usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)) ||
+            is_depth_format ||
+            !color_target_format(pCreateInfo->format, &target_format)) {
+            vk_ps5_device_free(device, pAllocator, image);
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
+        const AgcGfx1013ColorSurfaceLayoutInput input = {
+            .width = pCreateInfo->extent.width,
+            .height = pCreateInfo->extent.height,
+            .layer_count = 1u,
+            .mip_level_count = 1u,
+            .sample_count = 4u,
+            .format = target_format,
+            .swizzle_mode = AGC_GFX1013_SWIZZLE_64KB_R_X,
+        };
+        if (agcGfx1013GetColorSurfaceLayout(
+                &input, &image->color_layout) != AGC_OK) {
+            vk_ps5_device_free(device, pAllocator, image);
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
+        image->is_msaa_color_surface = VK_TRUE;
+        image->alignment = image->color_layout.alignment;
+        image->array_pitch = image->color_layout.slice_size;
+        image->size = image->color_layout.allocation_size;
+        *pImage = (VkImage)image;
+        return VK_SUCCESS;
+    }
     if (pCreateInfo->tiling == VK_IMAGE_TILING_OPTIMAL && is_depth_format) {
         if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
             pCreateInfo->extent.depth != 1u) {
@@ -1032,7 +1074,8 @@ vkGetImageMemoryRequirements(VkDevice device, VkImage image_handle,
     VkPs5Image *image = (VkPs5Image *)image_handle;
     pMemoryRequirements->size = image->size;
     pMemoryRequirements->alignment = image->alignment;
-    pMemoryRequirements->memoryTypeBits = image->is_depth_surface ? 0x2 : 0x3;
+    pMemoryRequirements->memoryTypeBits =
+        (image->is_depth_surface || image->is_msaa_color_surface) ? 0x2 : 0x3;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -2096,8 +2139,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             raster->cullMode != VK_CULL_MODE_NONE ||
             (!dynamic_line_width && (!(raster->lineWidth >= 1.0f) ||
                 !(raster->lineWidth <= 64.0f))) ||
-            multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
-            multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
+            (multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT &&
+             multisample->rasterizationSamples != VK_SAMPLE_COUNT_4_BIT) ||
+            (multisample->sampleShadingEnable &&
+             (!(multisample->minSampleShading >= 0.0f) ||
+              !(multisample->minSampleShading <= 1.0f))) ||
+            multisample->alphaToCoverageEnable ||
             multisample->alphaToOneEnable ||
             !blend->attachmentCount ||
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
@@ -2243,6 +2290,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
         if (create->subpass >= render_pass->subpass_count)
             return VK_ERROR_INITIALIZATION_FAILED;
+        if (multisample->rasterizationSamples !=
+                render_pass->subpasses[create->subpass].samples)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
         uint32_t color_attachment_count =
             render_pass->subpasses[create->subpass].color_attachment_count;
         AgcGfx1013ColorBlendState color_blend;
@@ -2288,6 +2338,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .push_constant_size = layout->push_constant_size,
             .color_attachment_count =
                 color_attachment_count,
+            .rasterization_samples =
+                (uint32_t)multisample->rasterizationSamples,
+            .pixel_shader_sample_count = 1u,
             .dual_source_blend = dual_source_blend,
             .tessellation_control_points = tess_control ?
                 create->pTessellationState->patchControlPoints : 3,
@@ -2295,6 +2348,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .robust_buffer_access =
                 vk_ps5_device_robust_buffer_access(device),
         };
+        if (multisample->sampleShadingEnable &&
+            multisample->rasterizationSamples == VK_SAMPLE_COUNT_4_BIT) {
+            const float minimum = multisample->minSampleShading * 4.0f;
+            context.pixel_shader_sample_count =
+                minimum > 2.0f ? 4u : (minimum > 1.0f ? 2u : 1u);
+        }
         VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -2312,6 +2371,15 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 psbc_vertex_format_size(attribute->format);
         }
         pipeline->color_blend = color_blend;
+        const uint32_t sample_count =
+            (uint32_t)multisample->rasterizationSamples;
+        pipeline->sample_state = (AgcGfx1013SampleState){
+            .sample_count = sample_count,
+            .pixel_shader_sample_count = context.pixel_shader_sample_count,
+            .sample_mask = multisample->pSampleMask ?
+                multisample->pSampleMask[0] & ((1u << sample_count) - 1u) :
+                (1u << sample_count) - 1u,
+        };
         pipeline->polygon_mode = translated_polygon_mode;
         pipeline->primitive_size = (AgcGfx1013PrimitiveSizeState){
             .point_size = 1.0f,
@@ -2401,6 +2469,16 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
+        }
+        for (uint32_t stage_index = 0; stage_index < compiled; ++stage_index) {
+            if (pipeline->stage_types[stage_index] ==
+                    OPENAGC_PSBC_STAGE_FRAGMENT &&
+                pipeline->stages[stage_index].metadata.
+                    pixel_shader_sample_count >
+                    pipeline->sample_state.pixel_shader_sample_count)
+                pipeline->sample_state.pixel_shader_sample_count =
+                    pipeline->stages[stage_index].metadata.
+                        pixel_shader_sample_count;
         }
         if (tess_control)
             result = build_tessellation_layouts(pipeline);
@@ -2592,6 +2670,7 @@ vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
         VkPs5ImageView *view = (VkPs5ImageView *)pCreateInfo->pAttachments[i];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
         if (!view || !image || view->format != render_pass->attachments[i].format ||
+            image->samples != render_pass->attachments[i].samples ||
             image->extent.width < framebuffer->width ||
             image->extent.height < framebuffer->height) {
             vk_ps5_device_free(device, pAllocator, framebuffer);
@@ -2737,6 +2816,7 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
         const VkSubpassDescription *source = &pCreateInfo->pSubpasses[i];
         render_pass->subpasses[i].depth_stencil_attachment =
             VK_ATTACHMENT_UNUSED;
+        render_pass->subpasses[i].samples = VK_SAMPLE_COUNT_1_BIT;
         if (source->pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS ||
             source->colorAttachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             (source->colorAttachmentCount && !source->pColorAttachments)) {
@@ -2756,14 +2836,24 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                 AgcGfx1013ColorTargetFormat target_format;
                 if (source->pColorAttachments[j].layout !=
                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
-                    render_pass->attachments[attachment].samples !=
-                        VK_SAMPLE_COUNT_1_BIT ||
+                    (render_pass->attachments[attachment].samples !=
+                         VK_SAMPLE_COUNT_1_BIT &&
+                     render_pass->attachments[attachment].samples !=
+                         VK_SAMPLE_COUNT_4_BIT) ||
                     !color_target_format(
                         render_pass->attachments[attachment].format,
                         &target_format)) {
                     vk_ps5_device_free(device, pAllocator, render_pass);
                     return VK_ERROR_FEATURE_NOT_PRESENT;
                 }
+                if (render_pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT &&
+                    render_pass->subpasses[i].samples !=
+                        render_pass->attachments[attachment].samples) {
+                    vk_ps5_device_free(device, pAllocator, render_pass);
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                }
+                render_pass->subpasses[i].samples =
+                    render_pass->attachments[attachment].samples;
             }
             render_pass->subpasses[i].color_attachments[j] = attachment;
         }
@@ -2789,6 +2879,10 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
             }
             render_pass->subpasses[i].depth_stencil_attachment = attachment;
             render_pass->subpasses[i].depth_stencil_layout = layout;
+            if (render_pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT) {
+                vk_ps5_device_free(device, pAllocator, render_pass);
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
         }
     }
     *pRenderPass = (VkRenderPass)render_pass;
@@ -4183,6 +4277,7 @@ static void record_tessellation_draw(
         .num_pixel_resource_tables = pixel_table_count,
         .post_bind_sh_registers = user_data,
         .num_post_bind_sh_registers = user_data_count,
+        .sample_state = &pipeline->sample_state,
         .instance_count = instance_count,
         .vertex_count = element_count,
         .draw_modifier = 0x40000000u,
@@ -4288,6 +4383,7 @@ static VkResult prepare_baseline_draw(
         .instance_count = indirect_draw ? 1u : instance_count,
         .vertex_count = indirect_draw ? 1u : element_count,
         .draw_modifier = 0x40000000u,
+        .sample_state = &pipeline->sample_state,
     };
     return VK_SUCCESS;
 }
@@ -4570,7 +4666,8 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
             !image || !image->memory ||
             !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
-            image->tiling != VK_IMAGE_TILING_LINEAR ||
+            (image->tiling != VK_IMAGE_TILING_LINEAR &&
+             !image->is_msaa_color_surface) ||
             !color_target_format(view->format, &target_format) ||
             !layout_resource_usage(attachment->initialLayout, &before)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
@@ -4585,6 +4682,11 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
                 target_format) != AGC_OK) {
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
+        }
+        if (image->is_msaa_color_surface) {
+            target->sample_count = 4u;
+            target->fragment_count = 4u;
+            target->swizzle_mode = AGC_GFX1013_SWIZZLE_64KB_R_X;
         }
         const AgcGfx1013ResourceTransition transition = {
             .before = before,
@@ -4665,7 +4767,7 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
                 AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
             .mip_level_count = 1u,
             .last_layer = framebuffer->layers - 1u,
-            .sample_count = 1u,
+            .sample_count = (uint32_t)depth_image->samples,
             .depth_read_only = render_pass->subpasses[0].depth_stencil_layout ==
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             .stencil_read_only = render_pass->subpasses[0].depth_stencil_layout ==

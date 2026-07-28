@@ -104,10 +104,14 @@ int main(void) {
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .sampleRateShading = VK_TRUE,
+    };
     VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+        .pEnabledFeatures = &enabled_features,
         .enabledExtensionCount = 1,
         .ppEnabledExtensionNames =
             (const char *const[]){VK_KHR_SWAPCHAIN_EXTENSION_NAME},
@@ -167,9 +171,9 @@ int main(void) {
         .extent = {16, 16, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = VK_SAMPLE_COUNT_4_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
@@ -200,7 +204,7 @@ int main(void) {
 
     VkAttachmentDescription attachment = {
         .format = image_info.format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples = VK_SAMPLE_COUNT_4_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,

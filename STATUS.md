@@ -1,5 +1,24 @@
 # Implementation Status
 
+## Milestone 6: sample-rate shading (2026-07-28)
+
+`sampleRateShading` is advertised and accepted through legacy and Features2
+paths. Vulkan exposes 4x optimal-tiled RGBA8 color attachments, uses OpenAGC's
+typed `64KB_R_X` layout and post-shader-bind sample state, forwards sample
+masks, and rounds `ceil(rasterizationSamples * minSampleShading)` to the
+supported 1/2/4 gfx1013 iteration rates. A fragment shader with sample
+builtins forces the full rasterization sample count through openagc-psbc API
+version 12 metadata.
+
+Normal and ASAN/UBSAN suites pass 38/38, including a VVL-clean 4x
+image/render-pass fixture and sample-builtin pipeline compilation. Repeated FW
+5.50 full-rate gates produced exact sample-ID counts
+`18,336/18,528/18,432/18,432` and 73,728 total invocations. Repeated partial
+`minSampleShading=0.5` gates produced exactly 36,960 invocations with four
+untouched guard words. Every gate queried and requested the public feature,
+self-exited, and left only the known single `amount=0x4000` warning. The Eden
+profile now has two feature gaps: `imageCubeArray` and `multiViewport`.
+
 ## Milestone 6: robust buffer access (2026-07-28)
 
 `robustBufferAccess` is advertised and accepted through legacy and Features2

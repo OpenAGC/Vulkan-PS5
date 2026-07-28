@@ -13,6 +13,11 @@
 #define VULKAN_PS5_ANY_INDIRECT_PROBE 1
 #endif
 
+#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
+#define VULKAN_PS5_FRAGMENT_RESULT_PROBE 1
+#endif
+
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
 #include "vulkan_ps5_indirect_draw_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indirect_draw_vert_spv
@@ -23,7 +28,15 @@
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
 #endif
-#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
+#if defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
+#include "vulkan_ps5_partial_sample_rate_shading_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_partial_sample_rate_shading_frag_spv
+#else
+#include "vulkan_ps5_sample_rate_shading_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_sample_rate_shading_frag_spv
+#endif
+#elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
 #include "vulkan_ps5_fragment_stores_atomics_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_fragment_stores_atomics_frag_spv
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
@@ -40,7 +53,15 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
+#define SAMPLE_NAME "partial_sample_rate_shading"
+#else
+#define SAMPLE_NAME "sample_rate_shading"
+#endif
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
 #define SAMPLE_NAME "fragment_stores_atomics"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
@@ -146,7 +167,17 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
+#if defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.sampleRateShading) {
+        printf("sample_rate_shading: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .sampleRateShading = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.fragmentStoresAndAtomics) {
@@ -255,6 +286,7 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
+    defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE) || \
     defined(VULKAN_PS5_IMAGE_GATHER_PROBE) || \
     defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
         .pEnabledFeatures = &enabled_features,
@@ -281,11 +313,22 @@ int main(void)
         .extent = {TARGET_WIDTH, TARGET_HEIGHT, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+            VK_SAMPLE_COUNT_4_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+#else
+            VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_LINEAR,
+#endif
         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .initialLayout =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+            VK_IMAGE_LAYOUT_UNDEFINED,
+#else
+            VK_IMAGE_LAYOUT_PREINITIALIZED,
+#endif
     };
     VkImage target;
     VK_CHECK(vkCreateImage(device, &target_info, NULL, &target));
@@ -314,6 +357,9 @@ int main(void)
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &target_range));
 
     VkImageCreateInfo texture_info = target_info;
+    texture_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    texture_info.tiling = VK_IMAGE_TILING_LINEAR;
+    texture_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
 #ifdef VULKAN_PS5_ANISOTROPY_PROBE
     texture_info.extent.width = 256;
     texture_info.extent.height = 4;
@@ -428,8 +474,12 @@ int main(void)
         {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, index_memory, 0, VK_WHOLE_SIZE},
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 2, upload_ranges));
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+    enum { FRAGMENT_RESULT_WORDS = 5u };
+#else
     enum { FRAGMENT_RESULT_WORDS = 1u + TARGET_WIDTH * TARGET_HEIGHT };
+#endif
     VkBuffer fragment_result_buffer;
     VkDeviceMemory fragment_result_memory;
     uint32_t *fragment_results;
@@ -509,7 +559,7 @@ int main(void)
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
     };
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
     const VkDescriptorSetLayoutBinding set_bindings[2] = {
         texture_binding,
         {
@@ -532,7 +582,7 @@ int main(void)
     };
     VkDescriptorSetLayout set_layout;
     VK_CHECK(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL, &set_layout));
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
     const VkDescriptorPoolSize pool_sizes[2] = {
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
@@ -602,7 +652,7 @@ int main(void)
         .imageView = texture_view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
     const VkDescriptorBufferInfo fragment_result_info = {
         .buffer = fragment_result_buffer,
         .range = (VkDeviceSize)FRAGMENT_RESULT_WORDS * sizeof(uint32_t),
@@ -641,12 +691,23 @@ int main(void)
 
     const VkAttachmentDescription attachment = {
         .format = VK_FORMAT_R8G8B8A8_UNORM,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .samples =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+            VK_SAMPLE_COUNT_4_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+#else
+            VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+#endif
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .initialLayout =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+            VK_IMAGE_LAYOUT_UNDEFINED,
+#else
+            VK_IMAGE_LAYOUT_PREINITIALIZED,
+#endif
         .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
     };
     const VkAttachmentReference color_attachment = {
@@ -769,7 +830,19 @@ int main(void)
     };
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+            VK_SAMPLE_COUNT_4_BIT,
+        .sampleShadingEnable = VK_TRUE,
+        .minSampleShading =
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
+            0.5f,
+#else
+            1.0f,
+#endif
+#else
+            VK_SAMPLE_COUNT_1_BIT,
+#endif
     };
     const VkPipelineColorBlendAttachmentState blend_attachment = {
 #ifdef VULKAN_PS5_DUAL_SRC_BLEND_PROBE
@@ -900,10 +973,41 @@ int main(void)
     VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, fence));
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &target_range));
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &fragment_result_range));
 #endif
 
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
+    int status = 0;
+    if (fragment_results[0] || fragment_results[1] || fragment_results[2] ||
+        fragment_results[3] || !fragment_results[4]) {
+        printf(SAMPLE_NAME ": mismatch total=%u guards=%u,%u,%u,%u\n",
+            fragment_results[4], fragment_results[0], fragment_results[1],
+            fragment_results[2], fragment_results[3]);
+        status = 1;
+    } else {
+        printf(SAMPLE_NAME ": PASS total=%u guards=0,0,0,0\n",
+            fragment_results[4]);
+    }
+#else
+    uint32_t sample_sum = fragment_results[0] + fragment_results[1] +
+        fragment_results[2] + fragment_results[3];
+    int status = 0;
+    if (!fragment_results[0] || !fragment_results[1] ||
+        !fragment_results[2] || !fragment_results[3] ||
+        sample_sum != fragment_results[4]) {
+        printf(SAMPLE_NAME ": mismatch samples=%u,%u,%u,%u total=%u\n",
+            fragment_results[0], fragment_results[1], fragment_results[2],
+            fragment_results[3], fragment_results[4]);
+        status = 1;
+    } else {
+        printf(SAMPLE_NAME ": PASS samples=%u,%u,%u,%u total=%u\n",
+            fragment_results[0], fragment_results[1], fragment_results[2],
+            fragment_results[3], fragment_results[4]);
+    }
+#endif
+#else
     const uint32_t *pixels = target_mapped;
     uint32_t covered = 0u;
     uint32_t opaque = 0u;
@@ -1097,6 +1201,7 @@ int main(void)
         printf("indexed_textured: PASS %u pixels %u+ colors\n",
             covered, distinct_count);
     }
+#endif
 #endif
 
     vkDestroyFence(device, fence, NULL);

@@ -31,7 +31,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 7);
+    assert(argc == 8);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
     VkShaderModule geometry = shader_module(device, argv[4]);
     VkShaderModule tess_control = shader_module(device, argv[5]);
     VkShaderModule tess_evaluation = shader_module(device, argv[6]);
+    VkShaderModule sample_fragment = shader_module(device, argv[7]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -217,6 +218,34 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    VkAttachmentDescription msaa_attachment = attachment;
+    msaa_attachment.samples = VK_SAMPLE_COUNT_4_BIT;
+    const VkRenderPassCreateInfo msaa_render_pass_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &msaa_attachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+    };
+    VkRenderPass msaa_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &msaa_render_pass_info, NULL,
+                              &msaa_render_pass) == VK_SUCCESS);
+    const VkPipelineShaderStageCreateInfo msaa_stages[] = {
+        stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_FRAGMENT_BIT, sample_fragment, "main", NULL},
+    };
+    VkPipelineMultisampleStateCreateInfo msaa_state = multisample;
+    msaa_state.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
+    const uint32_t msaa_mask = 0xdu;
+    msaa_state.pSampleMask = &msaa_mask;
+    VkGraphicsPipelineCreateInfo msaa_info = graphics_info;
+    msaa_info.pStages = msaa_stages;
+    msaa_info.pMultisampleState = &msaa_state;
+    msaa_info.renderPass = msaa_render_pass;
+    VkPipeline msaa_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &msaa_info,
+                                     NULL, &msaa_pipeline) == VK_SUCCESS);
     VkPipelineInputAssemblyStateCreateInfo point_input_assembly = input_assembly;
     point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
@@ -390,6 +419,7 @@ int main(int argc, char **argv) {
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, msaa_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, instance_pipeline, NULL);
     vkDestroyPipeline(device, point_pipeline, NULL);
@@ -401,11 +431,13 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyRenderPass(device, msaa_render_pass, NULL);
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
     vkDestroyPipelineLayout(device, compute_layout, NULL);
     vkDestroyDescriptorSetLayout(device, resource_set, NULL);
     vkDestroyDescriptorSetLayout(device, empty_set, NULL);
     vkDestroyShaderModule(device, compute, NULL);
+    vkDestroyShaderModule(device, sample_fragment, NULL);
     vkDestroyShaderModule(device, tess_evaluation, NULL);
     vkDestroyShaderModule(device, tess_control, NULL);
     vkDestroyShaderModule(device, geometry, NULL);
