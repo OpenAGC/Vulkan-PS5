@@ -117,8 +117,11 @@ timeout.
    bounded runners sanitize NUL bytes before parsing klog lifecycle evidence.
    The clean lifecycle rerun passed with the exact oracle, matching self-kill,
    idle queues, and no fatal signal or GPU reset. The complete multi-draw/DrawID
-   gate remains before the three related core bits can be promoted. The rejected packet experiments,
-   GPU-reset evidence, root cause, and runner hardening are documented in
+   candidate now has packet-boundary-safe normal and sanitizer tests for the
+   exact BaseVertex/BaseInstance locations and DrawIndex `0,0,1,0,1` sequence,
+   plus the shared SystemService lifecycle gate. Its one bounded hardware run
+   remains before the three related core bits can be promoted. The rejected
+   packet experiments, GPU-reset evidence, root cause, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.

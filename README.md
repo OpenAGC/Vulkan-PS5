@@ -55,7 +55,13 @@ the same exact one-draw oracle as PID 86, self-killed with matching app IDs,
 left idle graphics queues, and produced neither a fatal signal nor a GPU reset.
 Only the isolated raw-ELF `amount=0x4000` VM warning remained. Complete
 multi-draw/DrawID qualification is still required before promoting the related
-public Vulkan feature bits.
+public Vulkan feature bits. Its rebuilt two-draw candidate expands indexed and
+non-indexed DrawID pipelines into single packets and is host-checked for stable
+BaseVertex/BaseInstance register locations, the exact DrawIndex `0,0,1,0,1`
+sequence, and indexed/non-indexed initiators. PM4 tests now walk packet
+boundaries, so address payloads cannot impersonate packet headers under
+sanitizers. Both normal and ASAN/UBSAN suites pass 20/20, and the bounded runner
+requires the shared matching-self-kill lifecycle before accepting the gate.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
 packets for every Vulkan copy region. Recording validates bound memory,

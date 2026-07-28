@@ -22,7 +22,10 @@ cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
 printf '%s\n' '<323> EXEC /app0/eboot.bin [system], vm#1 category=native_game'
 printf '\000'
-printf '%s\n' '<324> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui'
+printf '%s\n' \
+    '<324> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui' \
+    '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00002016' \
+    '[AppMgr] All processes exited'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean) ;;
     crash) printf '%s\n' '# proc ID: 323' ;;
@@ -57,7 +60,7 @@ run_runner() {
 }
 
 run_runner clean "$test_root/clean.out"
-grep -F 'FW550 indirect-draw: PASS (multi/draw-parameters readback and clean PID-scoped klog)' \
+grep -F 'FW550 indirect-draw probe: CLEAN' \
     "$test_root/clean.out" >/dev/null
 grep -F -- '--assert-absent --pid 323' "$test_root/uv.log" >/dev/null
 if grep -F -- '--pid 324' "$test_root/uv.log" >/dev/null; then
@@ -69,7 +72,7 @@ if run_runner crash "$test_root/crash.out"; then
     echo "fatal indirect-draw klog unexpectedly passed" >&2
     exit 1
 fi
-grep -F 'oracle or PID-scoped klog failed' "$test_root/crash.out" >/dev/null
+grep -F 'fatal lifecycle fault' "$test_root/crash.out" >/dev/null
 grep -F -- '--pid 323' "$test_root/uv.log" >/dev/null
 
 echo "indirect-draw runner safety gate: PASS"

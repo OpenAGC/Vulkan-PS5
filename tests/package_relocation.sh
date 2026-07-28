@@ -20,6 +20,12 @@ relocated_prefix="$test_root/relocated-sdk"
 consumer_source="$test_root/consumer-source"
 consumer_build="$test_root/consumer-build"
 link_log="$test_root/consumer-link.log"
+driver_c_flags=$(sed -n 's/^CMAKE_C_FLAGS:STRING=//p' \
+    "$driver_build/CMakeCache.txt")
+sanitizer_flags=
+case "$driver_c_flags" in
+    *-fsanitize=*) sanitizer_flags=$driver_c_flags ;;
+esac
 
 cmake -S "$vulkan_headers_root" -B "$test_root/vulkan-headers-build" \
     -DCMAKE_INSTALL_PREFIX="$original_prefix" \
@@ -52,8 +58,12 @@ if [ -n "$toolchain" ]; then
         -DCMAKE_FIND_ROOT_PATH="$relocated_prefix" \
         -DCMAKE_PREFIX_PATH=/ >/dev/null
 else
-    cmake -S "$consumer_source" -B "$consumer_build" \
-        -DCMAKE_PREFIX_PATH="$relocated_prefix" >/dev/null
+    set -- cmake -S "$consumer_source" -B "$consumer_build" \
+        -DCMAKE_PREFIX_PATH="$relocated_prefix"
+    if [ -n "$sanitizer_flags" ]; then
+        set -- "$@" "-DCMAKE_C_FLAGS=$sanitizer_flags"
+    fi
+    "$@" >/dev/null
 fi
 if ! cmake --build "$consumer_build" --verbose >"$link_log" 2>&1; then
     cat "$link_log" >&2

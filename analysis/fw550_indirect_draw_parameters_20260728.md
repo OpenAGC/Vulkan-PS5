@@ -125,3 +125,20 @@ PID 86 was absent. The one-draw BaseVertex/BaseInstance gate is therefore
 cleanly hardware-qualified. Public `multiDrawIndirect`,
 `drawIndirectFirstInstance`, and `shaderDrawParameters` remain false until
 their complete multi-draw and shader semantics are hardware-qualified.
+
+The complete two-draw candidate is now rebuilt with the same SystemService
+self-kill lifecycle. Its SHA-256 is
+`baec66228c7f898cf2826f1c115d08c3636ba49fe05515ec89159afe5d2a7f7f`.
+The command regression walks actual PM4 packet boundaries, preventing address
+payloads from being misclassified as headers under ASAN. It proves that the
+DrawID-consuming pipeline expands both indexed and non-indexed multi draws into
+five single packets total, uses the same compiler-selected BaseVertex and
+BaseInstance registers, programs one stable DrawIndex register with the exact
+`0,0,1,0,1` sequence, and uses initiator two only for non-indexed packets. The
+normal and ASAN/UBSAN host suites both pass 20/20. The relocated package test
+also carries sanitizer flags into its external consumer so sanitized static
+archives link and execute under the same runtime. The indirect runner now uses
+the shared lifecycle gate, requiring matching self-kill IDs, ordered `All
+processes exited`, exact PID/name absence, console reachability, binary-klog
+sanitization, and only the isolated `amount=0x4000` warning. One fresh-console,
+single bounded run remains; it must not run without explicit authorization.

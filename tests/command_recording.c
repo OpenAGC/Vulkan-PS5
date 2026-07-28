@@ -942,16 +942,24 @@ int main(int argc, char **argv)
     bool found_depth_control = false, found_stencil_control = false;
     uint32_t occlusion_snapshots = 0;
     bool found_query_reset = false, found_query_availability = false;
+    uint32_t last_single_sh_register = UINT32_MAX;
+    uint32_t last_single_sh_value = UINT32_MAX;
+    uint32_t indirect_base_vertex_register = UINT32_MAX;
+    uint32_t indirect_start_instance_register = UINT32_MAX;
+    uint32_t indirect_draw_index_register = UINT32_MAX;
     uint64_t image_address = vk_ps5_memory_gpu_address(image_memory, 0);
-    for (uint32_t i = 0; i < count; ++i) {
-        if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DISPATCH_DIRECT) {
+    for (uint32_t i = 0; i < count;) {
+        uint32_t packet_length = agcPm4Length(dwords[i]);
+        assert(packet_length != 0u && i + packet_length <= count);
+        uint32_t opcode = agcPm4Opcode(dwords[i]);
+        if (opcode == AGC_PM4_OP_DISPATCH_DIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 1] == 3 && dwords[i + 2] == 5 && dwords[i + 3] == 7);
             assert(i >= 3);
             assert(((dwords[i - 3] >> 8) & 0xffu) == AGC_PM4_OP_SET_SH_REG);
             assert(dwords[i - 1] != OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(0));
             found_dispatch = true;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DMA_DATA) {
+        } else if (opcode == AGC_PM4_OP_DMA_DATA) {
             assert(i + 7u < count && dma_copy_count < 2u);
             uint64_t source_address = vk_ps5_memory_gpu_address(
                 indirect_memory, (VkDeviceSize)dma_copy_count * 32u);
@@ -963,103 +971,104 @@ int main(int argc, char **argv)
             assert(dwords[i + 5u] == (uint32_t)source_address);
             assert(dwords[i + 6u] == (uint32_t)(source_address >> 32u));
             dma_copy_count++;
-            i += 7u;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_2) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_2) {
             assert(i + 5 < count && dwords[i + 4] == 3);
             uint64_t index_address = vk_ps5_memory_gpu_address(index_memory, 0);
             assert(dwords[i + 2] == ((uint32_t)index_address & ~1u));
             assert(dwords[i + 3] == (uint32_t)(index_address >> 32));
             found_draw = true;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_DRAW_INDIRECT) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
             assert(dwords[i + 4] == 2u);
+            if (indirect_base_vertex_register == UINT32_MAX) {
+                indirect_base_vertex_register = dwords[i + 2];
+                indirect_start_instance_register = dwords[i + 3];
+                indirect_draw_index_register = last_single_sh_register;
+            }
+            assert(dwords[i + 2] == indirect_base_vertex_register);
+            assert(dwords[i + 3] == indirect_start_instance_register);
+            assert(last_single_sh_register == indirect_draw_index_register);
+            assert(last_single_sh_value == (indirect_count == 2u ? 1u : 0u));
             indirect_count++;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
             assert(dwords[i + 4] == 0u);
+            assert(dwords[i + 2] == indirect_base_vertex_register);
+            assert(dwords[i + 3] == indirect_start_instance_register);
+            assert(last_single_sh_register == indirect_draw_index_register);
+            assert(last_single_sh_value == indexed_indirect_count);
             indexed_indirect_count++;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
             assert(!"DrawID pipeline must expand non-indexed multi draws");
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
             assert(!"DrawID pipeline must expand indexed multi draws");
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_DRAW_INDEX_AUTO) {
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_AUTO) {
             found_tess_draw |= i + 2 < count && dwords[i + 1] == 3u;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_CONTEXT_CONTROL) {
+        } else if (opcode == AGC_PM4_OP_CONTEXT_CONTROL) {
             found_frame = true;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG &&
                    i + 2 < count && dwords[i + 1] == AGC_REG_CB_COLOR0_BASE) {
             found_color_target |=
                 dwords[i + 2] == (uint32_t)(image_address >> 8);
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_SH_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_SH_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_SPI_SHADER_PGM_RSRC2_HS) {
             const uint32_t encoded_lds =
                 (dwords[i + 2] >> 18u) & 0x1ffu;
             found_tess_hull_lds |= encoded_lds != 0u &&
                 (encoded_lds & 1u) == 0u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
             uint64_t image_address_1 =
                 vk_ps5_memory_gpu_address(image_memory_1, 0);
             found_color_target_1 |=
                 dwords[i + 2] == (uint32_t)(image_address_1 >> 8);
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_SPI_SHADER_COL_FORMAT) {
             found_dual_export |= dwords[i + 2] == 0x44u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_DEPTH_SIZE_XY) {
             found_depth_surface = true;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_DEPTH_CONTROL) {
             found_depth_control |= dwords[i + 2] == 0x00700797u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_STENCIL_CONTROL) {
             found_stencil_control |= dwords[i + 2] == 0x00030030u;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_PARAM) {
             found_tess_context |= dwords[i + 2] == 0x61u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_RING_SIZE) {
             found_tess_ring_size |= dwords[i + 2] ==
                 AGC_GFX1013_TESS_FACTOR_RING_SIZE / 4u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_HS_OFFCHIP_PARAM) {
             found_tess_offchip |= dwords[i + 2] ==
                 AGC_GFX1013_TESS_OFFCHIP_PARAM;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE) {
             found_tess_ring_base = true;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE_HI) {
             found_tess_ring_base_hi = true;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_EVENT_WRITE &&
+        } else if (opcode == AGC_PM4_OP_EVENT_WRITE &&
                    i + 3 < count && dwords[i + 1] == 0x115u) {
             ++occlusion_snapshots;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_WRITE_DATA) {
+        } else if (opcode == AGC_PM4_OP_WRITE_DATA) {
             assert(i + 3 < count && dwords[i + 1] == 0x00100100u);
             found_query_reset = true;
-        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_RELEASE_MEM &&
+        } else if (opcode == AGC_PM4_OP_RELEASE_MEM &&
                    i + 7 < count && dwords[i + 5] == 1u) {
             found_query_availability = true;
         }
+        if (opcode == AGC_PM4_OP_SET_SH_REG && packet_length == 3u) {
+            last_single_sh_register = dwords[i + 1u];
+            last_single_sh_value = dwords[i + 2u];
+        }
+        i += packet_length;
     }
     assert(found_dispatch && found_draw && dma_copy_count == 2u &&
            indirect_count == 3u &&
