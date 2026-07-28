@@ -153,8 +153,14 @@
   WSI-enabled VVL test pass without messages. The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `bbb5e02d340d60b582a52f5b9f631cf21b08b0ec463b8689f7b8c23363226760`.
-  One bounded FW 5.50 run remains before this
+  `45b2dfadb83094cc3572fc3297f386b8c7d84a8d2648b5bcb350b4ba2d66567b`.
+  The first bounded FW 5.50 run exited before buffer registration. The kernel
+  log identified `SYSTEM_XO_VIOLATION` at
+  `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
+  while the page was still execute-only. OpenAGC `290213c` now lifts the page
+  to RWX before verification and restores RX on both mismatch and success.
+  The console recovered, ps5debug-NG confirmed no qualification process
+  survived, and no retry occurred. One new bounded run remains before this
   milestone is hardware qualified; the runner has no automatic retry and uses
   ps5debug-NG cleanup only on a timeout/failure.
 

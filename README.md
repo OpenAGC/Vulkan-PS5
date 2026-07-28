@@ -58,6 +58,12 @@ PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 The runner never retries automatically. On timeout it asks ps5debug-NG to kill
 only the matching qualification process before returning failure.
 
+The first FW 5.50 attempt stopped safely before registration: kernel evidence
+showed that byte verification touched the execute-only VideoOut text page
+before its permissions were changed. OpenAGC `290213c` performs verification
+inside the short RWX window and restores RX on every exit. The rebuilt
+candidate awaits a fresh explicit console-availability signal.
+
 ## Standalone compute and triangle samples
 
 Configure with `-DVULKAN_PS5_BUILD_EXAMPLES=ON` to build

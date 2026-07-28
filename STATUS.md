@@ -392,9 +392,15 @@ Implemented:
   host tests and the WSI-enabled Validation Layers test pass with zero messages.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `bbb5e02d340d60b582a52f5b9f631cf21b08b0ec463b8689f7b8c23363226760`.
+  `45b2dfadb83094cc3572fc3297f386b8c7d84a8d2648b5bcb350b4ba2d66567b`.
 
 Pending:
 
 - One bounded FW 5.50 1,800-frame run and a post-run console responsiveness
-  probe. No automatic retry is permitted.
+  probe. The first candidate exited on an execute-only read while verifying
+  the VideoOut patch (`20260728T053743Z-swapchain-run1.log`); the kernel log
+  localized it to `libSceVideoOut.sprx+0x7e61`. OpenAGC `290213c` moves byte
+  verification inside the RWX window and restores RX on every path. The
+  console recovered, no target process survived, and no retry occurred. A new
+  explicit console-availability signal is required. No automatic retry is
+  permitted.
