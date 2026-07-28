@@ -138,9 +138,12 @@
   `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
   Two bounded FW 5.50 runs after independent console-availability signals are
   the remaining geometry feature gate before Milestone 4 WSI work resumes.
-  The first bounded FW 5.500.008 run produced exactly 4608 green pixels
-  (`20260728T051424Z-geometry-run1.log`), returned normally, and left websrv
-  responsive. It was not retried; one independently authorized run remains.
+  Two independent bounded FW 5.500.008 runs produced exactly 4608 green pixels
+  each (`20260728T051424Z-geometry-run1.log` and
+  `20260728T051510Z-geometry-run1.log`). Both returned normally, bounded
+  post-run websrv checks confirmed the console remained responsive, and
+  neither was retried. This closes the public `geometryShader` feature gate;
+  Milestone 4 VideoOut WSI work can now resume.
 
 ## Summary
 

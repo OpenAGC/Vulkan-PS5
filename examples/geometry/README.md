@@ -22,7 +22,9 @@ feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
 Two new independent FW 5.50 runs are required before this public feature path
 is considered hardware-qualified.
 
-The first bounded FW 5.500.008 run produced exactly 4608 green pixels
-(`20260728T051424Z-geometry-run1.log`). The application returned normally and
-a bounded post-run websrv request confirmed that the console remained
-responsive. The runner did not retry it; one independent run remains.
+Two independent bounded FW 5.500.008 runs produced exactly 4608 green pixels
+each (`20260728T051424Z-geometry-run1.log` and
+`20260728T051510Z-geometry-run1.log`). Both applications returned normally,
+bounded post-run websrv requests confirmed that the console remained
+responsive, and the runner did not retry either launch. The standard
+`geometryShader` feature-request path is hardware-qualified at this scope.

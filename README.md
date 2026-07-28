@@ -69,10 +69,11 @@ rejecting unadvertised features. The sample queries and requests geometry
 normally. Both seven-test host configurations and the Prospero build pass; the
 feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
 `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
-Its first bounded FW 5.500.008 run produced exactly 4608 green pixels
-(`20260728T051424Z-geometry-run1.log`), returned normally, and left websrv
-responsive. No retry was attempted. One independent run remains before this
-public feature path is considered hardware-qualified.
+Two independent bounded FW 5.500.008 runs produced exactly 4608 green pixels
+each (`20260728T051424Z-geometry-run1.log` and
+`20260728T051510Z-geometry-run1.log`). Both returned normally, bounded post-run
+websrv checks confirmed the console remained responsive, and neither was
+retried. The standard public `geometryShader` path is hardware-qualified.
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
