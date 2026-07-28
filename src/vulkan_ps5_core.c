@@ -154,6 +154,11 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013ScissorState scissor;
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
+    VkBool32 robust_buffer_access;
+    uint32_t vertex_attribute_mask;
+    uint32_t vertex_attribute_bindings[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
+    uint32_t vertex_attribute_offsets[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
+    uint32_t vertex_attribute_sizes[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
     AgcGfx1013ColorBlendState color_blend;
     AgcGfx1013PolygonMode polygon_mode;
     AgcGfx1013PrimitiveSizeState primitive_size;
@@ -1721,6 +1726,24 @@ static bool psbc_vertex_format(VkFormat source, OpenAgcPsbcVertexFormat *dest) {
     }
 }
 
+static uint32_t psbc_vertex_format_size(OpenAgcPsbcVertexFormat format) {
+    switch (format) {
+    case OPENAGC_PSBC_VERTEX_FORMAT_R32_SFLOAT:
+    case OPENAGC_PSBC_VERTEX_FORMAT_R8G8B8A8_UNORM:
+    case OPENAGC_PSBC_VERTEX_FORMAT_R16G16_SFLOAT:
+        return 4u;
+    case OPENAGC_PSBC_VERTEX_FORMAT_R32G32_SFLOAT:
+    case OPENAGC_PSBC_VERTEX_FORMAT_R16G16B16A16_SFLOAT:
+        return 8u;
+    case OPENAGC_PSBC_VERTEX_FORMAT_R32G32B32_SFLOAT:
+        return 12u;
+    case OPENAGC_PSBC_VERTEX_FORMAT_R32G32B32A32_SFLOAT:
+        return 16u;
+    default:
+        return 0u;
+    }
+}
+
 static VkResult psbc_result(OpenAgcPsbcResult result) {
     switch (result) {
     case OPENAGC_PSBC_SUCCESS: return VK_SUCCESS;
@@ -2185,6 +2208,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             vertex_divisors[divisor->binding] = divisor->divisor;
         }
         OpenAgcPsbcVertexAttribute attributes[OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES];
+        uint32_t vertex_attribute_mask = 0u;
         for (uint32_t j = 0; j < vertex_input->vertexAttributeDescriptionCount; ++j) {
             const VkVertexInputAttributeDescription *source =
                 &vertex_input->pVertexAttributeDescriptions[j];
@@ -2199,8 +2223,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     break;
                 }
             }
-            if (!found_binding || !psbc_vertex_format(source->format, &attributes[j].format))
+            if (!found_binding || source->location >=
+                    OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES ||
+                (vertex_attribute_mask & (1u << source->location)) ||
+                !psbc_vertex_format(source->format, &attributes[j].format))
                 return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            vertex_attribute_mask |= 1u << source->location;
             attributes[j].location = source->location;
             attributes[j].binding = source->binding;
             attributes[j].offset = source->offset;
@@ -2264,11 +2292,25 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .tessellation_control_points = tess_control ?
                 create->pTessellationState->patchControlPoints : 3,
             .tessellation_patches = 8,
+            .robust_buffer_access =
+                vk_ps5_device_robust_buffer_access(device),
         };
         VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         pipeline->vertex_binding_mask = vertex_binding_mask;
+        pipeline->robust_buffer_access = context.robust_buffer_access;
+        pipeline->vertex_attribute_mask = vertex_attribute_mask;
+        for (uint32_t j = 0;
+             j < vertex_input->vertexAttributeDescriptionCount; ++j) {
+            const OpenAgcPsbcVertexAttribute *attribute = &attributes[j];
+            pipeline->vertex_attribute_bindings[attribute->location] =
+                attribute->binding;
+            pipeline->vertex_attribute_offsets[attribute->location] =
+                attribute->offset;
+            pipeline->vertex_attribute_sizes[attribute->location] =
+                psbc_vertex_format_size(attribute->format);
+        }
         pipeline->color_blend = color_blend;
         pipeline->polygon_mode = translated_polygon_mode;
         pipeline->primitive_size = (AgcGfx1013PrimitiveSizeState){
@@ -3341,15 +3383,15 @@ static VkResult encode_buffer_descriptor(
     VkDeviceSize available = buffer->size - value->buffer.offset;
     VkDeviceSize range = value->buffer.range == VK_WHOLE_SIZE ?
         available : value->buffer.range;
-    if (!range || range > available || range / 4u > UINT32_MAX)
+    if (!range || range > available || range > UINT32_MAX)
         return VK_ERROR_INITIALIZATION_FAILED;
     if (buffer->memory_offset > UINT64_MAX - value->buffer.offset)
         return VK_ERROR_INITIALIZATION_FAILED;
     uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
         buffer->memory_offset + value->buffer.offset);
     AgcGfx1013BufferDescriptor descriptor;
-    if (agcGfx1013BufferDescriptorEncode(&descriptor, address, 4u,
-            (uint32_t)(range / 4u)) != AGC_OK)
+    if (agcGfx1013RawBufferDescriptorEncode(&descriptor, address,
+            (uint32_t)range) != AGC_OK)
         return VK_ERROR_INITIALIZATION_FAILED;
     memcpy(destination, &descriptor, sizeof(descriptor));
     return VK_SUCCESS;
@@ -3782,24 +3824,64 @@ static VkResult prepare_vertex_table(
         (AgcGfx1013BufferDescriptor *)
         ((uint8_t *)command->vertex_table_memory.cpu_address + table_offset);
     memset(descriptors, 0, VK_PS5_VERTEX_TABLE_SLICE);
-    for (uint32_t binding = 0; binding < VK_PS5_MAX_VERTEX_BINDINGS; ++binding) {
-        if (!(pipeline->vertex_binding_mask & (1u << binding))) continue;
-        VkPs5Buffer *buffer = command->vertex_buffers[binding];
-        uint32_t stride = pipeline->vertex_strides[binding];
-        if (!buffer || !buffer->memory || !stride ||
-            command->vertex_offsets[binding] >= buffer->size)
-            return VK_ERROR_INITIALIZATION_FAILED;
-        VkDeviceSize available =
-            buffer->size - command->vertex_offsets[binding];
-        if (available / stride == 0u || available / stride > UINT32_MAX ||
-            buffer->memory_offset >
-                UINT64_MAX - command->vertex_offsets[binding])
-            return VK_ERROR_INITIALIZATION_FAILED;
-        uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
-            buffer->memory_offset + command->vertex_offsets[binding]);
-        if (agcGfx1013BufferDescriptorEncode(&descriptors[binding], address,
-                stride, (uint32_t)(available / stride)) != AGC_OK)
-            return VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t descriptor_index = 0u;
+    if (pipeline->robust_buffer_access) {
+        for (uint32_t location = 0;
+             location < OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES; ++location) {
+            if (!(pipeline->vertex_attribute_mask & (1u << location))) continue;
+            uint32_t binding = pipeline->vertex_attribute_bindings[location];
+            VkPs5Buffer *buffer = command->vertex_buffers[binding];
+            uint32_t stride = pipeline->vertex_strides[binding];
+            uint32_t attribute_offset =
+                pipeline->vertex_attribute_offsets[location];
+            uint32_t attribute_size = pipeline->vertex_attribute_sizes[location];
+            if (!buffer || !buffer->memory || !stride || !attribute_size ||
+                command->vertex_offsets[binding] >= buffer->size ||
+                buffer->memory_offset >
+                    UINT64_MAX - command->vertex_offsets[binding])
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkDeviceSize available =
+                buffer->size - command->vertex_offsets[binding];
+            VkDeviceSize attribute_available =
+                attribute_offset < available ? available - attribute_offset : 0u;
+            uint64_t record_count = attribute_available >= attribute_size ?
+                1u + (attribute_available - attribute_size) / stride : 0u;
+            if (record_count > UINT32_MAX)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkDeviceSize descriptor_offset = command->vertex_offsets[binding];
+            if (attribute_offset < available)
+                descriptor_offset += attribute_offset;
+            if (buffer->memory_offset > UINT64_MAX - descriptor_offset)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
+                buffer->memory_offset + descriptor_offset);
+            if (agcGfx1013BufferDescriptorEncode(
+                    &descriptors[descriptor_index++], address, stride,
+                    (uint32_t)record_count) != AGC_OK)
+                return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    } else {
+        for (uint32_t binding = 0;
+             binding < VK_PS5_MAX_VERTEX_BINDINGS; ++binding) {
+            if (!(pipeline->vertex_binding_mask & (1u << binding))) continue;
+            VkPs5Buffer *buffer = command->vertex_buffers[binding];
+            uint32_t stride = pipeline->vertex_strides[binding];
+            if (!buffer || !buffer->memory || !stride ||
+                command->vertex_offsets[binding] >= buffer->size)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkDeviceSize available =
+                buffer->size - command->vertex_offsets[binding];
+            if (available / stride == 0u || available / stride > UINT32_MAX ||
+                buffer->memory_offset >
+                    UINT64_MAX - command->vertex_offsets[binding])
+                return VK_ERROR_INITIALIZATION_FAILED;
+            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
+                buffer->memory_offset + command->vertex_offsets[binding]);
+            if (agcGfx1013BufferDescriptorEncode(
+                    &descriptors[descriptor_index++], address, stride,
+                    (uint32_t)(available / stride)) != AGC_OK)
+                return VK_ERROR_INITIALIZATION_FAILED;
+        }
     }
     if (agcGpuMemoryFlush(&command->vertex_table_memory, table_offset,
             VK_PS5_VERTEX_TABLE_SLICE) != AGC_OK)

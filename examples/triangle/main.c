@@ -4,7 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+#include "vulkan_ps5_robust_vertex_spv.h"
+#include "vulkan_ps5_robust_vertex_frag_spv.h"
+#define vulkan_ps5_triangle_vert_spv vulkan_ps5_robust_vertex_spv
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_robust_vertex_frag_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "robust_vertex_access"
+#elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
 #include "vulkan_ps5_vertex_pipeline_stores_atomics_vert_spv.h"
 #include "vulkan_ps5_vertex_pipeline_stores_atomics_tesc_spv.h"
 #include "vulkan_ps5_vertex_pipeline_stores_atomics_tese_spv.h"
@@ -159,6 +166,10 @@ int main(void)
     VkShaderModule fragment_shader;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    VkBuffer robust_vertex_buffer;
+    VkDeviceMemory robust_vertex_memory;
+#endif
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE)
     VkPipeline dynamic_line_pipeline;
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
@@ -182,7 +193,17 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.robustBufferAccess) {
+        printf("robust_vertex_access: robustBufferAccess is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .robustBufferAccess = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.geometryShader ||
@@ -337,6 +358,7 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_ROBUST_VERTEX_PROBE) || \
     defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
     defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
     defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
@@ -408,6 +430,35 @@ int main(void)
         .size = requirements.size,
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &mapped_range));
+
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    const VkBufferCreateInfo robust_vertex_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 2u * sizeof(uint32_t),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VK_CHECK(vkCreateBuffer(device, &robust_vertex_buffer_info, NULL,
+        &robust_vertex_buffer));
+    VkMemoryRequirements robust_vertex_requirements;
+    vkGetBufferMemoryRequirements(device, robust_vertex_buffer,
+        &robust_vertex_requirements);
+    uint32_t robust_vertex_memory_type = find_host_visible_memory_type(
+        physical, robust_vertex_requirements.memoryTypeBits);
+    if (robust_vertex_memory_type == UINT32_MAX) {
+        printf("robust_vertex_access: no host-visible vertex memory type\n");
+        return 1;
+    }
+    const VkMemoryAllocateInfo robust_vertex_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = robust_vertex_requirements.size,
+        .memoryTypeIndex = robust_vertex_memory_type,
+    };
+    VK_CHECK(vkAllocateMemory(device, &robust_vertex_memory_info, NULL,
+        &robust_vertex_memory));
+    VK_CHECK(vkBindBufferMemory(device, robust_vertex_buffer,
+        robust_vertex_memory, 0));
+#endif
 
 #if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
     const VkBufferCreateInfo stage_probe_buffer_info = {
@@ -756,8 +807,27 @@ int main(void)
             .pName = "main",
         },
     };
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    const VkVertexInputBindingDescription robust_vertex_binding = {
+        .binding = 3,
+        .stride = 2u * sizeof(float),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+    };
+    const VkVertexInputAttributeDescription robust_vertex_attribute = {
+        .location = 5,
+        .binding = 3,
+        .format = VK_FORMAT_R32G32_SFLOAT,
+        .offset = 4u * sizeof(float),
+    };
+#endif
     const VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &robust_vertex_binding,
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = &robust_vertex_attribute,
+#endif
     };
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -898,6 +968,11 @@ int main(void)
 #endif
 #if !defined(VULKAN_PS5_QUERY_IDLE_ONLY)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    const VkDeviceSize robust_vertex_offset = 0u;
+    vkCmdBindVertexBuffers(command, 3, 1, &robust_vertex_buffer,
+        &robust_vertex_offset);
+#endif
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE)
     vkCmdDraw(command, 2, 1, 0, 0);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -978,7 +1053,8 @@ int main(void)
 #endif
 #if defined(VULKAN_PS5_DEMOTE_PROBE) || \
     defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
-    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+    defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
     uint32_t blue_count = 0;
 #endif
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
@@ -1010,7 +1086,8 @@ int main(void)
 #endif
 #if defined(VULKAN_PS5_DEMOTE_PROBE) || \
     defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
-    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+    defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
         else if (pixels[i] == 0xffff0000u)
             ++blue_count;
 #endif
@@ -1162,6 +1239,15 @@ int main(void)
         blue_count == 1024u && unexpected_count == 0u &&
         center == RED_RGBA8 && pixels[0] == 0u &&
         pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+    image_ok = 1;
+#else
+    image_ok = blue_count >= 16000u && blue_count <= 21000u &&
+        green_count == 0u && unexpected_count == 0u &&
+        center == 0xffff0000u && pixels[0] == 0u &&
+        pixels[TARGET_WIDTH - 1u] == 0u;
+#endif
 #else
     image_ok = green_count >= 16000u && green_count <= 21000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
@@ -1225,6 +1311,9 @@ int main(void)
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         printf("large_points: mismatch size8=%u size16=%u size32=%u unexpected=%u center=%08x\n",
             green_count, red_count, blue_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+        printf("robust_vertex_access: mismatch blue=%u green=%u unexpected=%u center=%08x\n",
+            blue_count, green_count, unexpected_count, center);
 #else
         printf(SAMPLE_LABEL ": mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
@@ -1266,6 +1355,13 @@ int main(void)
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         printf("large_points: PASS size8=%u size16=%u size32=%u center=%08x\n",
             green_count, red_count, blue_count, center);
+#elif defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+        printf("robust_vertex_access: PASS command recording\n");
+#else
+        printf("robust_vertex_access: PASS OOB attribute=0 blue=%u\n",
+            blue_count);
+#endif
 #else
         printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);
 #endif
@@ -1283,6 +1379,10 @@ int main(void)
 #endif
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    vkDestroyBuffer(device, robust_vertex_buffer, NULL);
+    vkFreeMemory(device, robust_vertex_memory, NULL);
+#endif
 #if defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
     vkDestroyDescriptorPool(device, stage_probe_descriptor_pool, NULL);
     vkDestroyDescriptorSetLayout(device, stage_probe_set_layout, NULL);
@@ -1318,6 +1418,7 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
+     defined(VULKAN_PS5_ROBUST_VERTEX_PROBE) || \
      defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
      defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \

@@ -54,6 +54,7 @@ struct VkPs5Device {
     AgcGfx1013TessellationState tessellation;
     atomic_flag tessellation_lock;
     VkBool32 tessellation_ready;
+    VkBool32 robust_buffer_access;
     atomic_uint memory_allocation_count;
 };
 
@@ -157,6 +158,11 @@ void vk_ps5_device_free(VkDevice device_handle, const VkAllocationCallbacks *all
     const VkAllocationCallbacks *selected = allocator;
     if (!selected && device) selected = device_allocator(device);
     ps5_free(selected, ptr);
+}
+
+VkBool32 vk_ps5_device_robust_buffer_access(VkDevice device_handle) {
+    const VkPs5Device *device = (const VkPs5Device *)device_handle;
+    return device ? device->robust_buffer_access : VK_FALSE;
 }
 
 void *vk_ps5_instance_alloc(VkInstance instance_handle,
@@ -544,6 +550,7 @@ vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
 
 static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
+    features->robustBufferAccess = VK_TRUE;
     features->dualSrcBlend = VK_TRUE;
     features->depthBiasClamp = VK_TRUE;
     features->depthClamp = VK_TRUE;
@@ -1152,6 +1159,22 @@ static VkResult validate_device_create_chain(VkPhysicalDevice physicalDevice,
     return VK_SUCCESS;
 }
 
+static VkBool32 robust_buffer_access_requested(
+    const VkDeviceCreateInfo *create_info)
+{
+    if (create_info->pEnabledFeatures &&
+        create_info->pEnabledFeatures->robustBufferAccess)
+        return VK_TRUE;
+    for (const VkBaseInStructure *next =
+             (const VkBaseInStructure *)create_info->pNext;
+         next; next = next->pNext) {
+        if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 &&
+            ((const VkPhysicalDeviceFeatures2 *)next)->features.robustBufferAccess)
+            return VK_TRUE;
+    }
+    return VK_FALSE;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                const VkAllocationCallbacks *pAllocator, VkDevice *pDevice) {
@@ -1186,6 +1209,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         device->has_allocator = VK_TRUE;
     }
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
+    device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
     atomic_init(&device->queue.next_submission, 0);

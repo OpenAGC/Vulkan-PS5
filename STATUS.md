@@ -1,5 +1,26 @@
 # Implementation Status
 
+## Milestone 6: robust buffer access (2026-07-28)
+
+`robustBufferAccess` is advertised and accepted through legacy and Features2
+paths. Uniform and storage buffers use byte-bounded raw gfx1013 descriptors;
+robust vertex pipelines use openagc-psbc's per-attribute lowering and densely
+packed descriptors with complete-record bounds. OpenAGC commit `3928be5`
+permits the required zero-record structured descriptor, and openagc-psbc commit
+`8369fea` exposes the robust pipeline context and descriptor-mode metadata.
+
+Normal and ASAN/UBSAN suites pass 38/38, including loader/VVL coverage, and the
+Prospero probes link with `-lunwind -lc++abi -lc++ -lm`. Two bounded FW 5.50
+compute runs proved OOB SSBO reads return zero and OOB stores are discarded;
+two sparse-binding vertex runs proved an OOB `vec2` attribute is zero through
+an exact 18,432-blue-pixel oracle. All four runs exited cleanly with only the
+known `amount=0x4000` baseline warning. Evidence is retained in
+`20260728T161337Z-robust-buffer-run1.log`,
+`20260728T161845Z-robust-buffer-run1.log`,
+`20260728T161642Z-robust-vertex-run1.log`, and
+`20260728T161917Z-robust-vertex-run1.log`. The Eden compatibility profile now
+has three feature gaps.
+
 ## Milestone 6: dual-source blending (2026-07-28)
 
 `dualSrcBlend` is advertised and accepted through legacy and Features2 paths.

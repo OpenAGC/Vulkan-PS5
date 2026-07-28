@@ -11,6 +11,13 @@
 #define SAMPLE_LABEL "variable_pointers"
 #define VALUE_COUNT 1024u
 #define GROUP_COUNT 1u
+#elif defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+#include "vulkan_ps5_robust_buffer_spv.h"
+#define vulkan_ps5_compute_spv vulkan_ps5_robust_buffer_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "robust_buffer_access"
+#define VALUE_COUNT 16u
+#define GROUP_COUNT 1u
 #elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
 #include "vulkan_ps5_storage_image_spv.h"
 #define vulkan_ps5_compute_spv vulkan_ps5_storage_image_spv
@@ -104,15 +111,26 @@ int main(void)
         return 1;
     }
     const void *device_features = &variable_pointer_features;
-#elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+#elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
+      defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
-    if (!supported_features.shaderStorageImageWriteWithoutFormat) {
+    if (
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+        !supported_features.shaderStorageImageWriteWithoutFormat
+#else
+        !supported_features.robustBufferAccess
+#endif
+    ) {
         printf(SAMPLE_LABEL ": required feature is unavailable\n");
         return 1;
     }
     const VkPhysicalDeviceFeatures requested_features = {
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
         .shaderStorageImageWriteWithoutFormat = VK_TRUE,
+#else
+        .robustBufferAccess = VK_TRUE,
+#endif
     };
     const void *device_features = NULL;
 #else
@@ -122,7 +140,8 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = device_features,
         .pEnabledFeatures =
-#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+#if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
+    defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
             &requested_features,
 #else
             NULL,
@@ -201,6 +220,10 @@ int main(void)
     memset(initial_values, 0, (size_t)buffer_size);
     initial_values[0] = 0x00000100u;
     initial_values[1] = 0x00000200u;
+#elif defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+    uint32_t *initial_values = mapped;
+    initial_values[4] = 0x11223344u;
+    initial_values[8] = 0xffffffffu;
 #endif
     const VkMappedMemoryRange mapped_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -210,7 +233,7 @@ int main(void)
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &mapped_range));
 
-    const VkDescriptorSetLayoutBinding binding = {
+    const VkDescriptorSetLayoutBinding bindings[] = {{
         .binding = 0,
 #if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
@@ -219,11 +242,20 @@ int main(void)
 #endif
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    },
+#if defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+    {
+        .binding = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    },
+#endif
     };
     const VkDescriptorSetLayoutCreateInfo set_layout_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &binding,
+        .bindingCount = sizeof(bindings) / sizeof(bindings[0]),
+        .pBindings = bindings,
     };
     VK_CHECK(vkCreateDescriptorSetLayout(
         device, &set_layout_info, NULL, &set_layout));
@@ -257,7 +289,12 @@ int main(void)
 #if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1,
 #else
-        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+#if defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+        2,
+#else
+        1,
+#endif
 #endif
     };
     const VkDescriptorPoolCreateInfo pool_info = {
@@ -282,13 +319,25 @@ int main(void)
         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
     };
 #else
-    const VkDescriptorBufferInfo descriptor_buffer = {
+    const VkDescriptorBufferInfo descriptor_buffers[] = {{
         .buffer = buffer,
         .offset = 0,
+#if defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+        .range = 4u * sizeof(uint32_t),
+#else
         .range = buffer_size,
+#endif
+    },
+#if defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+    {
+        .buffer = buffer,
+        .offset = 8u * sizeof(uint32_t),
+        .range = 4u * sizeof(uint32_t),
+    },
+#endif
     };
 #endif
-    const VkWriteDescriptorSet descriptor_write = {
+    const VkWriteDescriptorSet descriptor_writes[] = {{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .dstSet = descriptor_set,
         .dstBinding = 0,
@@ -299,10 +348,23 @@ int main(void)
         .pImageInfo = &descriptor_image,
 #else
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .pBufferInfo = &descriptor_buffer,
+        .pBufferInfo = &descriptor_buffers[0],
+#endif
+    },
+#if defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_set,
+        .dstBinding = 1,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &descriptor_buffers[1],
+    },
 #endif
     };
-    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+    vkUpdateDescriptorSets(device,
+        sizeof(descriptor_writes) / sizeof(descriptor_writes[0]),
+        descriptor_writes, 0, NULL);
 
     const VkCommandPoolCreateInfo command_pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -402,6 +464,20 @@ int main(void)
     } else {
         printf("variable_pointers: PASS invocations=64 storage_load=64 storage_store=64 workgroup=64\n");
     }
+#elif defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
+    int status = 0;
+#if !defined(OPENAGC_PROSPERO)
+    (void)values;
+    printf(SAMPLE_LABEL ": PASS command recording\n");
+#else
+    if (values[4] != 0x11223344u || values[8] != 0u) {
+        printf(SAMPLE_LABEL ": mismatch guard=%08x read=%08x\n",
+            values[4], values[8]);
+        status = 1;
+    } else {
+        printf(SAMPLE_LABEL ": PASS OOB read=0 OOB store=discarded\n");
+    }
+#endif
 #elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
     int status = 0;
 #if !defined(OPENAGC_PROSPERO)
@@ -457,7 +533,8 @@ int main(void)
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
 #if (defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) || \
-     defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)) && defined(OPENAGC_PROSPERO)
+     defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
+     defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)) && defined(OPENAGC_PROSPERO)
     fflush(stdout);
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);
 #endif

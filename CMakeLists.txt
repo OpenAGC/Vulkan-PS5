@@ -345,6 +345,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
   set(VULKAN_PS5_STORAGE_IMAGE_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_storage_image_spv.h")
+  set(VULKAN_PS5_ROBUST_BUFFER_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_buffer_spv.h")
   set(VULKAN_PS5_VARIABLE_POINTERS_BINARY
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_variable_pointers.spv")
   set(VULKAN_PS5_VARIABLE_POINTERS_HEADER
@@ -369,9 +371,25 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/compute/main.c "${VULKAN_PS5_STORAGE_IMAGE_HEADER}")
   target_compile_definitions(vulkan_ps5_storage_image_probe PRIVATE
     VULKAN_PS5_STORAGE_IMAGE_PROBE=1)
+  add_custom_command(OUTPUT "${VULKAN_PS5_ROBUST_BUFFER_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_robust_buffer_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/robust_buffer_access.comp"
+      -o "${VULKAN_PS5_ROBUST_BUFFER_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/robust_buffer_access.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_robust_buffer_probe
+    examples/compute/main.c "${VULKAN_PS5_ROBUST_BUFFER_HEADER}")
+  target_compile_definitions(vulkan_ps5_robust_buffer_probe PRIVATE
+    VULKAN_PS5_ROBUST_BUFFER_PROBE=1)
   if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME vulkan_ps5.storage_image_command_recording
       COMMAND vulkan_ps5_storage_image_probe)
+    add_test(NAME vulkan_ps5.robust_buffer_command_recording
+      COMMAND vulkan_ps5_robust_buffer_probe)
+    add_test(NAME vulkan_ps5.robust_vertex_command_recording
+      COMMAND vulkan_ps5_robust_vertex_probe)
   endif()
   add_custom_command(
     OUTPUT "${VULKAN_PS5_VARIABLE_POINTERS_BINARY}"
@@ -399,6 +417,10 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_vert_spv.h")
   set(VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_frag_spv.h")
+  set(VULKAN_PS5_ROBUST_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_vertex_spv.h")
+  set(VULKAN_PS5_ROBUST_VERTEX_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_vertex_frag_spv.h")
   set(VULKAN_PS5_NON_SOLID_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_non_solid_vert_spv.h")
   set(VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER
@@ -442,6 +464,20 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
       -o "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_ROBUST_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_robust_vertex_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/robust_vertex.vert"
+      -o "${VULKAN_PS5_ROBUST_VERTEX_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/robust_vertex.vert"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_ROBUST_VERTEX_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_robust_vertex_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/robust_vertex.frag"
+      -o "${VULKAN_PS5_ROBUST_VERTEX_FRAGMENT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/robust_vertex.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_NON_SOLID_VERTEX_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -562,6 +598,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
     "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
+  add_executable(vulkan_ps5_robust_vertex_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_ROBUST_VERTEX_HEADER}"
+    "${VULKAN_PS5_ROBUST_VERTEX_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_robust_vertex_probe PRIVATE
+    VULKAN_PS5_ROBUST_VERTEX_PROBE=1)
   add_executable(vulkan_ps5_logic_op_probe
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -850,7 +892,9 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_storage_image_probe
+      vulkan_ps5_robust_buffer_probe
       vulkan_ps5_variable_pointers_probe
+      vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
@@ -878,7 +922,9 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endif()
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_storage_image_probe
+      vulkan_ps5_robust_buffer_probe
       vulkan_ps5_variable_pointers_probe
+      vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
@@ -912,7 +958,11 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(PROSPERO)
     target_link_libraries(vulkan_ps5_storage_image_probe PRIVATE
       SceSystemService)
+    target_link_libraries(vulkan_ps5_robust_buffer_probe PRIVATE
+      SceSystemService)
     target_link_libraries(vulkan_ps5_variable_pointers_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_robust_vertex_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)
     target_link_libraries(vulkan_ps5_depth_bias_clamp_probe PRIVATE

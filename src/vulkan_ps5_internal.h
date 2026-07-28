@@ -21,6 +21,7 @@
 void *vk_ps5_device_alloc(VkDevice device, const VkAllocationCallbacks *allocator,
                           size_t size, size_t alignment, VkSystemAllocationScope scope);
 void vk_ps5_device_free(VkDevice device, const VkAllocationCallbacks *allocator, void *ptr);
+VkBool32 vk_ps5_device_robust_buffer_access(VkDevice device);
 void *vk_ps5_instance_alloc(VkInstance instance,
     const VkAllocationCallbacks *allocator, size_t size, size_t alignment,
     VkSystemAllocationScope scope);

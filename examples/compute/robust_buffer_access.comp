@@ -1,0 +1,18 @@
+#version 450
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer Source {
+    uint values[];
+} source_buffer;
+
+layout(set = 0, binding = 1, std430) buffer Result {
+    uint values[];
+} result_buffer;
+
+void main()
+{
+    uint out_of_bounds_value = source_buffer.values[4];
+    source_buffer.values[4] = 0xdeadbeefu;
+    result_buffer.values[0] = out_of_bounds_value;
+}

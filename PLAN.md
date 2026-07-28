@@ -2,6 +2,11 @@
 
 ## Progress
 
+- Milestone 6 `robustBufferAccess` closure is complete. Byte-bounded raw
+  UBO/SSBO descriptors and per-attribute vertex bounds pass 38/38 normal and
+  sanitizer tests plus repeated compute and sparse-vertex FW 5.50 gates. Three
+  Eden feature gaps remain.
+
 - Milestone 6 `shaderStorageImageWriteWithoutFormat` closure is complete.
   Linear RGBA8 storage images, standard descriptor updates, formatless SPIR-V
   image stores, host/sanitizer coverage, and two bounded FW 5.50 exact-readback
@@ -444,7 +449,15 @@
   oracle. Evidence is retained in `20260728T154623Z-storage-image-run1.log`
   and `20260728T155150Z-storage-image-run1.log`; the public ELF SHA-256 is
   `5234ca8640902545ea1c6c55bfe2f503365c3119678fb9ad4d030c51d96ed39a`.
-- The live Eden compatibility profile is now four feature gaps.
+- `robustBufferAccess` is hardware-qualified for both buffer descriptors and
+  vertex fetch. Repeated bounded compute gates prove OOB SSBO reads return zero
+  and stores are discarded; repeated sparse-binding vertex gates produce an
+  exact 18,432-pixel blue triangle from a zero-record OOB `vec2` attribute.
+  Evidence is retained in `20260728T161337Z-robust-buffer-run1.log`,
+  `20260728T161845Z-robust-buffer-run1.log`,
+  `20260728T161642Z-robust-vertex-run1.log`, and
+  `20260728T161917Z-robust-vertex-run1.log`.
+- The live Eden compatibility profile is now three feature gaps.
 
 ## Test Plan and Assumptions
 

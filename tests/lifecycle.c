@@ -154,6 +154,7 @@ int main(void) {
         .pNext = &host_query_reset,
     };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
+    assert(features2.features.robustBufferAccess == VK_TRUE);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(demote_features.shaderDemoteToHelperInvocation == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
@@ -218,6 +219,7 @@ int main(void) {
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
+    assert(features.robustBufferAccess == VK_TRUE);
     assert(features.depthBiasClamp == VK_TRUE);
     assert(features.depthClamp == VK_TRUE);
     assert(features.drawIndirectFirstInstance == VK_TRUE);
@@ -258,6 +260,7 @@ int main(void) {
     features.tessellationShader = VK_FALSE;
     features.vertexPipelineStoresAndAtomics = VK_FALSE;
     features.wideLines = VK_FALSE;
+    features.robustBufferAccess = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
         assert(feature_bits[i] == VK_FALSE);
@@ -341,6 +344,7 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &enabled_divisor,
         .features = {
+            .robustBufferAccess = VK_TRUE,
             .depthBiasClamp = VK_TRUE,
             .depthClamp = VK_TRUE,
             .drawIndirectFirstInstance = VK_TRUE,
@@ -414,6 +418,7 @@ int main(void) {
     assert(variable_pointer_device != VK_NULL_HANDLE);
     vkDestroyDevice(variable_pointer_device, NULL);
     VkPhysicalDeviceFeatures legacy_geometry_features = {
+        .robustBufferAccess = VK_TRUE,
         .depthBiasClamp = VK_TRUE,
         .depthClamp = VK_TRUE,
         .drawIndirectFirstInstance = VK_TRUE,

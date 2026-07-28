@@ -310,6 +310,15 @@ descriptor encoding, and command recording; the FW 5.50 gate verifies an exact
 4,096-pixel checkerboard. Run the bounded hardware gate with
 `PS5_HOST=10.0.1.41 examples/run_fw550_storage_image.sh`.
 
+`vulkan_ps5_robust_buffer_probe` requests `robustBufferAccess`, binds a
+16-byte SSBO range backed by a larger allocation, and proves that an OOB read
+returns zero while an OOB store leaves the guard word unchanged. The companion
+`vulkan_ps5_robust_vertex_probe` uses sparse binding 3, shader location 5, and
+an attribute offset beyond its eight-byte buffer; a zero fetch must produce an
+exact 18,432-pixel blue triangle. Run their bounded FW 5.50 gates with
+`PS5_HOST=10.0.1.41 examples/run_fw550_robust_buffer.sh` and
+`PS5_HOST=10.0.1.41 examples/run_fw550_robust_vertex.sh`.
+
 The same option builds `vulkan_ps5_triangle_example`. It renders a solid-green
 triangle into a mapped 256x256 linear RGBA8 attachment through an ordinary
 render pass, waits for completion, invalidates the allocation, and verifies the
