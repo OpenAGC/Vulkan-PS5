@@ -48,6 +48,7 @@ typedef struct VkPs5Buffer {
 } VkPs5Buffer;
 
 typedef struct VkPs5Image {
+    VkImageCreateFlags flags;
     VkImageType type;
     VkFormat format;
     VkExtent3D extent;
@@ -74,8 +75,11 @@ typedef struct VkPs5Image {
 
 typedef struct VkPs5ImageView {
     VkImage image;
+    VkImageViewType view_type;
     VkFormat format;
     VkComponentMapping components;
+    uint32_t base_array_layer;
+    uint32_t layer_count;
 } VkPs5ImageView;
 typedef struct VkPs5BufferView { VkBuffer buffer; VkFormat format; } VkPs5BufferView;
 typedef struct VkPs5Opaque { uint32_t kind; } VkPs5Opaque;
@@ -927,9 +931,22 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         if (next->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO &&
             ((const VkExternalMemoryImageCreateInfo *)next)->handleTypes != 0)
             return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (pCreateInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
+        if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
+            pCreateInfo->extent.width != pCreateInfo->extent.height ||
+            pCreateInfo->extent.depth != 1u ||
+            pCreateInfo->arrayLayers < 6u ||
+            pCreateInfo->arrayLayers > 0x2000u ||
+            pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT ||
+            !(pCreateInfo->usage & VK_IMAGE_USAGE_SAMPLED_BIT) ||
+            (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM &&
+             pCreateInfo->format != VK_FORMAT_B8G8R8A8_UNORM))
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     VkPs5Image *image = alloc_object(device, pAllocator, sizeof(*image),
                                      _Alignof(VkPs5Image));
     if (!image) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    image->flags = pCreateInfo->flags;
     image->type = pCreateInfo->imageType;
     image->format = pCreateInfo->format;
     image->extent = pCreateInfo->extent;
@@ -1347,21 +1364,58 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
          image->format == VK_FORMAT_D32_SFLOAT_S8_UINT ?
             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT :
             VK_IMAGE_ASPECT_DEPTH_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
-    if (pCreateInfo->viewType != VK_IMAGE_VIEW_TYPE_2D ||
-        pCreateInfo->format != image->format ||
+    if (pCreateInfo->subresourceRange.baseMipLevel >= image->mip_levels ||
+        pCreateInfo->subresourceRange.baseArrayLayer >= image->array_layers)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    uint32_t level_count = pCreateInfo->subresourceRange.levelCount ==
+        VK_REMAINING_MIP_LEVELS ?
+        image->mip_levels - pCreateInfo->subresourceRange.baseMipLevel :
+        pCreateInfo->subresourceRange.levelCount;
+    uint32_t layer_count = pCreateInfo->subresourceRange.layerCount ==
+        VK_REMAINING_ARRAY_LAYERS ?
+        image->array_layers - pCreateInfo->subresourceRange.baseArrayLayer :
+        pCreateInfo->subresourceRange.layerCount;
+    if (pCreateInfo->format != image->format ||
         !pCreateInfo->subresourceRange.aspectMask ||
         (pCreateInfo->subresourceRange.aspectMask & ~valid_aspects) ||
         pCreateInfo->subresourceRange.baseMipLevel != 0u ||
-        pCreateInfo->subresourceRange.levelCount != 1u ||
-        pCreateInfo->subresourceRange.baseArrayLayer != 0u ||
-        pCreateInfo->subresourceRange.layerCount != 1u)
+        level_count != 1u || !layer_count ||
+        layer_count > image->array_layers -
+            pCreateInfo->subresourceRange.baseArrayLayer)
         return VK_ERROR_FEATURE_NOT_PRESENT;
+    switch (pCreateInfo->viewType) {
+    case VK_IMAGE_VIEW_TYPE_2D:
+        if (layer_count != 1u) return VK_ERROR_FEATURE_NOT_PRESENT;
+        break;
+    case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
+        if (image->type != VK_IMAGE_TYPE_2D || image->is_depth_surface)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        break;
+    case VK_IMAGE_VIEW_TYPE_CUBE:
+        if (!(image->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) ||
+            image->is_depth_surface ||
+            image->extent.width != image->extent.height || layer_count != 6u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        break;
+    case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
+        if (!(image->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) ||
+            image->is_depth_surface ||
+            image->extent.width != image->extent.height ||
+            layer_count < 6u || layer_count % 6u != 0u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        break;
+    default:
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
     VkPs5ImageView *view = alloc_object(device, pAllocator, sizeof(*view),
                                         _Alignof(VkPs5ImageView));
     if (!view) return VK_ERROR_OUT_OF_HOST_MEMORY;
     view->image = pCreateInfo->image;
+    view->view_type = pCreateInfo->viewType;
     view->format = pCreateInfo->format;
     view->components = pCreateInfo->components;
+    view->base_array_layer = pCreateInfo->subresourceRange.baseArrayLayer;
+    view->layer_count = layer_count;
     *pView = (VkImageView)view;
     return VK_SUCCESS;
 }
@@ -3573,9 +3627,8 @@ static VkResult image_descriptor_state(
     if (!view || !image || !image->memory ||
         !(image->usage & (storage ? VK_IMAGE_USAGE_STORAGE_BIT :
             VK_IMAGE_USAGE_SAMPLED_BIT)) ||
-        image->type != VK_IMAGE_TYPE_2D || image->tiling != VK_IMAGE_TILING_LINEAR ||
+        image->type != VK_IMAGE_TYPE_2D ||
         image->samples != VK_SAMPLE_COUNT_1_BIT || image->mip_levels != 1u ||
-        image->array_layers != 1u ||
         (storage ? info->imageLayout != VK_IMAGE_LAYOUT_GENERAL :
             (info->imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
              info->imageLayout != VK_IMAGE_LAYOUT_GENERAL)) ||
@@ -3584,6 +3637,8 @@ static VkResult image_descriptor_state(
         view->components.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
         view->components.a != VK_COMPONENT_SWIZZLE_IDENTITY)
         return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (storage && view->view_type != VK_IMAGE_VIEW_TYPE_2D)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     uint32_t dst_x = 4u, dst_y = 5u, dst_z = 6u, dst_w = 7u;
     if (!storage && view->format == VK_FORMAT_B8G8R8A8_UNORM) {
         dst_x = 6u;
@@ -3591,18 +3646,42 @@ static VkResult image_descriptor_state(
     } else if (view->format != VK_FORMAT_R8G8B8A8_UNORM) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
+    uint64_t address = vk_ps5_memory_gpu_address(image->memory,
+        image->memory_offset);
+    uint32_t image_type = AGC_GFX1013_IMAGE_TYPE_2D;
+    uint32_t base_array_layer = 0u;
+    uint32_t last_array_layer = 0u;
+    if (view->view_type == VK_IMAGE_VIEW_TYPE_2D) {
+        if (view->base_array_layer > UINT64_MAX / image->array_pitch ||
+            address > UINT64_MAX -
+                (uint64_t)view->base_array_layer * image->array_pitch)
+            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        address += (uint64_t)view->base_array_layer * image->array_pitch;
+    } else if (view->view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
+        image_type = AGC_GFX1013_IMAGE_TYPE_2D_ARRAY;
+        base_array_layer = view->base_array_layer;
+        last_array_layer = view->base_array_layer + view->layer_count - 1u;
+    } else if (view->view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
+               view->view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
+        image_type = AGC_GFX1013_IMAGE_TYPE_CUBE;
+        base_array_layer = view->base_array_layer;
+        last_array_layer = view->base_array_layer + view->layer_count - 1u;
+    } else {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
     *state = (AgcGfx1013Image2DState){
-        .address = vk_ps5_memory_gpu_address(image->memory,
-            image->memory_offset),
+        .address = address,
         .width = image->extent.width,
         .height = image->extent.height,
         .format = AGC_GFX1013_IMAGE_FORMAT_RGBA8_UNORM,
-        .image_type = AGC_GFX1013_IMAGE_TYPE_2D,
+        .image_type = image_type,
         .dst_sel_x = dst_x,
         .dst_sel_y = dst_y,
         .dst_sel_z = dst_z,
         .dst_sel_w = dst_w,
         .sample_count = 1u,
+        .base_array_layer = base_array_layer,
+        .last_array_layer = last_array_layer,
     };
     return VK_SUCCESS;
 }

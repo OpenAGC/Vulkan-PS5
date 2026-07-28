@@ -105,6 +105,7 @@ int main(void) {
         .pQueuePriorities = &priority,
     };
     const VkPhysicalDeviceFeatures enabled_features = {
+        .imageCubeArray = VK_TRUE,
         .sampleRateShading = VK_TRUE,
     };
     VkDeviceCreateInfo device_info = {
@@ -202,6 +203,34 @@ int main(void) {
     VkImageView view = VK_NULL_HANDLE;
     assert(vkCreateImageView(device, &view_info, NULL, &view) == VK_SUCCESS);
 
+    VkImageCreateInfo cube_info = image_info;
+    cube_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    cube_info.extent = (VkExtent3D){8u, 8u, 1u};
+    cube_info.arrayLayers = 12u;
+    cube_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    cube_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    VkImage cube_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &cube_info, NULL, &cube_image) == VK_SUCCESS);
+    VkMemoryRequirements cube_requirements;
+    vkGetImageMemoryRequirements(device, cube_image, &cube_requirements);
+    VkMemoryAllocateInfo cube_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = cube_requirements.size,
+        .memoryTypeIndex = find_memory_type(physical,
+            cube_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    VkDeviceMemory cube_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &cube_allocation, NULL, &cube_memory) ==
+           VK_SUCCESS);
+    assert(vkBindImageMemory(device, cube_image, cube_memory, 0u) == VK_SUCCESS);
+    VkImageViewCreateInfo cube_view_info = view_info;
+    cube_view_info.image = cube_image;
+    cube_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    cube_view_info.subresourceRange.layerCount = 12u;
+    VkImageView cube_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &cube_view_info, NULL, &cube_view) ==
+           VK_SUCCESS);
+
     VkAttachmentDescription attachment = {
         .format = image_info.format,
         .samples = VK_SAMPLE_COUNT_4_BIT,
@@ -276,6 +305,9 @@ int main(void) {
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyImageView(device, cube_view, NULL);
+    vkDestroyImage(device, cube_image, NULL);
+    vkFreeMemory(device, cube_memory, NULL);
     vkDestroyImageView(device, view, NULL);
     vkDestroyImage(device, image, NULL);
     vkFreeMemory(device, image_memory, NULL);

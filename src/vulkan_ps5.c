@@ -558,6 +558,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->fragmentStoresAndAtomics = VK_TRUE;
     features->fillModeNonSolid = VK_TRUE;
     features->geometryShader = VK_TRUE;
+    features->imageCubeArray = VK_TRUE;
     features->independentBlend = VK_TRUE;
     features->largePoints = VK_TRUE;
     features->logicOp = VK_TRUE;
@@ -727,8 +728,13 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
         !(supported & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) && type != VK_IMAGE_TYPE_2D)
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    if (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
+        if (type != VK_IMAGE_TYPE_2D ||
+            (format != VK_FORMAT_R8G8B8A8_UNORM &&
+             format != VK_FORMAT_B8G8R8A8_UNORM) ||
+            !(usage & VK_IMAGE_USAGE_SAMPLED_BIT))
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     pImageFormatProperties->maxExtent.width = type == VK_IMAGE_TYPE_3D ?
         capabilities.max_image_dimension_3d : capabilities.max_image_dimension_2d;
     pImageFormatProperties->maxExtent.height = type == VK_IMAGE_TYPE_1D ? 1 :

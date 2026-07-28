@@ -2,6 +2,12 @@
 
 ## Progress
 
+- Milestone 6 `imageCubeArray` closure is complete. Standard 12-layer
+  cube-compatible images, cube/cube-array/2D-array views, typed gfx1013 layer
+  descriptors, runtime `samplerCubeArray` compilation, 39/39 normal and
+  sanitizer tests, VVL coverage, and two repeated exact FW 5.50 readback gates
+  pass. One Eden feature gap remains: `multiViewport`.
+
 - Milestone 6 `sampleRateShading` closure is complete for 4x optimal RGBA8
   color attachments. Full 4-iteration and partial 2-iteration semantics pass
   38/38 normal and sanitizer tests, VVL resource coverage, and repeated exact
@@ -471,8 +477,13 @@
   `20260728T164256Z-sample-rate-shading-run1.log`,
   `20260728T164808Z-partial-sample-rate-shading-run1.log`, and
   `20260728T164841Z-partial-sample-rate-shading-run1.log`.
-- The live Eden compatibility profile is now two feature gaps:
-  `imageCubeArray` and `multiViewport`.
+- `imageCubeArray` is hardware-qualified with a 12-layer, two-cube sampled
+  image. Repeated gates produced exactly 18,432 covered pixels split into
+  9,216 red samples from cube 0 and 9,216 green samples from cube 1. Evidence
+  is retained in `20260728T170806Z-image-cube-array-run1.log` and
+  `20260728T170838Z-image-cube-array-run1.log`.
+- The live Eden compatibility profile now has one feature gap:
+  `multiViewport`.
 
 ## Test Plan and Assumptions
 

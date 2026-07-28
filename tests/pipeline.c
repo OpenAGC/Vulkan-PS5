@@ -31,7 +31,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 8);
+    assert(argc == 9);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -50,6 +50,9 @@ int main(int argc, char **argv) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue,
+        .pEnabledFeatures = &(const VkPhysicalDeviceFeatures){
+            .imageCubeArray = VK_TRUE,
+        },
     };
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
@@ -61,6 +64,7 @@ int main(int argc, char **argv) {
     VkShaderModule tess_control = shader_module(device, argv[5]);
     VkShaderModule tess_evaluation = shader_module(device, argv[6]);
     VkShaderModule sample_fragment = shader_module(device, argv[7]);
+    VkShaderModule cube_array_fragment = shader_module(device, argv[8]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -108,8 +112,24 @@ int main(int argc, char **argv) {
     assert(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_info,
                                     NULL, &compute_pipeline) == VK_SUCCESS);
 
+    const VkDescriptorSetLayoutBinding sampled_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo sampled_set_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &sampled_binding,
+    };
+    VkDescriptorSetLayout sampled_set = VK_NULL_HANDLE;
+    assert(vkCreateDescriptorSetLayout(device, &sampled_set_info, NULL,
+                                       &sampled_set) == VK_SUCCESS);
     const VkPipelineLayoutCreateInfo graphics_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &sampled_set,
     };
     VkPipelineLayout graphics_layout = VK_NULL_HANDLE;
     assert(vkCreatePipelineLayout(device, &graphics_layout_info, NULL,
@@ -246,6 +266,17 @@ int main(int argc, char **argv) {
     VkPipeline msaa_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &msaa_info,
                                      NULL, &msaa_pipeline) == VK_SUCCESS);
+    const VkPipelineShaderStageCreateInfo cube_array_stages[] = {
+        stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_FRAGMENT_BIT, cube_array_fragment, "main", NULL},
+    };
+    VkGraphicsPipelineCreateInfo cube_array_info = graphics_info;
+    cube_array_info.pStages = cube_array_stages;
+    VkPipeline cube_array_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &cube_array_info, NULL,
+                                     &cube_array_pipeline) == VK_SUCCESS);
     VkPipelineInputAssemblyStateCreateInfo point_input_assembly = input_assembly;
     point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
@@ -419,6 +450,7 @@ int main(int argc, char **argv) {
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, cube_array_pipeline, NULL);
     vkDestroyPipeline(device, msaa_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, instance_pipeline, NULL);
@@ -435,9 +467,11 @@ int main(int argc, char **argv) {
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
     vkDestroyPipelineLayout(device, compute_layout, NULL);
     vkDestroyDescriptorSetLayout(device, resource_set, NULL);
+    vkDestroyDescriptorSetLayout(device, sampled_set, NULL);
     vkDestroyDescriptorSetLayout(device, empty_set, NULL);
     vkDestroyShaderModule(device, compute, NULL);
     vkDestroyShaderModule(device, sample_fragment, NULL);
+    vkDestroyShaderModule(device, cube_array_fragment, NULL);
     vkDestroyShaderModule(device, tess_evaluation, NULL);
     vkDestroyShaderModule(device, tess_control, NULL);
     vkDestroyShaderModule(device, geometry, NULL);

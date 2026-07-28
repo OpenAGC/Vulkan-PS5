@@ -330,6 +330,14 @@ is intentionally limited to single-layer RGBA8 color attachments without
 sampled, transfer, or resolve usage until those paths are separately
 qualified.
 
+`vulkan_ps5_image_cube_array_probe` queries and requests `imageCubeArray`,
+creates a standard 12-layer cube-compatible RGBA8 image and cube-array view,
+and samples cube indices 0 and 1 through a `samplerCubeArray`. The bounded
+`examples/run_fw550_image_cube_array.sh` gate requires an exact 9,216/9,216
+red/green split across the 18,432 covered pixels. Cube-compatible sampled
+images support both linear and optimal Vulkan tiling; the current one-mip
+image limit remains unchanged.
+
 The same option builds `vulkan_ps5_triangle_example`. It renders a solid-green
 triangle into a mapped 256x256 linear RGBA8 attachment through an ordinary
 render pass, waits for completion, invalidates the allocation, and verifies the

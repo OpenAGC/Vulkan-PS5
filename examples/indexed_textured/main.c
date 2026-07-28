@@ -39,6 +39,9 @@
 #elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
 #include "vulkan_ps5_fragment_stores_atomics_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_fragment_stores_atomics_frag_spv
+#elif defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE)
+#include "vulkan_ps5_image_cube_array_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_image_cube_array_frag_spv
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
 #include "vulkan_ps5_image_gather_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_image_gather_frag_spv
@@ -63,6 +66,10 @@
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
 #define SAMPLE_NAME "fragment_stores_atomics"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE)
+#define SAMPLE_NAME "image_cube_array"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_IMAGE_GATHER_PROBE)
@@ -177,6 +184,16 @@ int main(void)
     const VkPhysicalDeviceFeatures enabled_features = {
         .sampleRateShading = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.imageCubeArray) {
+        printf("image_cube_array: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .imageCubeArray = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
@@ -287,6 +304,7 @@ int main(void)
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
     defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE) || \
+    defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE) || \
     defined(VULKAN_PS5_IMAGE_GATHER_PROBE) || \
     defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
         .pEnabledFeatures = &enabled_features,
@@ -360,6 +378,10 @@ int main(void)
     texture_info.samples = VK_SAMPLE_COUNT_1_BIT;
     texture_info.tiling = VK_IMAGE_TILING_LINEAR;
     texture_info.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+#ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
+    texture_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    texture_info.arrayLayers = 12u;
+#endif
 #ifdef VULKAN_PS5_ANISOTROPY_PROBE
     texture_info.extent.width = 256;
     texture_info.extent.height = 4;
@@ -392,7 +414,22 @@ int main(void)
     VkSubresourceLayout texture_layout;
     vkGetImageSubresourceLayout(device, texture, &texture_subresource,
                                 &texture_layout);
-#ifdef VULKAN_PS5_ANISOTROPY_PROBE
+#ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
+    for (uint32_t layer = 0u; layer < texture_info.arrayLayers; ++layer) {
+        const VkImageSubresource layer_subresource = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0, layer,
+        };
+        VkSubresourceLayout layer_layout;
+        vkGetImageSubresourceLayout(device, texture, &layer_subresource,
+                                    &layer_layout);
+        for (uint32_t y = 0u; y < texture_info.extent.height; ++y) {
+            uint32_t *row = (uint32_t *)((uint8_t *)texture_mapped +
+                layer_layout.offset + y * layer_layout.rowPitch);
+            for (uint32_t x = 0u; x < texture_info.extent.width; ++x)
+                row[x] = layer < 6u ? 0xff0000ffu : 0xff00ff00u;
+        }
+    }
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
     for (uint32_t y = 0; y < texture_info.extent.height; ++y) {
         uint32_t *row = (uint32_t *)
             ((uint8_t *)texture_mapped + y * texture_layout.rowPitch);
@@ -531,6 +568,10 @@ int main(void)
     VK_CHECK(vkCreateImageView(device, &target_view_info, NULL, &target_view));
     VkImageViewCreateInfo texture_view_info = target_view_info;
     texture_view_info.image = texture;
+#ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
+    texture_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    texture_view_info.subresourceRange.layerCount = 12u;
+#endif
     VkImageView texture_view;
     VK_CHECK(vkCreateImageView(device, &texture_view_info, NULL, &texture_view));
     const VkSamplerCreateInfo sampler_info = {
@@ -1025,12 +1066,30 @@ int main(void)
             distinct[distinct_count++] = pixel;
     }
 #if !defined(VULKAN_PS5_ANISOTROPY_PROBE) && \
-    !defined(VULKAN_PS5_ANY_INDIRECT_PROBE)
+    !defined(VULKAN_PS5_ANY_INDIRECT_PROBE) && \
+    !defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE)
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
 #endif
     int status = 0;
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
+    uint32_t red = 0u, green = 0u, unexpected = 0u;
+    for (uint32_t i = 0u; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+        if (pixels[i] == 0xff0000ffu) red++;
+        else if (pixels[i] == 0xff00ff00u) green++;
+        else if (pixels[i] != 0u) unexpected++;
+    }
+    if (covered != 18432u || opaque != covered || red != 9216u ||
+        green != 9216u || unexpected != 0u || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("image_cube_array: mismatch covered=%u red=%u green=%u unexpected=%u\n",
+            covered, red, green, unexpected);
+        status = 1;
+    } else {
+        printf("image_cube_array: PASS covered=%u red=%u green=%u cubes=2\n",
+            covered, red, green);
+    }
+#elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
     uint32_t storage_writes = 0u;
     for (uint32_t i = 1u; i < FRAGMENT_RESULT_WORDS; ++i)
         storage_writes += fragment_results[i] == 0x51a7c0deu;

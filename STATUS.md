@@ -1,5 +1,26 @@
 # Implementation Status
 
+## Milestone 6: cube image arrays (2026-07-29)
+
+`imageCubeArray` is advertised and accepted through legacy and Features2
+paths. Cube-compatible RGBA8/BGRA8 images validate square 2D geometry and face
+layer counts; 2D, 2D-array, cube, and cube-array views retain resolved layer
+ranges. Sampled descriptors lower those views through OpenAGC's typed gfx1013
+`CUBE`/`2D_ARRAY`, `BASE_ARRAY`, and last-layer state, including 2D views of
+individual array layers. Both linear and optimal Vulkan tiling are backed by
+the qualified internal linear layout for this one-mip path.
+
+Normal and ASAN/UBSAN suites pass 39/39. Coverage includes image-format
+properties, allocation and subresource pitches, all supported view types,
+invalid face counts, descriptor updates, a runtime `samplerCubeArray`
+pipeline, and VVL-clean optimal cube-array resources. Two bounded FW 5.50
+runs produced the exact 18,432-pixel oracle split into 9,216 red pixels from
+cube 0 and 9,216 green pixels from cube 1, then self-exited. Evidence is in
+`20260728T170806Z-image-cube-array-run1.log` and
+`20260728T170838Z-image-cube-array-run1.log`; only the known single
+`amount=0x4000` warning remained. The Eden profile now has one feature gap:
+`multiViewport`.
+
 ## Milestone 6: sample-rate shading (2026-07-28)
 
 `sampleRateShading` is advertised and accepted through legacy and Features2
@@ -16,8 +37,7 @@ image/render-pass fixture and sample-builtin pipeline compilation. Repeated FW
 `18,336/18,528/18,432/18,432` and 73,728 total invocations. Repeated partial
 `minSampleShading=0.5` gates produced exactly 36,960 invocations with four
 untouched guard words. Every gate queried and requested the public feature,
-self-exited, and left only the known single `amount=0x4000` warning. The Eden
-profile now has two feature gaps: `imageCubeArray` and `multiViewport`.
+self-exited, and left only the known single `amount=0x4000` warning.
 
 ## Milestone 6: robust buffer access (2026-07-28)
 

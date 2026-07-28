@@ -169,6 +169,7 @@ int main(void) {
     assert(features2.features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features2.features.fillModeNonSolid == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
+    assert(features2.features.imageCubeArray == VK_TRUE);
     assert(features2.features.independentBlend == VK_TRUE);
     assert(features2.features.largePoints == VK_TRUE);
     assert(features2.features.logicOp == VK_TRUE);
@@ -227,6 +228,7 @@ int main(void) {
     assert(features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features.fillModeNonSolid == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
+    assert(features.imageCubeArray == VK_TRUE);
     assert(features.independentBlend == VK_TRUE);
     assert(features.largePoints == VK_TRUE);
     assert(features.logicOp == VK_TRUE);
@@ -248,6 +250,7 @@ int main(void) {
     features.fragmentStoresAndAtomics = VK_FALSE;
     features.fillModeNonSolid = VK_FALSE;
     features.geometryShader = VK_FALSE;
+    features.imageCubeArray = VK_FALSE;
     features.independentBlend = VK_FALSE;
     features.largePoints = VK_FALSE;
     features.logicOp = VK_FALSE;
@@ -354,6 +357,7 @@ int main(void) {
             .fragmentStoresAndAtomics = VK_TRUE,
             .fillModeNonSolid = VK_TRUE,
             .geometryShader = VK_TRUE,
+            .imageCubeArray = VK_TRUE,
             .independentBlend = VK_TRUE,
             .largePoints = VK_TRUE,
             .logicOp = VK_TRUE,
@@ -428,6 +432,7 @@ int main(void) {
         .fragmentStoresAndAtomics = VK_TRUE,
         .fillModeNonSolid = VK_TRUE,
         .geometryShader = VK_TRUE,
+        .imageCubeArray = VK_TRUE,
         .independentBlend = VK_TRUE,
         .largePoints = VK_TRUE,
         .logicOp = VK_TRUE,

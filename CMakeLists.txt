@@ -111,6 +111,11 @@ if(VULKAN_PS5_BUILD_TESTS)
   add_executable(vulkan_ps5_lifecycle_test tests/lifecycle.c)
   target_link_libraries(vulkan_ps5_lifecycle_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.lifecycle COMMAND vulkan_ps5_lifecycle_test)
+  add_executable(vulkan_ps5_image_cube_array_test tests/image_cube_array.c)
+  target_link_libraries(vulkan_ps5_image_cube_array_test
+    PRIVATE vulkan_ps5_static)
+  add_test(NAME vulkan_ps5.image_cube_array
+    COMMAND vulkan_ps5_image_cube_array_test)
   add_executable(vulkan_ps5_robustness_test tests/robustness.c)
   target_link_libraries(vulkan_ps5_robustness_test
     PRIVATE vulkan_ps5_static Threads::Threads)
@@ -251,7 +256,8 @@ if(VULKAN_PS5_BUILD_TESTS)
   if(GLSLANG_VALIDATOR)
     set(PIPELINE_SHADER_OUTPUTS)
     foreach(shader pipeline.vert pipeline.frag pipeline.comp pipeline.geom
-                   pipeline.tesc pipeline.tese pipeline_sample.frag)
+                   pipeline.tesc pipeline.tese pipeline_sample.frag
+                   pipeline_cube_array.frag)
       set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
       add_custom_command(OUTPUT "${output}"
         COMMAND "${GLSLANG_VALIDATOR}" -V
@@ -773,6 +779,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_image_gather_frag_spv.h")
   set(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_fragment_stores_atomics_frag_spv.h")
+  set(VULKAN_PS5_IMAGE_CUBE_ARRAY_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_image_cube_array_frag_spv.h")
   set(VULKAN_PS5_SAMPLE_RATE_SHADING_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_sample_rate_shading_frag_spv.h")
   set(VULKAN_PS5_PARTIAL_SAMPLE_RATE_SHADING_HEADER
@@ -814,6 +822,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       -o "${VULKAN_PS5_FRAGMENT_STORES_ATOMICS_HEADER}"
     DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/fragment_stores_atomics.frag"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_IMAGE_CUBE_ARRAY_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_image_cube_array_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/image_cube_array.frag"
+      -o "${VULKAN_PS5_IMAGE_CUBE_ARRAY_FRAGMENT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/image_cube_array.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_SAMPLE_RATE_SHADING_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -871,6 +887,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_FRAGMENT_STORES_ATOMICS_HEADER}")
   target_compile_definitions(vulkan_ps5_fragment_stores_atomics_probe PRIVATE
     VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE=1)
+  add_executable(vulkan_ps5_image_cube_array_probe
+    examples/indexed_textured/main.c
+    "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
+    "${VULKAN_PS5_IMAGE_CUBE_ARRAY_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_image_cube_array_probe PRIVATE
+    VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE=1)
   add_executable(vulkan_ps5_sample_rate_shading_probe
     examples/indexed_textured/main.c
     "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
@@ -947,6 +969,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
       vulkan_ps5_shader_image_gather_probe
       vulkan_ps5_fragment_stores_atomics_probe
+      vulkan_ps5_image_cube_array_probe
       vulkan_ps5_sample_rate_shading_probe
       vulkan_ps5_partial_sample_rate_shading_probe
       vulkan_ps5_dual_src_blend_probe
@@ -980,6 +1003,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
       vulkan_ps5_shader_image_gather_probe
       vulkan_ps5_fragment_stores_atomics_probe
+      vulkan_ps5_image_cube_array_probe
       vulkan_ps5_sample_rate_shading_probe
       vulkan_ps5_partial_sample_rate_shading_probe
       vulkan_ps5_dual_src_blend_probe
@@ -1027,6 +1051,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_shader_image_gather_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_fragment_stores_atomics_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_image_cube_array_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_sample_rate_shading_probe PRIVATE
       SceSystemService)
