@@ -60,7 +60,7 @@ Deliberately unavailable before later milestones:
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
   timeline semaphores, descriptor indexing, and VideoOut WSI.
 
-## Milestone 3: OpenAGC command emission (indexed/textured qualified)
+## Milestone 3: OpenAGC command emission (qualified)
 
 Implemented and host-verified:
 
@@ -128,8 +128,8 @@ Implemented and host-verified:
   reset, both snapshots, and availability release. A standalone query-enabled
   triangle requires the 64-bit occlusion result to equal mapped pixel coverage;
   it host-builds and cross-links for Prospero with the required runtimes.
-  Hardware qualification remains pending after the first query submission
-  hung the GPU. Timestamp valid bits remain zero.
+  Two isolated live-query runs and both final-suite runs returned exactly
+  18,432 samples for 18,432 mapped pixels. Timestamp valid bits remain zero.
 - `VK_EXT_host_query_reset` is advertised and accepted during device creation.
   Its feature query reports true, and `vkResetQueryPoolEXT` zeroes and flushes
   exactly the requested GPU-visible query slots. Lifecycle coverage verifies
@@ -138,9 +138,9 @@ Implemented and host-verified:
 - FW `0x05500008` produced two deterministic passes each for depth and MRT in
   retained run `20260727T231245Z`. The first query submission then hung the GPU.
   Audit identified an invalid command-reset `WRITE_DATA` configuration; it now
-  uses hardware-proven destination 2 with control `0x00100100`. The query sample
-  uses host reset for the next isolated begin/end test. Query hardware support
-  remains unqualified until that isolated test and a full repeated suite pass.
+  uses hardware-proven destination 2 with control `0x00100100`. Staged recovery
+  qualified host reset, command reset, idle begin/end, and live counting before
+  the final repeated suite passed.
 - The command-recording regression compiles ordinary SPIR-V compute and
   triangle shaders and verifies the real PM4 opcodes and dispatch/draw counts.
 - A standalone, application-neutral compute sample now exercises the public
@@ -189,9 +189,10 @@ FW 5.50 compute/triangle hardware gate:
   vertex fetch, fragment sampled-image/sampler tables, bilinear filtering, the
   256-byte linear texture row pitch, and mapped render-target readback.
 - `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs
-  compute, triangle, indexed-textured, depth, and MRT twice through foreground
-  websrv, rejects a missing PASS oracle, and retains per-run output without
-  committing runtime logs.
+  compute, triangle, indexed-textured, depth, MRT, and query twice through
+  foreground websrv, rejects a missing PASS oracle, and retains per-run output
+  without committing runtime logs. The `20260728T003630Z` gate passed all 12
+  runs with exact deterministic oracles.
 - Query qualification now uses explicit `lifecycle`, `reset`, and `full` probe
   stages. The lifecycle stage emits no query PM4 and passed FW `0x05500008` on
   2026-07-28 with the qualified triangle oracle (`green=18432`). The reset-only

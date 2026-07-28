@@ -123,16 +123,14 @@ exactly 18,432 green pixels, and both indexed-textured runs verified exactly
 `analysis/fw550_indexed_textured_qualification_20260727.md` for the retained
 revision and artifact evidence.
 
-The depth, MRT, and query samples are part of the runner but remain unqualified
-until two FW 5.50 runs produce their complete oracles. The latest
-2026-07-28 retry stopped at the runner's preflight because the console websrv
-at `10.0.1.41:8080` was unreachable; no hardware result was inferred.
-
-The 2026-07-27 UTC `20260727T231245Z` run subsequently qualified depth and MRT
-twice, but the first query submission hung the GPU. The reset-packet audit and
-corrective isolation are recorded in
-`analysis/fw550_depth_mrt_query_qualification_20260727.md`; query qualification
-remains pending.
+The 2026-07-27 UTC `20260727T231245Z` run qualified depth and MRT twice, but its
+first query submission hung the GPU. Packet-level recovery then qualified the
+query lifecycle, corrected reset, idle begin/end, and live counting in stages.
+The final `20260728T003630Z` gate passed all six workloads twice: query returned
+18,432 samples matching 18,432 mapped pixels, depth produced identical
+`43418/12288/9830` raw-word counts, and MRT produced 18,432 pixels in both
+targets. The full investigation and retained-log map are recorded in
+`analysis/fw550_depth_mrt_query_qualification_20260727.md`.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or
 `VULKAN_PS5_FW550_LOG_DIR` to override the build directory, repeat count, or

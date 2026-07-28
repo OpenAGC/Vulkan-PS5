@@ -81,3 +81,26 @@ The full probe subsequently passed twice. Both runs returned
 `20260728T003511Z-query-full.log`. The console remained responsive. This
 qualifies live gfx1013 occlusion counting on FW `0x05500008`, and query was
 restored to the two-run `run_fw550_m3.sh` regression gate.
+
+## Final Milestone 3 gate (2026-07-28 UTC)
+
+Vulkan-PS5 revision `8c54880` completed the authoritative two-run suite. The
+retained `20260728T003630Z-*.log` files prove both passes of every oracle:
+
+- compute: 1,024 deterministic values
+- triangle: 18,432 green pixels
+- indexed-textured: 18,432 opaque pixels and 64+ sampled colors
+- depth: `green=12288 red=9830 raw=43418/12288/9830`
+- MRT: `target0=18432 target1=18432`
+- query: `samples=18432 green=18432`
+
+The Prospero ELF SHA-256 values were:
+
+- compute: `723113666f6e15b30121d62c4f5c0b782123de9e02c329be1ec2cfe2131021f5`
+- triangle: `5b3528882bdb51f10d97c7fbbf365dcaa8ce840d5450f6e0069a109cc5494856`
+- indexed-textured: `875ac02a81ad53e332a903784d488b37b3ae256190bc888be20eb277ff40c01f`
+- depth: `f73c490341d7ad59a252ff69f7ca7613e140cbd09d181754de261e6727d715c6`
+- MRT: `2027af24a9413196110e731caaefed643dcc1705cde5bdb28934c7b81002ef1c`
+- query: `3e51d1bbed291f493df81f58eba18b65ab2e06e149d2c2021361d35ca5734e34`
+
+The PS5 remained responsive after the staged probes and all 12 final runs.

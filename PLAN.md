@@ -8,7 +8,7 @@
   archives and VS/PS/CS/GS/tessellation Vulkan pipeline creation cover fused-stage
   specialization constants, descriptors, push constants, vertex input, and
   render-pass context.
-- Milestone 3 indexed/textured qualification is complete: host tests verify OpenAGC DCB emission for a
+- Milestone 3 is complete: host tests verify OpenAGC DCB emission for a
   compiled compute dispatch and fused-NGG triangle draw, plus GPU-visible shader
   uploads, bounded EOP-backed OpenAGC queue submission, and compute
   uniform/storage-buffer resource tables. The first compute dispatch per
@@ -30,9 +30,11 @@
   retrieval, partial results, and availability. A standalone query workload
   cross-checks its 64-bit occlusion result against mapped triangle coverage.
   The planned `VK_EXT_host_query_reset` surface is also implemented and tested.
-  FW 5.50 has now passed repeated depth and MRT readback; the first query run
-  hung during submission. Continue Milestone 3 with the isolated host-reset
-  query workload, followed by a clean repeated full-suite run.
+  FW 5.50 has now passed repeated depth, MRT, and occlusion-query readback.
+  Query recovery isolated and qualified lifecycle, corrected command reset,
+  idle begin/end, and live counting before the final full suite. The retained
+  `20260728T003630Z` gate passed compute, triangle, indexed-textured, depth,
+  MRT, and query twice each with exact deterministic oracles.
   Geometry/tessellation feature bits
   remain disabled until that path is repeatedly hardware-qualified.
 
