@@ -523,7 +523,7 @@ static void fill_properties(VkPhysicalDeviceProperties *properties) {
     limits->pointSizeRange[1] = 64.0f;
     limits->lineWidthRange[0] = 1.0f;
     limits->lineWidthRange[1] = 1.0f;
-    limits->pointSizeGranularity = 1.0f;
+    limits->pointSizeGranularity = 0.125f;
     limits->lineWidthGranularity = 1.0f;
     limits->strictLines = VK_FALSE;
     limits->standardSampleLocations = VK_TRUE;
@@ -548,6 +548,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->fillModeNonSolid = VK_TRUE;
     features->geometryShader = VK_TRUE;
     features->independentBlend = VK_TRUE;
+    features->largePoints = VK_TRUE;
     features->logicOp = VK_TRUE;
     features->multiDrawIndirect = VK_TRUE;
     features->occlusionQueryPrecise = VK_TRUE;

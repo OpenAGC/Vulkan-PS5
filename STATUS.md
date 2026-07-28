@@ -353,11 +353,27 @@ Implemented and host-verified:
   ELF SHA-256 was
   `47a15536779e194f56bb20bb8a841a92fc0ebcaf05247f4c9fab95bc1ec988e1`.
   `fillModeNonSolid` is advertised and accepted through legacy and Features2
-  paths; `wideLines` and `largePoints` remain false. Both 25-test host suites
-  and the Prospero build pass. The rebuilt public-path probe queried and
+  paths; `wideLines` remains false. Both host suites and the Prospero build
+  pass. The rebuilt public-path probe queried and
   requested the advertised feature, reproduced the exact 230/3 oracle and
   clean lifecycle, and has ELF SHA-256
   `fd2dd48dddd46cd2519bd06fb5b9dacb6bc394658a1efc9d626b2258c9cdeeb3`.
+- Point-list graphics pipelines and shader-exported point sizes now use
+  OpenAGC's typed gfx1013 topology and primitive-size helpers (OpenAGC
+  `949ca76`). `largePoints` is advertised and accepted through legacy and
+  Features2 paths; limits report `[1, 64]` with granularity `0.125`.
+  Pipeline and exact PM4 regressions cover point topology, primitive type 1,
+  and the complete point-size register packet. Both normal and ASAN/UBSAN
+  suites pass 26/26, and the full Prospero build links
+  `-lunwind -lc++abi -lc++ -lm`. The first internal gate aborted before GPU
+  submission because openagc-psbc does not lower a function-local array
+  `store_deref`; replacing the three-size lookup with an equivalent ternary
+  made the shader compile without changing the compiler. The corrected
+  internal gate and final public query/request gate each produced exact
+  8px=64, 16px=256, and 32px=1024 coverage with clean self-exit. The final
+  run left PID 118 absent and emitted only the known `amount=0x4000` baseline
+  warning. Public-path ELF SHA-256 is
+  `439a18445742d30595b1a2e850d5e5370c8e38fc8c55a9beb09b634d3fb9130f`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled

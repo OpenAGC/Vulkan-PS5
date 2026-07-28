@@ -4,7 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+#include "vulkan_ps5_large_points_vert_spv.h"
+#include "vulkan_ps5_non_solid_frag_spv.h"
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_non_solid_frag_spv
+#define vulkan_ps5_triangle_vert_spv vulkan_ps5_large_points_vert_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "large_points"
+#elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
 #include "vulkan_ps5_non_solid_frag_spv.h"
 #include "vulkan_ps5_non_solid_vert_spv.h"
 #define vulkan_ps5_triangle_frag_spv vulkan_ps5_non_solid_frag_spv
@@ -118,7 +125,17 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.largePoints) {
+        printf("large_points: largePoints is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .largePoints = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.fillModeNonSolid) {
@@ -192,7 +209,8 @@ int main(void)
 #endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+#if defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+    defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
     defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
     defined(VULKAN_PS5_TESSELLATION_SAMPLE) || \
@@ -484,6 +502,8 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+        .topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
 #else
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 #endif
@@ -644,8 +664,12 @@ int main(void)
 
     const uint32_t *pixels = mapped;
     uint32_t green_count = 0;
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     uint32_t red_count = 0;
+#endif
+#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    uint32_t blue_count = 0;
 #endif
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
     uint32_t background_count = 0;
@@ -662,9 +686,14 @@ int main(void)
 #else
         if (pixels[i] == GREEN_RGBA8)
             ++green_count;
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         else if (pixels[i] == RED_RGBA8)
             ++red_count;
+#endif
+#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+        else if (pixels[i] == 0xffff0000u)
+            ++blue_count;
 #endif
         else if (pixels[i] != 0u)
             ++unexpected_count;
@@ -758,6 +787,11 @@ int main(void)
         pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
             (TARGET_WIDTH * 3u) / 4u] == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+    image_ok = green_count == 64u && red_count == 256u &&
+        blue_count == 1024u && unexpected_count == 0u &&
+        center == RED_RGBA8 && pixels[0] == 0u &&
+        pixels[TARGET_WIDTH - 1u] == 0u;
 #else
     image_ok = green_count >= 16000u && green_count <= 21000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
@@ -791,6 +825,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: mismatch line=%u point=%u unexpected=%u center=%08x\n",
             green_count, red_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+        printf("large_points: mismatch size8=%u size16=%u size32=%u unexpected=%u center=%08x\n",
+            green_count, red_count, blue_count, unexpected_count, center);
 #else
         printf(SAMPLE_LABEL ": mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
@@ -814,6 +851,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: PASS line=%u point=%u center=%08x\n",
             green_count, red_count, center);
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+        printf("large_points: PASS size8=%u size16=%u size32=%u center=%08x\n",
+            green_count, red_count, blue_count, center);
 #else
         printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);
 #endif
@@ -854,7 +894,8 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
-     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE))
+     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+     defined(VULKAN_PS5_LARGE_POINTS_PROBE))
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);
 #endif
     return status;

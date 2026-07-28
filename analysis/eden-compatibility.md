@@ -18,7 +18,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All four are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | Eight core feature bits plus `hostQueryReset` are true | 20 gaps |
+| Core/Features2 | 29 mandatory feature bits | 14 mandatory feature bits are true | 15 gaps |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -63,11 +63,11 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=16 limits=0 queues=0 total=16
+eden-profile: extensions=0 features=15 limits=0 queues=0 total=15
 ```
 
-The 16 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
-`imageCubeArray`, `largePoints`, `multiViewport`, `robustBufferAccess`,
+The 15 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
+`imageCubeArray`, `multiViewport`, `robustBufferAccess`,
 `sampleRateShading`, `shaderClipDistance`, `shaderCullDistance`,
 `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
@@ -176,11 +176,31 @@ self-exit, left no process, and produced only the known single `amount=0x4000`
 baseline VM warning. The initial internal-path ELF SHA-256 was
 `47a15536779e194f56bb20bb8a841a92fc0ebcaf05247f4c9fab95bc1ec988e1`.
 Legacy and Features2 queries now report the feature, and both device-create
-paths accept a normal request. `wideLines` and `largePoints` remain separate,
-unsupported capabilities. The rebuilt public-path probe queried and requested
+paths accept a normal request. `wideLines` remains a separate, unsupported
+capability. The rebuilt public-path probe queried and requested
 the advertised feature, reproduced the exact 230/3 oracle and clean lifecycle,
 and has Prospero ELF SHA-256
 `fd2dd48dddd46cd2519bd06fb5b9dacb6bc394658a1efc9d626b2258c9cdeeb3`.
+
+The `largePoints` contract is implemented and hardware-qualified. Point-list
+pipelines map to OpenAGC's typed gfx1013 point primitive, while OpenAGC
+`949ca76` owns the exact primitive-size register packet. Vulkan reports
+`pointSizeRange = [1, 64]` and `pointSizeGranularity = 0.125`, exposes the
+feature through legacy and Features2 queries, and accepts both device-create
+paths. Pipeline tests cover accepted point lists and retained rejection of
+unsupported line topology; command tests require primitive type 1 and the
+complete point-size PM4 sequence. Both normal and ASAN/UBSAN suites pass 26/26,
+and the full Prospero build links the required runtime set. The first bounded
+internal run aborted before GPU submission when openagc-psbc rejected a
+function-local array `store_deref`; an equivalent ternary shader expression
+compiled successfully without a compiler change. The corrected internal gate
+and final public gate each produced exact 8px=64, 16px=256, and 32px=1024
+coverage, correct center color, clean SystemService self-exit, and no stale
+process. The public run log is
+`20260728T115744Z-large-points-run1.log`; target klog contained only the known
+single `amount=0x4000` baseline VM warning. The public-path Prospero ELF
+SHA-256 is
+`439a18445742d30595b1a2e850d5e5370c8e38fc8c55a9beb09b634d3fb9130f`.
 
 ## Runtime compatibility
 
@@ -211,6 +231,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
    semantics and the core feature contract are implemented, host-tested, and
    hardware-qualified by paired bilinear/16x filtering readback on FW 5.50.
+   Typed OpenAGC topology/primitive-size state and exact point readback have
+   also qualified `largePoints`; `wideLines` is the next focused raster gap.
    Indirect draw recording is no longer a stub. Compiler metadata includes
    DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
    packets. The earlier submission fault was the zero-initialized non-indexed
@@ -222,7 +244,7 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    that order. The internal and public FW 5.50 gates both produced exact
    `green=11472 left=5736 right=5736` readback, completed matching self-exit,
    and produced no PID-scoped fatal signal or GPU reset. Normal and sanitizer
-   suites pass 25/25. `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+   suites pass 26/26. `multiDrawIndirect`, `drawIndirectFirstInstance`, and
    `shaderDrawParameters` are now advertised and accepted through all relevant
    query and device-create paths. The rejected packet experiments, GPU-reset
    evidence, both root causes, and runner hardening are documented in

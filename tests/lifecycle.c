@@ -33,6 +33,9 @@ int main(void) {
     vkGetPhysicalDeviceProperties(physical, &properties);
     assert(properties.vendorID == 0x1002);
     assert(strstr(properties.deviceName, "gfx1013") != NULL);
+    assert(properties.limits.pointSizeRange[0] == 1.0f);
+    assert(properties.limits.pointSizeRange[1] == 64.0f);
+    assert(properties.limits.pointSizeGranularity == 0.125f);
 
     VkPhysicalDeviceSubgroupProperties subgroup = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
@@ -150,6 +153,7 @@ int main(void) {
     assert(features2.features.fillModeNonSolid == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.independentBlend == VK_TRUE);
+    assert(features2.features.largePoints == VK_TRUE);
     assert(features2.features.logicOp == VK_TRUE);
     assert(features2.features.multiDrawIndirect == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
@@ -188,6 +192,7 @@ int main(void) {
     assert(features.fillModeNonSolid == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
     assert(features.independentBlend == VK_TRUE);
+    assert(features.largePoints == VK_TRUE);
     assert(features.logicOp == VK_TRUE);
     assert(features.multiDrawIndirect == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
@@ -199,6 +204,7 @@ int main(void) {
     features.fillModeNonSolid = VK_FALSE;
     features.geometryShader = VK_FALSE;
     features.independentBlend = VK_FALSE;
+    features.largePoints = VK_FALSE;
     features.logicOp = VK_FALSE;
     features.multiDrawIndirect = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
@@ -273,6 +279,7 @@ int main(void) {
             .fillModeNonSolid = VK_TRUE,
             .geometryShader = VK_TRUE,
             .independentBlend = VK_TRUE,
+            .largePoints = VK_TRUE,
             .logicOp = VK_TRUE,
             .multiDrawIndirect = VK_TRUE,
             .occlusionQueryPrecise = VK_TRUE,
@@ -331,6 +338,7 @@ int main(void) {
         .fillModeNonSolid = VK_TRUE,
         .geometryShader = VK_TRUE,
         .independentBlend = VK_TRUE,
+        .largePoints = VK_TRUE,
         .logicOp = VK_TRUE,
         .multiDrawIndirect = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,

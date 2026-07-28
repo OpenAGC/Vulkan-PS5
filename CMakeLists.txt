@@ -188,6 +188,10 @@ if(VULKAN_PS5_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.fill_mode_non_solid_runner PROPERTIES
       TIMEOUT 15)
+    add_test(NAME vulkan_ps5.large_points_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/large_points_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.large_points_runner PROPERTIES TIMEOUT 15)
     add_test(NAME vulkan_ps5.ps5debug_process_identity
       COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
@@ -312,6 +316,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_non_solid_vert_spv.h")
   set(VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_non_solid_frag_spv.h")
+  set(VULKAN_PS5_LARGE_POINTS_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_large_points_vert_spv.h")
   set(VULKAN_PS5_GEOMETRY_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_geometry_spv.h")
   set(VULKAN_PS5_TESS_CONTROL_HEADER
@@ -345,6 +351,13 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/non_solid.frag"
       -o "${VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/non_solid.frag"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_LARGE_POINTS_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_large_points_vert_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/large_points.vert"
+      -o "${VULKAN_PS5_LARGE_POINTS_VERTEX_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/large_points.vert"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_GEOMETRY_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -385,6 +398,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_fill_mode_non_solid_probe PRIVATE
     VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE=1)
+  add_executable(vulkan_ps5_large_points_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_LARGE_POINTS_VERTEX_HEADER}"
+    "${VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_large_points_probe PRIVATE
+    VULKAN_PS5_LARGE_POINTS_PROBE=1)
   add_executable(vulkan_ps5_geometry_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -575,6 +594,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
+      vulkan_ps5_large_points_probe
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
       vulkan_ps5_depth_clamp_probe
@@ -592,6 +612,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_triangle_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
+      vulkan_ps5_large_points_probe
       vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
@@ -620,6 +641,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_logic_op_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_fill_mode_non_solid_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_large_points_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_independent_blend_probe PRIVATE
       SceSystemService)

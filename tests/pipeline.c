@@ -217,6 +217,24 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    VkPipelineInputAssemblyStateCreateInfo point_input_assembly = input_assembly;
+    point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
+    point_list_info.pInputAssemblyState = &point_input_assembly;
+    VkPipeline point_list_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &point_list_info, NULL,
+                                     &point_list_pipeline) == VK_SUCCESS);
+    VkPipelineInputAssemblyStateCreateInfo line_input_assembly = input_assembly;
+    line_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    VkGraphicsPipelineCreateInfo line_list_info = graphics_info;
+    line_list_info.pInputAssemblyState = &line_input_assembly;
+    VkPipeline rejected_line_list = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &line_list_info, NULL,
+                                     &rejected_line_list) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(rejected_line_list == VK_NULL_HANDLE);
     VkPipelineRasterizationStateCreateInfo non_solid_raster = rasterization;
     VkGraphicsPipelineCreateInfo non_solid_info = graphics_info;
     non_solid_info.pRasterizationState = &non_solid_raster;
@@ -340,6 +358,7 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, instance_pipeline, NULL);
     vkDestroyPipeline(device, point_pipeline, NULL);
     vkDestroyPipeline(device, line_pipeline, NULL);
+    vkDestroyPipeline(device, point_list_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);

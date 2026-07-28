@@ -156,6 +156,7 @@ typedef struct VkPs5Pipeline {
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
     AgcGfx1013ColorBlendState color_blend;
     AgcGfx1013PolygonMode polygon_mode;
+    AgcGfx1013PrimitiveSizeState primitive_size;
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
@@ -739,6 +740,27 @@ static bool polygon_mode(
         break;
     case VK_POLYGON_MODE_POINT:
         *destination = AGC_GFX1013_POLYGON_MODE_POINT;
+        break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static bool primitive_topology(
+    VkPrimitiveTopology source, AgcGfx1013PrimitiveTopology *destination)
+{
+    if (!destination)
+        return false;
+    switch (source) {
+    case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+        *destination = AGC_GFX1013_TOPOLOGY_POINT_LIST;
+        break;
+    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+        *destination = AGC_GFX1013_TOPOLOGY_TRIANGLE_LIST;
+        break;
+    case VK_PRIMITIVE_TOPOLOGY_PATCH_LIST:
+        *destination = AGC_GFX1013_TOPOLOGY_PATCH_LIST;
         break;
     default:
         return false;
@@ -1962,10 +1984,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             !create->layout || !create->renderPass || !create->pVertexInputState ||
             !create->pInputAssemblyState)
             return VK_ERROR_INITIALIZATION_FAILED;
-        if ((create->pInputAssemblyState->topology !=
-                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST &&
-             create->pInputAssemblyState->topology !=
-                VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) ||
+        AgcGfx1013PrimitiveTopology translated_topology;
+        if (!primitive_topology(create->pInputAssemblyState->topology,
+                &translated_topology) ||
             create->pInputAssemblyState->primitiveRestartEnable)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if (!create->pViewportState ||
@@ -2046,8 +2067,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if ((tess_control && create->pInputAssemblyState->topology !=
                 VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) ||
-            (!tess_control && create->pInputAssemblyState->topology !=
-                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST))
+            (!tess_control && create->pInputAssemblyState->topology ==
+                VK_PRIMITIVE_TOPOLOGY_PATCH_LIST))
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if (tess_control && (!create->pTessellationState ||
             !create->pTessellationState->patchControlPoints))
@@ -2197,6 +2218,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->vertex_binding_mask = vertex_binding_mask;
         pipeline->color_blend = color_blend;
         pipeline->polygon_mode = translated_polygon_mode;
+        pipeline->primitive_size = (AgcGfx1013PrimitiveSizeState){
+            .point_size = 1.0f,
+            .point_size_min = 1.0f,
+            .point_size_max = 64.0f,
+            .line_width = raster->lineWidth,
+        };
         pipeline->depth_bias = (AgcGfx1013DepthBiasState){
             .constant_factor = raster->depthBiasConstantFactor,
             .clamp = raster->depthBiasClamp,
@@ -2286,7 +2313,11 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return result;
         }
         pipeline->bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        pipeline->primitive_type = tess_control ? 9u : 4u;
+        if (agcGfx1013GetPrimitiveType(
+                translated_topology, &pipeline->primitive_type) != AGC_OK) {
+            free_pipeline(device, pAllocator, pipeline);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
         pipeline->viewport.width = (uint32_t)viewport->width;
         pipeline->viewport.height = (uint32_t)viewport->height;
         pipeline->viewport.depth_clip_space =
@@ -3823,7 +3854,14 @@ static bool record_raster_state(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     AgcGfx1013FrameState *frame)
 {
-    int32_t result = agcGfx1013ApplyPolygonMode(
+    int32_t result = agcGfx1013SetPrimitiveSizeState(
+        &command->dcb, &pipeline->primitive_size);
+    if (result != AGC_OK) {
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+        return false;
+    }
+    result = agcGfx1013ApplyPolygonMode(
         frame, pipeline->polygon_mode);
     if (result != AGC_OK) {
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;

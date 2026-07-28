@@ -671,8 +671,12 @@ gate passed exact color, raw D32, and stencil oracles with a matching self-exit;
 Line and point polygon modes are also accepted through OpenAGC's typed gfx1013
 raster state. The bounded `vulkan_ps5_fill_mode_non_solid_probe` draws a green
 wireframe and three separate red points, rejecting filled interiors; its FW
-5.50 gate passed and `fillModeNonSolid` is advertised. This does not advertise
-`wideLines` or `largePoints`, so the supported width and point size remain 1.0.
+5.50 gate passed and `fillModeNonSolid` is advertised. Point-list pipelines now
+use OpenAGC's typed topology and primitive-size state. `largePoints` is exposed
+through legacy and Features2 query/enable paths with range `[1, 64]` and
+granularity `0.125`; the bounded FW 5.50 probe deterministically qualified
+8-, 16-, and 32-pixel shader point sizes. `wideLines` remains unsupported, so
+line width remains 1.0.
 Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC

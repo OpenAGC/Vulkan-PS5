@@ -780,6 +780,15 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &non_solid_info, NULL,
                                      &point_pipeline) == VK_SUCCESS);
+    VkPipelineInputAssemblyStateCreateInfo point_input_assembly = input_assembly;
+    point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
+    point_list_info.pInputAssemblyState = &point_input_assembly;
+    point_list_info.pDynamicState = NULL;
+    VkPipeline point_list_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &point_list_info, NULL,
+                                     &point_list_pipeline) == VK_SUCCESS);
     VkPipelineColorBlendStateCreateInfo logic_blend = blend;
     logic_blend.logicOpEnable = VK_TRUE;
     logic_blend.logicOp = VK_LOGIC_OP_XOR;
@@ -917,6 +926,9 @@ int main(int argc, char **argv)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       point_pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      point_list_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
@@ -1014,6 +1026,7 @@ int main(int argc, char **argv)
     bool found_depth_bias_format = false, found_depth_bias_values = false;
     bool found_depth_bias_enable = false;
     bool found_line_polygon_mode = false, found_point_polygon_mode = false;
+    bool found_point_primitive = false, found_primitive_size = false;
     bool found_vulkan_clip_control = false, found_depth_clamp = false;
     bool found_vulkan_depth_transform = false;
     uint32_t occlusion_snapshots = 0;
@@ -1132,6 +1145,13 @@ int main(int argc, char **argv)
                     AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
             found_line_polygon_mode |= dwords[i + 2] == 0x00000128u;
             found_point_polygon_mode |= dwords[i + 2] == 0x00000008u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 4 < count &&
+                   dwords[i + 1] == AGC_REG_PA_SU_POINT_SIZE) {
+            found_primitive_size |= packet_length ==
+                    AGC_GFX1013_PRIMITIVE_SIZE_STATE_DWORDS &&
+                dwords[i + 2] == 0x00080008u &&
+                dwords[i + 3] == 0x02000008u &&
+                dwords[i + 4] == 0x00000008u;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_PA_CL_CLIP_CNTL) {
             found_vulkan_clip_control |=
@@ -1172,6 +1192,9 @@ int main(int argc, char **argv)
             found_tess_offchip |= dwords[i + 2] ==
                 AGC_GFX1013_TESS_OFFCHIP_PARAM;
         } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_PRIMITIVE_TYPE) {
+            found_point_primitive |= dwords[i + 2] == 1u;
+        } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE) {
             found_tess_ring_base = true;
         } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
@@ -1205,7 +1228,8 @@ int main(int argc, char **argv)
            found_blend_constants && found_logic_op &&
            found_depth_bias_format && found_depth_bias_values &&
            found_depth_bias_enable && found_line_polygon_mode &&
-           found_point_polygon_mode &&
+           found_point_polygon_mode && found_point_primitive &&
+           found_primitive_size &&
            found_vulkan_clip_control && found_depth_clamp &&
            found_vulkan_depth_transform &&
            found_depth_surface && found_depth_control && found_stencil_control &&
@@ -1254,6 +1278,7 @@ int main(int argc, char **argv)
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, point_pipeline, NULL);
+    vkDestroyPipeline(device, point_list_pipeline, NULL);
     vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, logic_pipeline, NULL);
