@@ -232,6 +232,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_query_reset_probe PRIVATE
     VULKAN_PS5_QUERY_SAMPLE=1 VULKAN_PS5_QUERY_COMMAND_RESET_ONLY=1)
+  add_executable(vulkan_ps5_query_idle_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_query_idle_probe PRIVATE
+    VULKAN_PS5_QUERY_SAMPLE=1 VULKAN_PS5_QUERY_IDLE_ONLY=1)
   set(VULKAN_PS5_DEPTH_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_depth_vert_spv.h")
   set(VULKAN_PS5_DEPTH_FRAGMENT_HEADER
@@ -305,6 +311,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_triangle_example vulkan_ps5_depth_example
       vulkan_ps5_mrt_example vulkan_ps5_query_example
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
+      vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example
       PROPERTIES SUFFIX ".elf")
   endif()
@@ -312,7 +319,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_compute_example vulkan_ps5_triangle_example
       vulkan_ps5_depth_example vulkan_ps5_mrt_example
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
-      vulkan_ps5_query_reset_probe vulkan_ps5_indexed_textured_example)
+      vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
+      vulkan_ps5_indexed_textured_example)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE

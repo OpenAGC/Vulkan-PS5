@@ -4,7 +4,7 @@ set -eu
 : "${PS5_HOST:?set PS5_HOST to the FW 5.50 console address}"
 
 if [ "$#" -ne 1 ]; then
-    echo "usage: $0 lifecycle|reset|full" >&2
+    echo "usage: $0 lifecycle|reset|idle|full" >&2
     exit 2
 fi
 
@@ -23,6 +23,10 @@ case "$stage" in
         elf="$build_dir/vulkan_ps5_query_reset_probe.elf"
         expected='^query_reset: PASS green=[0-9]+$'
         ;;
+    idle)
+        elf="$build_dir/vulkan_ps5_query_idle_probe.elf"
+        expected='^query_idle: PASS samples=0 available=1$'
+        ;;
     full)
         if [ "${VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY:-}" != YES ]; then
             echo "full query begin/end PM4 previously hung FW 5.50" >&2
@@ -33,7 +37,7 @@ case "$stage" in
         expected='^query: PASS samples=[0-9]+ green=[0-9]+$'
         ;;
     *)
-        echo "usage: $0 lifecycle|reset|full" >&2
+        echo "usage: $0 lifecycle|reset|idle|full" >&2
         exit 2
         ;;
 esac

@@ -309,8 +309,10 @@ int main(void)
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     vkCmdBeginQuery(command, query_pool, 0, 0);
 #endif
+#if !defined(VULKAN_PS5_QUERY_IDLE_ONLY)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
+#endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
@@ -366,9 +368,16 @@ int main(void)
         query_result, (unsigned long long)query_data[0],
         (unsigned long long)query_data[1]);
 #endif
-    if (green_count < 16000u || green_count > 21000u ||
-        unexpected_count != 0u || center != GREEN_RGBA8 ||
-        pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u
+    int image_ok;
+#if defined(VULKAN_PS5_QUERY_IDLE_ONLY)
+    image_ok = green_count == 0u && unexpected_count == 0u && center == 0u &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#else
+    image_ok = green_count >= 16000u && green_count <= 21000u &&
+        unexpected_count == 0u && center == GREEN_RGBA8 &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#endif
+    if (!image_ok
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
@@ -376,7 +385,11 @@ int main(void)
         query_data[0] != green_count
 #endif
         ) {
-#if defined(VULKAN_PS5_QUERY_SAMPLE) && \
+#if defined(VULKAN_PS5_QUERY_IDLE_ONLY)
+        printf("query_idle: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
+            query_result, (unsigned long long)query_data[0],
+            (unsigned long long)query_data[1], green_count, unexpected_count);
+#elif defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
         printf("query: mismatch result=%d samples=%llu available=%llu green=%u unexpected=%u\n",
@@ -392,6 +405,10 @@ int main(void)
         printf("query_lifecycle: PASS green=%u\n", green_count);
 #elif defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
         printf("query_reset: PASS green=%u\n", green_count);
+#elif defined(VULKAN_PS5_QUERY_IDLE_ONLY)
+        printf("query_idle: PASS samples=%llu available=%llu\n",
+            (unsigned long long)query_data[0],
+            (unsigned long long)query_data[1]);
 #elif defined(VULKAN_PS5_QUERY_SAMPLE)
         printf("query: PASS samples=%llu green=%u\n",
             (unsigned long long)query_data[0], green_count);

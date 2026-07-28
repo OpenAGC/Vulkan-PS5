@@ -58,3 +58,12 @@ The reset probe then passed with `green=18432`; its retained log is
 command-reset `WRITE_DATA` in isolation. Occlusion begin/end snapshots and
 `DB_COUNT_CONTROL` remain the only unqualified query packets and must be
 audited before the explicitly gated full probe is attempted.
+
+The remaining sequence was checked against Mesa's GFX10 query implementation:
+ZPASS uses `EVENT_WRITE` event 21/index 1, while non-precise counting uses
+`DB_COUNT_CONTROL=0x11000102`. The 256-byte snapshot allocation covers the
+architectural maximum of 16 render backends at 16 bytes each. The Vulkan render
+pass prologue applies register defaults before `vkCmdBeginQuery`, so it does not
+overwrite the query's count-control state before the draw. An additional
+`idle` probe now emits begin/end and availability without a draw and requires
+an available zero count before the live-draw probe is attempted.

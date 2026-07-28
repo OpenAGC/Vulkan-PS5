@@ -84,13 +84,16 @@ but does not execute the stream.
 Query hardware qualification is deliberately staged. The
 `vulkan_ps5_query_lifecycle_probe` creates and host-resets a pool but emits no
 query PM4. The `vulkan_ps5_query_reset_probe` adds only the corrected command
-reset `WRITE_DATA`. The full target adds occlusion begin/end snapshots. Run one
-stage explicitly; the full stage also requires a risk acknowledgement because
-an earlier unisolated query submission hung FW 5.50:
+reset `WRITE_DATA`. The `vulkan_ps5_query_idle_probe` adds occlusion begin/end
+snapshots around an empty render pass and requires an available zero result.
+The full target then counts a live draw. Run one stage explicitly; the full
+stage also requires a risk acknowledgement because an earlier unisolated query
+submission hung FW 5.50:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh lifecycle
 PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh reset
+PS5_HOST=10.0.1.41 examples/run_fw550_query_probes.sh idle
 PS5_HOST=10.0.1.41 VULKAN_PS5_ALLOW_UNQUALIFIED_QUERY=YES \
   examples/run_fw550_query_probes.sh full
 ```
