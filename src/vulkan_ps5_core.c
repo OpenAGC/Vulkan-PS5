@@ -2750,7 +2750,94 @@ vkGetRenderAreaGranularity(VkDevice device, VkRenderPass renderPass,
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyBuffer(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n,
-                const VkBufferCopy *r) { IGNORE(c); IGNORE(s); IGNORE(d); IGNORE(n); IGNORE(r); }
+                const VkBufferCopy *r) {
+    const uint64_t maximum_packet_bytes = UINT64_C(0xfffffffc);
+    const uint64_t address_limit = UINT64_C(1) << 48u;
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5Buffer *source = (VkPs5Buffer *)s;
+    VkPs5Buffer *destination = (VkPs5Buffer *)d;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (command->active_render_pass || !source || !destination || !n || !r ||
+        !source->memory || !destination->memory ||
+        !(source->usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT) ||
+        !(destination->usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    uint64_t source_base = vk_ps5_memory_gpu_address(
+        source->memory, source->memory_offset);
+    uint64_t destination_base = vk_ps5_memory_gpu_address(
+        destination->memory, destination->memory_offset);
+    uint64_t packet_count = 0u;
+    for (uint32_t region = 0u; region < n; ++region) {
+        const VkBufferCopy *copy = &r[region];
+        if (!copy->size || ((copy->srcOffset | copy->dstOffset | copy->size) &
+                3u) != 0u || copy->srcOffset > source->size ||
+            copy->size > source->size - copy->srcOffset ||
+            copy->dstOffset > destination->size ||
+            copy->size > destination->size - copy->dstOffset ||
+            copy->srcOffset > UINT64_MAX - source_base ||
+            copy->dstOffset > UINT64_MAX - destination_base ||
+            copy->size > UINT64_MAX - (source_base + copy->srcOffset) ||
+            copy->size > UINT64_MAX -
+                (destination_base + copy->dstOffset)) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        uint64_t source_start = source_base + copy->srcOffset;
+        uint64_t destination_start = destination_base + copy->dstOffset;
+        if (!source_start || !destination_start ||
+            source_start >= address_limit || destination_start >= address_limit ||
+            copy->size > address_limit - source_start ||
+            copy->size > address_limit - destination_start) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        uint64_t region_packets = copy->size / maximum_packet_bytes +
+            (copy->size % maximum_packet_bytes != 0u);
+        if (region_packets > UINT64_MAX - packet_count) {
+            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+            return;
+        }
+        packet_count += region_packets;
+    }
+
+    for (uint32_t source_region = 0u; source_region < n; ++source_region) {
+        uint64_t source_start = source_base + r[source_region].srcOffset;
+        uint64_t source_end = source_start + r[source_region].size;
+        for (uint32_t destination_region = 0u;
+             destination_region < n; ++destination_region) {
+            uint64_t destination_start =
+                destination_base + r[destination_region].dstOffset;
+            uint64_t destination_end =
+                destination_start + r[destination_region].size;
+            if (source_start < destination_end &&
+                destination_start < source_end) {
+                command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+                return;
+            }
+        }
+    }
+    if (packet_count > UINT32_MAX / 8u ||
+        agcCbRemainingDwords(&command->dcb) < (uint32_t)packet_count * 8u) {
+        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
+        return;
+    }
+
+    for (uint32_t region = 0u; region < n; ++region) {
+        int32_t result = agcGfx1013CopyBuffer(&command->dcb,
+            source_base + r[region].srcOffset,
+            destination_base + r[region].dstOffset, r[region].size);
+        if (result != AGC_OK) {
+            command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+                VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+    }
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                VkImageLayout dl, uint32_t n, const VkImageCopy *r) {

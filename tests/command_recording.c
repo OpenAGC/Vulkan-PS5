@@ -110,7 +110,8 @@ int main(int argc, char **argv)
     const VkBufferCreateInfo buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = 256,
-        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
     VkBuffer output_buffer;
@@ -184,7 +185,8 @@ int main(int argc, char **argv)
     const VkBufferCreateInfo indirect_buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = 128u,
-        .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+        .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
     };
     VkBuffer indirect_buffer;
@@ -807,6 +809,12 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    const VkBufferCopy buffer_copies[2] = {
+        {0u, 0u, 16u},
+        {32u, 32u, 16u},
+    };
+    vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 2u,
+                    buffer_copies);
     vkCmdResetQueryPool(command, query_pool, 0, 2);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
@@ -866,6 +874,41 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(invalid_indirect_command) ==
            VK_ERROR_INITIALIZATION_FAILED);
 
+    VkCommandBuffer invalid_copy_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &invalid_copy_command) == VK_SUCCESS);
+    const VkBufferCopy overlapping_copy = {0u, 4u, 8u};
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyBuffer(invalid_copy_command, output_buffer, output_buffer, 1u,
+                    &overlapping_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    const VkBufferCopy unaligned_copy = {0u, 2u, 4u};
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyBuffer(invalid_copy_command, indirect_buffer, output_buffer, 1u,
+                    &unaligned_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    const VkBufferCopy out_of_bounds_copy = {120u, 0u, 16u};
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyBuffer(invalid_copy_command, indirect_buffer, output_buffer, 1u,
+                    &out_of_bounds_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    const VkBufferCopy usage_copy = {0u, 0u, 16u};
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyBuffer(invalid_copy_command, vertex_buffer, output_buffer, 1u,
+                    &usage_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
@@ -889,6 +932,7 @@ int main(int argc, char **argv)
                                 OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(1)) == 0u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     uint32_t indirect_count = 0u, indexed_indirect_count = 0u;
+    uint32_t dma_copy_count = 0u;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;
     bool found_tess_ring_base = false, found_tess_ring_base_hi = false;
@@ -907,6 +951,19 @@ int main(int argc, char **argv)
             assert(((dwords[i - 3] >> 8) & 0xffu) == AGC_PM4_OP_SET_SH_REG);
             assert(dwords[i - 1] != OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(0));
             found_dispatch = true;
+        } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DMA_DATA) {
+            assert(i + 7u < count && dma_copy_count < 2u);
+            uint64_t source_address = vk_ps5_memory_gpu_address(
+                indirect_memory, (VkDeviceSize)dma_copy_count * 32u);
+            uint64_t destination_address = vk_ps5_memory_gpu_address(
+                output_memory, (VkDeviceSize)dma_copy_count * 32u);
+            assert(dwords[i + 2u] == 16u);
+            assert(dwords[i + 3u] == (uint32_t)destination_address);
+            assert(dwords[i + 4u] == (uint32_t)(destination_address >> 32u));
+            assert(dwords[i + 5u] == (uint32_t)source_address);
+            assert(dwords[i + 6u] == (uint32_t)(source_address >> 32u));
+            dma_copy_count++;
+            i += 7u;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_DRAW_INDEX_2) {
             assert(i + 5 < count && dwords[i + 4] == 3);
             uint64_t index_address = vk_ps5_memory_gpu_address(index_memory, 0);
@@ -1002,7 +1059,8 @@ int main(int argc, char **argv)
             found_query_availability = true;
         }
     }
-    assert(found_dispatch && found_draw && indirect_count == 3u &&
+    assert(found_dispatch && found_draw && dma_copy_count == 2u &&
+           indirect_count == 3u &&
            indexed_indirect_count == 2u && found_tess_draw &&
            found_tess_context && found_tess_ring_size &&
            found_tess_offchip && found_tess_ring_base &&

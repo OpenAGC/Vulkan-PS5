@@ -47,12 +47,13 @@ before another bounded hardware run.
 
 The next bounded diagnostic is
 `vulkan_ps5_indirect_parameters_probe.elf`, SHA-256
-`43ceea64dccc1983a27065a63defb47e5b7f1163a00e9e28c65c0e15866aa20a`.
+`977a99cf1aa9e99f286c145c9a6f1cf509945be552f76f88f4e1f50d19148af4`.
 It records exactly one non-indexed indirect draw, consumes BaseVertex and
 BaseInstance, and does not consume DrawID or enter the multi-draw expansion.
 An exact-green readback therefore isolates the compiler-selected
 start-vertex/start-instance packet locations from the rejected DrawID paths.
-The host suite passes 20/20 and the Prospero link includes `-lunwind`,
+The rebuilt candidate includes the host-qualified `vkCmdCopyBuffer` recording
+path but does not execute it. The host suite passes 20/20 and the Prospero link includes `-lunwind`,
 `-lc++abi`, `-lc++`, and `-lm`.
 
 The first deployment attempt at `20260728T085707Z` did not launch the ELF:
