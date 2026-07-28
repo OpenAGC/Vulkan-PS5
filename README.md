@@ -22,7 +22,8 @@ Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;
 it passes both direct and loader/VVL host modes without adding VMA to the SDK's
-public dependencies.
+public dependencies. A Prospero PIE and bounded one-shot runner are prepared;
+hardware qualification still requires a fresh explicit FW 5.50 run.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and

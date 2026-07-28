@@ -291,9 +291,14 @@
   within-budget allocation, block suballocation, and both manual allocate/bind
   paths. `VULKAN_MEMORY_ALLOCATOR_ROOT` is test-only and configurable; VMA 3.3
   uses Eden's exact AUTO manual policy, while VMA 3.4 uses its required explicit
-  equivalent. Both direct-static and loader/VVL modes pass, the full host suite
-  is 16/16, and the Prospero ICD/examples still build. A Prospero VMA consumer
-  run remains before treating the runtime portion as hardware-qualified.
+  equivalent. Both direct-static and loader/VVL modes pass, and the full host
+  suite is 17/17. A Prospero VMA consumer now builds and links through the
+  exported ICD dependencies, including `-lunwind -lc++abi -lc++ -lm`; its
+  SHA-256 is
+  `3d92ae5a6a37161ef6485ed74052849ea7f23dd8e190405d03ffdece97c061d8`.
+  The bounded one-shot runner has clean/crash coverage and exact-PID cleanup.
+  One fresh-console FW 5.50 run remains before treating the runtime portion as
+  hardware-qualified.
 
 ## Summary
 

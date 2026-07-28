@@ -156,6 +156,10 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/vertex_divisor_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.vertex_divisor_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.eden_vma_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/eden_vma_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.eden_vma_runner PROPERTIES TIMEOUT 15)
     add_test(NAME vulkan_ps5.package_relocation
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_relocation.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}"
@@ -482,6 +486,18 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       -Wall -Wextra -Wpedantic)
     target_link_libraries(vulkan_ps5_system_exit_probe PRIVATE
       kernel_sys SceSystemService unwind c++abi c++ m)
+    if(EXISTS "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include/vk_mem_alloc.h")
+      enable_language(CXX)
+      add_executable(vulkan_ps5_eden_vma_probe tests/eden_vma.cpp)
+      set_target_properties(vulkan_ps5_eden_vma_probe PROPERTIES SUFFIX ".elf")
+      target_compile_features(vulkan_ps5_eden_vma_probe PRIVATE cxx_std_20)
+      target_compile_options(vulkan_ps5_eden_vma_probe PRIVATE
+        -Wno-nullability-completeness)
+      target_include_directories(vulkan_ps5_eden_vma_probe PRIVATE
+        "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include")
+      target_link_libraries(vulkan_ps5_eden_vma_probe PRIVATE
+        vulkan_ps5_static)
+    endif()
   endif()
 endif()
 

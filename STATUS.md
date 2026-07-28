@@ -564,4 +564,9 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   requirements paths. VMA 3.3 keeps Eden's exact AUTO manual usage; the newer
   available VMA 3.4 header uses its required explicit equivalent. Direct ICD
   and loader/VVL variants pass with deterministic zero-allocation teardown.
-  The complete host suite is now 16/16 and the Prospero build remains clean.
+  The complete host suite is now 17/17. The Prospero VMA candidate builds as a
+  PIE with the exported `-lunwind -lc++abi -lc++ -lm` dependencies and SHA-256
+  `3d92ae5a6a37161ef6485ed74052849ea7f23dd8e190405d03ffdece97c061d8`.
+  Its bounded one-shot runner has clean/crash safety coverage, exact-PID fatal
+  checks and cleanup, and post-run websrv validation. Hardware execution is
+  still pending a fresh explicit FW 5.50 gate.
