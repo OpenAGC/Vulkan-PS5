@@ -116,6 +116,12 @@ if(VULKAN_PS5_BUILD_TESTS)
   target_link_libraries(vulkan_ps5_wsi_test
     PRIVATE vulkan_ps5_static Threads::Threads)
   add_test(NAME vulkan_ps5.wsi COMMAND vulkan_ps5_wsi_test)
+  if(UNIX)
+    add_test(NAME vulkan_ps5.swapchain_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/swapchain_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.swapchain_runner PROPERTIES TIMEOUT 15)
+  endif()
   find_program(GLSLANG_VALIDATOR glslangValidator)
   if(GLSLANG_VALIDATOR)
     set(PIPELINE_SHADER_OUTPUTS)

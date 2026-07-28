@@ -390,8 +390,9 @@ Implemented:
 - OpenAGC owns the FW 5.50 linear-registration patch, immediate byte-verified
   restoration, VideoOut registration, flip equeue, and deterministic teardown.
 - Direct host WSI tests cover enumeration, `VK_INCOMPLETE`, exhaustion,
-  acquire/present synchronization, device groups, and recreation. All eight
-  host tests and the WSI-enabled Validation Layers test pass with zero messages.
+  acquire/present synchronization, device groups, and recreation. All eight ICD
+  tests, the runner safety simulation, and the WSI-enabled Validation Layers
+  test pass with zero messages.
   The WSI test also releases an image from a delayed presentation thread and
   proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
@@ -415,4 +416,6 @@ Pending:
   caused SIGSEGV plus a `0x4000` VM resource leak. The Prospero sample now
   flushes output and uses the SDK's hardware-proven `thr_exit` termination;
   host builds still return normally. A new bounded run is required; no
-  automatic retry is permitted.
+  automatic retry is permitted. The runner now captures and PID-scopes klog,
+  rejects fatal signals, app crashes, XO faults, and VM leaks, and requires a
+  ps5debug-NG process-absence check before its final PASS.

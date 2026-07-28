@@ -149,8 +149,9 @@
   FIFO mode, allocate three direct write-combined scanout images, and route all
   firmware patching, registration, event queues, bounded flip waits, and
   teardown through OpenAGC. The direct WSI test covers exhaustion,
-  synchronization, device groups, and recreation; all eight host tests and the
-  WSI-enabled VVL test pass without messages. The standalone sample completes
+  synchronization, device groups, and recreation; all eight ICD tests, the
+  runner safety simulation, and the WSI-enabled VVL test pass without messages.
+  The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
   `7e714ae4861f27b13306e39264e1c2715c73720bdc8dc6820f46d0ae3be6d642`.
@@ -171,7 +172,10 @@
   SDK's hardware-proven `thr_exit` path instead of returning; host builds keep
   their normal return path. One new bounded run remains before this milestone
   is hardware qualified; the runner has no automatic retry and uses ps5debug-NG
-  cleanup only on a timeout/failure.
+  cleanup only on a timeout/failure. The runner now captures klog for the whole
+  launch, scopes it to the new eboot PID, rejects fatal signals, app crashes,
+  XO faults, or VM leaks, and requires ps5debug-NG to prove process absence
+  before reporting qualification PASS.
   Exhausted acquisition now waits against a monotonic deadline instead of
   returning early, while present releases the swapchain lock during the
   bounded VSYNC wait. A host regression holds all three images, presents one

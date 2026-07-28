@@ -47,7 +47,8 @@ events, bounded waits, and teardown remain inside OpenAGC.
 
 `vulkan_ps5_swapchain_example` uses only standard Vulkan calls and runs 1,800
 acquire/submit/present frames with binary semaphores and a fence. Its host run,
-the eight-test ICD suite, and Validation Layers pass; its Prospero ELF links
+the eight-test ICD suite, runner safety simulation, and Validation Layers pass;
+its Prospero ELF links
 with `-lunwind -lc++abi -lc++ -lm`. Run exactly one bounded FW 5.50 gate after
 an explicit console-availability signal:
 
@@ -60,8 +61,11 @@ swapchain lock across the VSYNC wait.
 PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 ```
 
-The runner never retries automatically. On timeout it asks ps5debug-NG to kill
-only the matching qualification process before returning failure.
+The runner never retries automatically. It captures klog across the launch,
+scopes it to the new eboot PID, rejects fatal signals, app crashes, XO faults,
+and VM leaks, and asks ps5debug-NG to prove that no matching process remains.
+On timeout it asks ps5debug-NG to kill only the matching qualification process
+before returning failure.
 
 The first FW 5.50 attempt stopped safely before registration: kernel evidence
 showed that byte verification touched the execute-only VideoOut text page
