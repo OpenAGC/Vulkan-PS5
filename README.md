@@ -675,8 +675,10 @@ wireframe and three separate red points, rejecting filled interiors; its FW
 use OpenAGC's typed topology and primitive-size state. `largePoints` is exposed
 through legacy and Features2 query/enable paths with range `[1, 64]` and
 granularity `0.125`; the bounded FW 5.50 probe deterministically qualified
-8-, 16-, and 32-pixel shader point sizes. `wideLines` remains unsupported, so
-line width remains 1.0.
+8-, 16-, and 32-pixel shader point sizes. Line-list and line-strip pipelines
+support static and `VK_DYNAMIC_STATE_LINE_WIDTH` state. `wideLines` is exposed
+through both feature paths with range `[1, 64]` and granularity `0.125`; its
+bounded FW 5.50 probe qualified exact 8-, 16-, and 32-pixel line coverage.
 Static depth compare/write
 and front/back stencil state are
 translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC

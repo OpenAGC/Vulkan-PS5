@@ -227,14 +227,50 @@ int main(int argc, char **argv) {
                                      &point_list_pipeline) == VK_SUCCESS);
     VkPipelineInputAssemblyStateCreateInfo line_input_assembly = input_assembly;
     line_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    VkPipelineRasterizationStateCreateInfo wide_line_raster = rasterization;
+    wide_line_raster.lineWidth = 8.0f;
     VkGraphicsPipelineCreateInfo line_list_info = graphics_info;
     line_list_info.pInputAssemblyState = &line_input_assembly;
-    VkPipeline rejected_line_list = VK_NULL_HANDLE;
+    line_list_info.pRasterizationState = &wide_line_raster;
+    VkPipeline line_list_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &line_list_info, NULL,
-                                     &rejected_line_list) ==
+                                     &line_list_pipeline) == VK_SUCCESS);
+    VkPipelineInputAssemblyStateCreateInfo line_strip_input_assembly =
+        input_assembly;
+    line_strip_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+    VkGraphicsPipelineCreateInfo line_strip_info = line_list_info;
+    line_strip_info.pInputAssemblyState = &line_strip_input_assembly;
+    VkPipeline line_strip_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &line_strip_info, NULL,
+                                     &line_strip_pipeline) == VK_SUCCESS);
+    const VkDynamicState line_width_state = VK_DYNAMIC_STATE_LINE_WIDTH;
+    const VkPipelineDynamicStateCreateInfo dynamic_line_width = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 1,
+        .pDynamicStates = &line_width_state,
+    };
+    wide_line_raster.lineWidth = 0.0f;
+    VkGraphicsPipelineCreateInfo dynamic_line_info = line_list_info;
+    dynamic_line_info.pDynamicState = &dynamic_line_width;
+    VkPipeline dynamic_line_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &dynamic_line_info, NULL,
+                                     &dynamic_line_pipeline) == VK_SUCCESS);
+    wide_line_raster.lineWidth = 0.5f;
+    VkPipeline invalid_line_width = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &line_list_info, NULL,
+                                     &invalid_line_width) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
-    assert(rejected_line_list == VK_NULL_HANDLE);
+    assert(invalid_line_width == VK_NULL_HANDLE);
+    wide_line_raster.lineWidth = 64.125f;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &line_list_info, NULL,
+                                     &invalid_line_width) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_line_width == VK_NULL_HANDLE);
     VkPipelineRasterizationStateCreateInfo non_solid_raster = rasterization;
     VkGraphicsPipelineCreateInfo non_solid_info = graphics_info;
     non_solid_info.pRasterizationState = &non_solid_raster;
@@ -359,6 +395,9 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, point_pipeline, NULL);
     vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, point_list_pipeline, NULL);
+    vkDestroyPipeline(device, dynamic_line_pipeline, NULL);
+    vkDestroyPipeline(device, line_strip_pipeline, NULL);
+    vkDestroyPipeline(device, line_list_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);

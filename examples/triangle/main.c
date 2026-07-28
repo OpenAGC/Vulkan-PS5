@@ -4,7 +4,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+#include "vulkan_ps5_wide_lines_vert_spv.h"
+#include "vulkan_ps5_non_solid_frag_spv.h"
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_non_solid_frag_spv
+#define vulkan_ps5_triangle_vert_spv vulkan_ps5_wide_lines_vert_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "wide_lines"
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
 #include "vulkan_ps5_large_points_vert_spv.h"
 #include "vulkan_ps5_non_solid_frag_spv.h"
 #define vulkan_ps5_triangle_frag_spv vulkan_ps5_non_solid_frag_spv
@@ -104,7 +111,9 @@ int main(void)
     VkShaderModule fragment_shader;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    VkPipeline dynamic_line_pipeline;
+#elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
     VkPipeline point_pipeline;
 #endif
     VkCommandPool command_pool;
@@ -125,7 +134,17 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.wideLines) {
+        printf("wide_lines: wideLines is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .wideLines = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.largePoints) {
@@ -209,7 +228,8 @@ int main(void)
 #endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE) || \
     defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
     defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
@@ -502,6 +522,8 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        .topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         .topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
 #else
@@ -534,7 +556,11 @@ int main(void)
 #endif
         .cullMode = VK_CULL_MODE_NONE,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        .lineWidth = 8.0f,
+#else
         .lineWidth = 1.0f,
+#endif
     };
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -572,7 +598,19 @@ int main(void)
     };
     VK_CHECK(vkCreateGraphicsPipelines(
         device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    const VkDynamicState line_width_dynamic_state =
+        VK_DYNAMIC_STATE_LINE_WIDTH;
+    const VkPipelineDynamicStateCreateInfo line_width_dynamic_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 1,
+        .pDynamicStates = &line_width_dynamic_state,
+    };
+    VkGraphicsPipelineCreateInfo dynamic_line_pipeline_info = pipeline_info;
+    dynamic_line_pipeline_info.pDynamicState = &line_width_dynamic_info;
+    VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &dynamic_line_pipeline_info, NULL, &dynamic_line_pipeline));
+#elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
     VkPipelineRasterizationStateCreateInfo point_rasterization = rasterization;
     point_rasterization.polygonMode = VK_POLYGON_MODE_POINT;
     VkGraphicsPipelineCreateInfo point_pipeline_info = pipeline_info;
@@ -616,6 +654,15 @@ int main(void)
 #endif
 #if !defined(VULKAN_PS5_QUERY_IDLE_ONLY)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    vkCmdDraw(command, 2, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        dynamic_line_pipeline);
+    vkCmdSetLineWidth(command, 16.0f);
+    vkCmdDraw(command, 2, 1, 2, 0);
+    vkCmdSetLineWidth(command, 32.0f);
+    vkCmdDraw(command, 2, 1, 4, 0);
+#else
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipeline_layout, 0, 1, &hull_probe_descriptor_set, 0, NULL);
@@ -625,6 +672,7 @@ int main(void)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
         point_pipeline);
     vkCmdDraw(command, 3, 1, 0, 1);
+#endif
 #endif
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
@@ -664,11 +712,13 @@ int main(void)
 
     const uint32_t *pixels = mapped;
     uint32_t green_count = 0;
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     uint32_t red_count = 0;
 #endif
-#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     uint32_t blue_count = 0;
 #endif
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
@@ -686,12 +736,14 @@ int main(void)
 #else
         if (pixels[i] == GREEN_RGBA8)
             ++green_count;
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
     defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         else if (pixels[i] == RED_RGBA8)
             ++red_count;
 #endif
-#if defined(VULKAN_PS5_LARGE_POINTS_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         else if (pixels[i] == 0xffff0000u)
             ++blue_count;
 #endif
@@ -787,6 +839,11 @@ int main(void)
         pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
             (TARGET_WIDTH * 3u) / 4u] == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    image_ok = green_count == 1024u && red_count == 2048u &&
+        blue_count == 4096u && unexpected_count == 0u &&
+        center == RED_RGBA8 && pixels[0] == 0u &&
+        pixels[TARGET_WIDTH - 1u] == 0u;
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
     image_ok = green_count == 64u && red_count == 256u &&
         blue_count == 1024u && unexpected_count == 0u &&
@@ -825,6 +882,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: mismatch line=%u point=%u unexpected=%u center=%08x\n",
             green_count, red_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        printf("wide_lines: mismatch width8=%u width16=%u width32=%u unexpected=%u center=%08x\n",
+            green_count, red_count, blue_count, unexpected_count, center);
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         printf("large_points: mismatch size8=%u size16=%u size32=%u unexpected=%u center=%08x\n",
             green_count, red_count, blue_count, unexpected_count, center);
@@ -851,6 +911,9 @@ int main(void)
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         printf("fill_mode_non_solid: PASS line=%u point=%u center=%08x\n",
             green_count, red_count, center);
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        printf("wide_lines: PASS width8=%u width16=%u width32=%u center=%08x\n",
+            green_count, red_count, blue_count, center);
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
         printf("large_points: PASS size8=%u size16=%u size32=%u center=%08x\n",
             green_count, red_count, blue_count, center);
@@ -864,7 +927,9 @@ int main(void)
     vkDestroyQueryPool(device, query_pool, NULL);
 #endif
     vkDestroyCommandPool(device, command_pool, NULL);
-#if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    vkDestroyPipeline(device, dynamic_line_pipeline, NULL);
+#elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
     vkDestroyPipeline(device, point_pipeline, NULL);
 #endif
     vkDestroyPipeline(device, pipeline, NULL);
@@ -894,6 +959,7 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_LOGIC_OP_PROBE) || \
+     defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
      defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
      defined(VULKAN_PS5_LARGE_POINTS_PROBE))
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);

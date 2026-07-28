@@ -522,9 +522,9 @@ static void fill_properties(VkPhysicalDeviceProperties *properties) {
     limits->pointSizeRange[0] = 1.0f;
     limits->pointSizeRange[1] = 64.0f;
     limits->lineWidthRange[0] = 1.0f;
-    limits->lineWidthRange[1] = 1.0f;
+    limits->lineWidthRange[1] = 64.0f;
     limits->pointSizeGranularity = 0.125f;
-    limits->lineWidthGranularity = 1.0f;
+    limits->lineWidthGranularity = 0.125f;
     limits->strictLines = VK_FALSE;
     limits->standardSampleLocations = VK_TRUE;
     limits->optimalBufferCopyOffsetAlignment = 4;
@@ -554,6 +554,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->occlusionQueryPrecise = VK_TRUE;
     features->samplerAnisotropy = VK_TRUE;
     features->tessellationShader = VK_TRUE;
+    features->wideLines = VK_TRUE;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

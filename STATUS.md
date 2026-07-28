@@ -91,8 +91,8 @@ Implemented and host-verified:
   `20260728T012034Z-geometry-run1.log`). The standalone geometry workload is
   hardware-qualified. The core feature is now exposed by both feature-query
   forms and accepted through legacy and Features2 device creation. Lifecycle
-  tests cover both success paths and retain rejection of unsupported
-  `wideLines`; the standalone sample queries and requests geometry normally.
+  tests cover both success paths; the standalone sample queries and requests
+  geometry normally.
   Both host configurations pass all seven tests, and the Prospero ELF links
   with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
   `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
@@ -353,8 +353,8 @@ Implemented and host-verified:
   ELF SHA-256 was
   `47a15536779e194f56bb20bb8a841a92fc0ebcaf05247f4c9fab95bc1ec988e1`.
   `fillModeNonSolid` is advertised and accepted through legacy and Features2
-  paths; `wideLines` remains false. Both host suites and the Prospero build
-  pass. The rebuilt public-path probe queried and
+  paths. Both host suites and the Prospero build pass. The rebuilt public-path
+  probe queried and
   requested the advertised feature, reproduced the exact 230/3 oracle and
   clean lifecycle, and has ELF SHA-256
   `fd2dd48dddd46cd2519bd06fb5b9dacb6bc394658a1efc9d626b2258c9cdeeb3`.
@@ -374,6 +374,20 @@ Implemented and host-verified:
   run left PID 118 absent and emitted only the known `amount=0x4000` baseline
   warning. Public-path ELF SHA-256 is
   `439a18445742d30595b1a2e850d5e5370c8e38fc8c55a9beb09b634d3fb9130f`.
+- Line-list and line-strip pipelines now translate to OpenAGC primitive types
+  2 and 3. Static widths and `VK_DYNAMIC_STATE_LINE_WIDTH` use OpenAGC's typed
+  primitive-size packet, with command-buffer-local dynamic state reset and
+  required-before-draw enforcement. Invalid static or dynamic widths outside
+  `[1, 64]` are rejected; the reported granularity is `0.125`. Exact host PM4
+  regressions require 8px=`0x40`, 16px=`0x80`, and 32px=`0x100` line-control
+  values. Both normal and ASAN/UBSAN suites pass 27/27, and the full Prospero
+  build links `-lunwind -lc++abi -lc++ -lm`. The internal and final public
+  query/request FW 5.50 gates each produced exact 8px=1,024, 16px=2,048, and
+  32px=4,096 pixel coverage, clean SystemService self-exit, and only the known
+  `amount=0x4000` baseline warning. `wideLines` is advertised and accepted
+  through legacy and Features2 paths. The public run left PID 120 absent; ELF
+  SHA-256 is
+  `25db7763fd45e5494067dbcf83ed16884fcfe9a6b93958b2a9d3f3e4a63fb109`.
 - Static logic operations are host-complete for baseline, indexed, indirect,
   geometry, and tessellation draws. All 16 core `VkLogicOp` values translate
   to OpenAGC's exact gfx1013 ROP3 truth tables; attachment blending is disabled

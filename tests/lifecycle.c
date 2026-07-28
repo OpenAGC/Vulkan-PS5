@@ -36,6 +36,9 @@ int main(void) {
     assert(properties.limits.pointSizeRange[0] == 1.0f);
     assert(properties.limits.pointSizeRange[1] == 64.0f);
     assert(properties.limits.pointSizeGranularity == 0.125f);
+    assert(properties.limits.lineWidthRange[0] == 1.0f);
+    assert(properties.limits.lineWidthRange[1] == 64.0f);
+    assert(properties.limits.lineWidthGranularity == 0.125f);
 
     VkPhysicalDeviceSubgroupProperties subgroup = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
@@ -159,6 +162,7 @@ int main(void) {
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.samplerAnisotropy == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
+    assert(features2.features.wideLines == VK_TRUE);
 
     VkPhysicalDeviceShaderDrawParametersFeatures shader_draw_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
@@ -198,6 +202,7 @@ int main(void) {
     assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.samplerAnisotropy == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
+    assert(features.wideLines == VK_TRUE);
     features.depthBiasClamp = VK_FALSE;
     features.depthClamp = VK_FALSE;
     features.drawIndirectFirstInstance = VK_FALSE;
@@ -210,6 +215,7 @@ int main(void) {
     features.occlusionQueryPrecise = VK_FALSE;
     features.samplerAnisotropy = VK_FALSE;
     features.tessellationShader = VK_FALSE;
+    features.wideLines = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
         assert(feature_bits[i] == VK_FALSE);
@@ -285,6 +291,7 @@ int main(void) {
             .occlusionQueryPrecise = VK_TRUE,
             .samplerAnisotropy = VK_TRUE,
             .tessellationShader = VK_TRUE,
+            .wideLines = VK_TRUE,
         },
     };
     VkPhysicalDeviceVulkan11Features enabled_features11 = {
@@ -300,16 +307,9 @@ int main(void) {
         .pPhysicalDevices = &physical,
     };
     device_info.pNext = &group_info;
-    VkPhysicalDeviceFeatures unsupported_features = {
-        .wideLines = VK_TRUE,
-    };
     VkDeviceCreateInfo unsupported_device_info = device_info;
     unsupported_device_info.pNext = NULL;
-    unsupported_device_info.pEnabledFeatures = &unsupported_features;
     VkDevice unsupported_device = VK_NULL_HANDLE;
-    assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
-                          &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
-    assert(unsupported_device == VK_NULL_HANDLE);
     VkPhysicalDeviceVertexAttributeDivisorFeatures unsupported_divisor = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
@@ -343,6 +343,7 @@ int main(void) {
         .multiDrawIndirect = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
         .samplerAnisotropy = VK_TRUE,
+        .wideLines = VK_TRUE,
     };
     VkDeviceCreateInfo legacy_geometry_device_info = device_info;
     legacy_geometry_device_info.pNext = NULL;

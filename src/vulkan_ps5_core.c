@@ -157,6 +157,7 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013ColorBlendState color_blend;
     AgcGfx1013PolygonMode polygon_mode;
     AgcGfx1013PrimitiveSizeState primitive_size;
+    VkBool32 line_width_dynamic;
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
@@ -236,6 +237,8 @@ typedef struct VkPs5CommandBuffer {
     uint32_t active_subpass;
     AgcGfx1013FrameState frame_state;
     AgcGfx1013DepthSurfaceState depth_surface_state;
+    float dynamic_line_width;
+    VkBool32 dynamic_line_width_set;
     AgcGfx1013DepthBiasState dynamic_depth_bias;
     VkBool32 dynamic_depth_bias_set;
     VkPs5QueryPool *active_query_pool;
@@ -756,6 +759,12 @@ static bool primitive_topology(
     case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
         *destination = AGC_GFX1013_TOPOLOGY_POINT_LIST;
         break;
+    case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+        *destination = AGC_GFX1013_TOPOLOGY_LINE_LIST;
+        break;
+    case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+        *destination = AGC_GFX1013_TOPOLOGY_LINE_STRIP;
+        break;
     case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
         *destination = AGC_GFX1013_TOPOLOGY_TRIANGLE_LIST;
         break;
@@ -1192,6 +1201,7 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->active_framebuffer = NULL;
     command->active_query_pool = NULL;
     command->index_buffer = NULL;
+    command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
@@ -1235,6 +1245,7 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->active_framebuffer = NULL;
     command->active_query_pool = NULL;
     command->index_buffer = NULL;
+    command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
@@ -1996,6 +2007,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             !create->pViewportState->pScissors)
             return VK_ERROR_INITIALIZATION_FAILED;
         VkBool32 dynamic_depth_bias = VK_FALSE;
+        VkBool32 dynamic_line_width = VK_FALSE;
         if (create->pDynamicState) {
             if (create->pDynamicState->dynamicStateCount &&
                 !create->pDynamicState->pDynamicStates)
@@ -2003,10 +2015,20 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             for (uint32_t dynamic_index = 0u;
                  dynamic_index < create->pDynamicState->dynamicStateCount;
                  ++dynamic_index) {
-                if (create->pDynamicState->pDynamicStates[dynamic_index] !=
-                        VK_DYNAMIC_STATE_DEPTH_BIAS || dynamic_depth_bias)
+                switch (create->pDynamicState->pDynamicStates[dynamic_index]) {
+                case VK_DYNAMIC_STATE_DEPTH_BIAS:
+                    if (dynamic_depth_bias)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_depth_bias = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_LINE_WIDTH:
+                    if (dynamic_line_width)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_line_width = VK_TRUE;
+                    break;
+                default:
                     return VK_ERROR_FEATURE_NOT_PRESENT;
-                dynamic_depth_bias = VK_TRUE;
+                }
             }
         }
         if (!create->pRasterizationState || !create->pMultisampleState ||
@@ -2022,7 +2044,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (raster->rasterizerDiscardEnable ||
             !polygon_mode(raster->polygonMode, &translated_polygon_mode) ||
             raster->cullMode != VK_CULL_MODE_NONE ||
-            raster->lineWidth != 1.0f ||
+            (!dynamic_line_width && (!(raster->lineWidth >= 1.0f) ||
+                !(raster->lineWidth <= 64.0f))) ||
             multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
             multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
             multisample->alphaToOneEnable ||
@@ -2222,8 +2245,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .point_size = 1.0f,
             .point_size_min = 1.0f,
             .point_size_max = 64.0f,
-            .line_width = raster->lineWidth,
+            .line_width = dynamic_line_width ? 1.0f : raster->lineWidth,
         };
+        pipeline->line_width_dynamic = dynamic_line_width;
         pipeline->depth_bias = (AgcGfx1013DepthBiasState){
             .constant_factor = raster->depthBiasConstantFactor,
             .clamp = raster->depthBiasClamp,
@@ -3597,7 +3621,18 @@ vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
     IGNORE(c); IGNORE(f); IGNORE(n); IGNORE(r);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdSetLineWidth(VkCommandBuffer c, float w) { IGNORE(c); IGNORE(w); }
+vkCmdSetLineWidth(VkCommandBuffer c, float w) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!(w >= 1.0f) || !(w <= 64.0f)) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    command->dynamic_line_width = w;
+    command->dynamic_line_width_set = VK_TRUE;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
                   float clamp, float slopeFactor) {
@@ -3854,8 +3889,16 @@ static bool record_raster_state(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     AgcGfx1013FrameState *frame)
 {
+    AgcGfx1013PrimitiveSizeState primitive_size = pipeline->primitive_size;
+    if (pipeline->line_width_dynamic) {
+        if (!command->dynamic_line_width_set) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return false;
+        }
+        primitive_size.line_width = command->dynamic_line_width;
+    }
     int32_t result = agcGfx1013SetPrimitiveSizeState(
-        &command->dcb, &pipeline->primitive_size);
+        &command->dcb, &primitive_size);
     if (result != AGC_OK) {
         command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
             VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
