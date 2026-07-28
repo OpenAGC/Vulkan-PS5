@@ -120,6 +120,16 @@ int main(void)
     const VkPhysicalDeviceFeatures enabled_features = {
         .tessellationShader = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_QUERY_SAMPLE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.occlusionQueryPrecise) {
+        printf("query: occlusionQueryPrecise is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .occlusionQueryPrecise = VK_TRUE,
+    };
 #endif
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info = {
@@ -145,7 +155,8 @@ int main(void)
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
-    defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    defined(VULKAN_PS5_TESSELLATION_SAMPLE) || \
+    defined(VULKAN_PS5_QUERY_SAMPLE)
         .pEnabledFeatures = &enabled_features,
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE)
@@ -519,7 +530,7 @@ int main(void)
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
-    vkCmdBeginQuery(command, query_pool, 0, 0);
+    vkCmdBeginQuery(command, query_pool, 0, VK_QUERY_CONTROL_PRECISE_BIT);
 #endif
 #if !defined(VULKAN_PS5_QUERY_IDLE_ONLY)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);

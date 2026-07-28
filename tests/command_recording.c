@@ -95,10 +95,14 @@ int main(int argc, char **argv)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .occlusionQueryPrecise = VK_TRUE,
+    };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+        .pEnabledFeatures = &enabled_features,
     };
     VkDevice device;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
@@ -766,7 +770,7 @@ int main(int argc, char **argv)
         .renderArea = {{0, 0}, {256, 256}},
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBeginQuery(command, query_pool, 1, 0);
+    vkCmdBeginQuery(command, query_pool, 1, VK_QUERY_CONTROL_PRECISE_BIT);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,

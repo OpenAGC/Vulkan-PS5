@@ -2776,10 +2776,7 @@ vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlag
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
-    if (f & VK_QUERY_CONTROL_PRECISE_BIT) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
+    IGNORE(f);
     uint64_t address = pool->memory.gpu_address +
         (uint64_t)q * VK_PS5_QUERY_SLOT_SIZE;
     int32_t result = agcGfx1013BeginOcclusionQuery(&command->dcb, address, 0u);

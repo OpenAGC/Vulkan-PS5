@@ -113,13 +113,16 @@ int main(void) {
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(features11.shaderDrawParameters == VK_FALSE);
     assert(features2.features.geometryShader == VK_TRUE);
+    assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
     assert(features.geometryShader == VK_TRUE);
+    assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     features.geometryShader = VK_FALSE;
+    features.occlusionQueryPrecise = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
@@ -177,6 +180,7 @@ int main(void) {
         .pNext = &enabled_host_query_reset,
         .features = {
             .geometryShader = VK_TRUE,
+            .occlusionQueryPrecise = VK_TRUE,
             .tessellationShader = VK_TRUE,
         },
     };
@@ -199,6 +203,7 @@ int main(void) {
     assert(unsupported_device == VK_NULL_HANDLE);
     VkPhysicalDeviceFeatures legacy_geometry_features = {
         .geometryShader = VK_TRUE,
+        .occlusionQueryPrecise = VK_TRUE,
     };
     VkDeviceCreateInfo legacy_geometry_device_info = device_info;
     legacy_geometry_device_info.pNext = NULL;

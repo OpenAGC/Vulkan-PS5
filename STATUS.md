@@ -370,8 +370,11 @@ FW 5.50 compute/triangle hardware gate:
   counting. It passed with `samples=0 available=1`, qualifying the complete
   begin/end/availability sequence without rasterization. The full live-draw
   query then passed twice with `samples=18432 green=18432`; query is restored
-  to the repeated Milestone 3 regression suite. The staged probes remain for
-  isolating lifecycle, reset, idle-ZPASS, and live-counting regressions.
+  to the repeated Milestone 3 regression suite. Because this is an exact
+  independent coverage match rather than a boolean approximation, the same
+  ZPASS path now backs advertised `occlusionQueryPrecise`; the sample requests
+  the feature and uses `VK_QUERY_CONTROL_PRECISE_BIT`. The staged probes remain
+  for isolating lifecycle, reset, idle-ZPASS, and live-counting regressions.
 
 ## Milestone 4: VideoOut WSI (FW 5.50 hardware qualified)
 
@@ -518,8 +521,13 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   with a deliberately non-conformant `0.0.0.0` version.
   `VK_KHR_shader_float_controls` exposes a complete, conservative property
   record with no unqualified execution-mode capabilities. Enumeration,
-  Properties2 chaining, and device enablement are lifecycle-tested. The live
-  profile is now two extension plus 26 feature gaps, total 28.
+  Properties2 chaining, and device enablement are lifecycle-tested. The
+  precise-occlusion contract now exposes the same exact-count ZPASS path that
+  repeatedly matched the independent FW 5.50 mapped-pixel oracle at
+  `samples=18432 green=18432`. Legacy/Features2 reporting, device enablement,
+  and precise command recording are host-tested, and the standard query sample
+  requests the feature and flag normally. The live profile is now two
+  extension plus 25 feature gaps, total 27.
 - Runtime audit also identifies missing Eden VMA-pattern coverage, a 19-format
   subset with no BC/D24/storage-image support, and the still-missing Prospero
   surface/build/static-entrypoint integration in Eden itself.

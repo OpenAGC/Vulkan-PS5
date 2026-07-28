@@ -49,14 +49,14 @@ one fresh-console FW 5.50 run remains before public promotion.
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=2 features=26 limits=0 queues=0 total=28
+eden-profile: extensions=2 features=25 limits=0 queues=0 total=27
 ```
 
-The 26 feature gaps are `depthBiasClamp`, `depthClamp`,
+The 25 feature gaps are `depthBiasClamp`, `depthClamp`,
 `drawIndirectFirstInstance`, `dualSrcBlend`, `fillModeNonSolid`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `independentBlend`, `largePoints`,
-`logicOp`, `multiDrawIndirect`, `multiViewport`, `occlusionQueryPrecise`,
-`robustBufferAccess`, `samplerAnisotropy`, `sampleRateShading`,
+`logicOp`, `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
+`samplerAnisotropy`, `sampleRateShading`,
 `shaderClipDistance`, `shaderCullDistance`, `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
 `wideLines`, `shaderDemoteToHelperInvocation`, `shaderDrawParameters`,

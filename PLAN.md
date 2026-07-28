@@ -254,8 +254,12 @@
   Driver metadata reports the experimental ACO/gfx1013 identity with
   conformance `0.0.0.0`; float execution-mode capabilities stay false until
   separately qualified. Lifecycle and VVL tests cover enumeration,
-  Properties2 output, and device enablement. The live profile is 28 gaps: two
-  extensions and 26 features.
+  Properties2 output, and device enablement. The precise-occlusion contract is
+  also promoted from the already-qualified exact ZPASS path: repeated FW 5.50
+  runs returned `samples=18432 green=18432`, and the query sample now queries,
+  enables, and records `VK_QUERY_CONTROL_PRECISE_BIT` normally. Legacy and
+  Features2 reporting plus device enablement are host-tested. The live profile
+  is 27 gaps: two extensions and 25 features.
   The next extension gate is prepared without changing public capabilities:
   `vulkan_ps5_mirror_clamp_probe` samples a deliberately out-of-range
   coordinate and distinguishes gfx1013 mirror-once from ordinary edge clamp

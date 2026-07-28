@@ -9,8 +9,8 @@ standard-Vulkan consumer on both host and FW 5.50.
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test; the initial Eden suitability baseline is
 30 hard gaps rather than an application-specific bypass.
-Query-complete driver-properties and conservative shader-float-controls
-support reduce the live count to 28.
+Query-complete driver-properties, conservative shader-float-controls, and the
+exact-count occlusion path reduce the live count to 27.
 A deterministic mirror-clamp readback probe and bounded FW 5.50 runner are
 prepared, but `VK_KHR_sampler_mirror_clamp_to_edge` remains hidden until the
 exact gfx1013 address mode passes that hardware gate.
@@ -562,7 +562,10 @@ memory and uses `LOAD`.
 Occlusion query pools use GPU-visible storage and OpenAGC-owned gfx1013 ZPASS
 snapshots. Reset is command-ordered, end-query publishes a separate EOP
 availability label, and `vkGetQueryPoolResults` supports 32/64-bit values,
-availability, partial results, and bounded waits. Precise occlusion and
-timestamps remain disabled pending hardware qualification.
+availability, partial results, and bounded waits. Repeated FW 5.50 runs matched
+the exact 18,432-sample result to independent mapped color coverage, so
+`occlusionQueryPrecise` is advertised and the query sample requests it and
+records `VK_QUERY_CONTROL_PRECISE_BIT`. Timestamps remain disabled pending
+hardware qualification.
 `VK_EXT_host_query_reset` is advertised with `hostQueryReset = VK_TRUE` and
 flushes the selected query slots after a host-side reset.
