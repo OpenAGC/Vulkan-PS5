@@ -50,7 +50,7 @@ acquire/submit/present frames with binary semaphores and a fence. Its host run,
 the nine-test ICD suite, runner safety simulation, and Validation Layers pass;
 its Prospero ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`.
 The current candidate SHA-256 is
-`8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
+`835144f7024a2b08f9bff19c78973a9f64a1cc6f4683a5a00542fc350bbe59f5`.
 Run exactly one bounded FW 5.50 gate after an explicit console-availability
 signal:
 
@@ -88,6 +88,9 @@ called `sceSystemServiceKillApp` for that app and restored the home screen,
 which was confirmed visually. The Prospero sample now resolves its app ID with
 `sceSystemServiceGetAppStatus`, requests SystemService termination after all
 Vulkan cleanup, and keeps the main thread alive until the system completes it.
+The termination helper is C11 `_Noreturn`; Prospero disassembly shows `main`
+ending in the helper call followed by `ud2`, while both helper outcomes end in
+sleep loops, so the candidate has no raw-loader return path.
 `vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
 to act unless exactly one other `eboot.elf` exists. One new bounded hardware
 run is required.

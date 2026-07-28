@@ -154,7 +154,7 @@
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
+  `835144f7024a2b08f9bff19c78973a9f64a1cc6f4683a5a00542fc350bbe59f5`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -175,6 +175,9 @@
   and was visually confirmed. The sample now resolves its app ID through
   `sceSystemServiceGetAppStatus`, requests app-level termination only after
   Vulkan cleanup, and remains alive until SystemService finishes the teardown.
+  The helper is declared `_Noreturn`; the current Prospero disassembly ends
+  `main` with its call plus `ud2`, and both helper branches loop on
+  `sceKernelUsleep`, proving that the ELF cannot return to the raw loader.
   A separately built recovery payload refuses to act unless exactly one other
   `eboot.elf` exists. One new bounded run remains before this milestone is
   hardware qualified; the runner has no automatic retry and uses exact-PID

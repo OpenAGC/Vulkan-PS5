@@ -10,7 +10,7 @@ int sceKernelUsleep(unsigned int microseconds);
 int sceSystemServiceGetAppStatus(void *status);
 int sceSystemServiceKillApp(int app_id, int how, int reason, int core_dump);
 
-static void terminate_prospero_app(void) {
+_Noreturn static void terminate_prospero_app(void) {
     uint32_t status[0x100 / sizeof(uint32_t)] = {0};
     const int status_result = sceSystemServiceGetAppStatus(status);
     uint32_t app_id = status[2];

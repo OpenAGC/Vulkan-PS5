@@ -398,7 +398,7 @@ Implemented:
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate
   SHA-256 is
-  `8c6d5af7206d53ec21c83944c828159b7766a1b1172a7cbb2a7efd469cb39edc`.
+  `835144f7024a2b08f9bff19c78973a9f64a1cc6f4683a5a00542fc350bbe59f5`.
 
 Pending:
 
@@ -423,7 +423,9 @@ Pending:
   `sceSystemServiceKillApp` recovery removed that application and restored the
   home screen, confirmed visually. The sample now resolves its app ID through
   `sceSystemServiceGetAppStatus`, requests app-level termination after Vulkan
-  cleanup, and keeps the main thread alive until SystemService finishes. A
+  cleanup, and keeps the main thread alive until SystemService finishes. The
+  helper is `_Noreturn`; disassembly verifies that `main` ends with its call
+  followed by `ud2` and that both helper paths remain in sleep loops. A
   recovery ELF refuses to act unless exactly one other `eboot.elf` exists. A
   new bounded run is required; no automatic retry is permitted. The runner now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
