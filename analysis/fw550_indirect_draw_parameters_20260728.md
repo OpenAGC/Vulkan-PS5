@@ -56,9 +56,12 @@ The rebuilt candidate includes the host-qualified `vkCmdCopyBuffer` recording
 path but does not execute it. The host suite passes 20/20 and the Prospero link includes `-lunwind`,
 `-lc++abi`, `-lc++`, and `-lm`.
 
-The first deployment attempt at `20260728T085707Z` did not launch the ELF:
-the initial websrv readiness check passed, but the port-2121 upload connection
-timed out. The captured klog was empty, contained no native-game EXEC record,
-and the web endpoint was unavailable afterward. This is infrastructure-only
-evidence and neither passes nor fails the indirect-parameter hardware gate. No
-retry was made.
+The first deployment attempt at `20260728T085707Z` did not produce evidence
+that the ELF launched: the initial websrv readiness check passed, but the
+port-2121 upload connection timed out. The captured klog was empty, contained
+no native-game EXEC record, and the web endpoint was unavailable afterward.
+The user subsequently reported that the PS5 had crashed since this attempt.
+Therefore the timeout must not be classified as harmless infrastructure-only
+evidence, even though no target process or GPU submission was captured. No
+retry was made, and further PS5 interaction is suspended pending a safer
+recovery/debug path.

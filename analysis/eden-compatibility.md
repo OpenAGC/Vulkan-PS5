@@ -77,6 +77,14 @@ does not turn a failed requirement into support.
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
 
+The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
+source/destination offsets and verifies all 144 copied bytes plus 112 untouched
+guard bytes. Prospero ELF SHA-256 is
+`eac7fe30a1626502ae7ce27367ebeebdebc89fbf86a3a2b6738a15a6e09ab757`.
+It must not be launched while PS5 interaction is suspended following the
+uncaptured console crash reported after the indirect-parameter deployment
+timeout.
+
 ## Implementation order
 
 1. Complete the two remaining mandatory extension contracts: sampler mirror

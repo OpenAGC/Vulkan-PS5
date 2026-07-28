@@ -47,6 +47,8 @@ multi-draw expansion.
 packets for every Vulkan copy region. Recording validates bound memory,
 transfer usage, four-byte alignment, buffer and 48-bit address bounds,
 source/destination aliasing, and total DCB capacity before emitting any packet.
+The standalone `vulkan_ps5_buffer_copy_example` verifies two offset regions
+and every untouched guard byte through deterministic mapped-memory readback.
 The corrected bounded probe validates `firstVertex = 1`, `firstInstance = 1,2`,
 and `gl_DrawID = 0,1` through exact green/blue readback. The optional
 `multiDrawIndirect`, `drawIndirectFirstInstance`, and `shaderDrawParameters`
