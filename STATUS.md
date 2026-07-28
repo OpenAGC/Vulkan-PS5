@@ -98,7 +98,10 @@ Implemented and host-verified:
   Both host configurations pass all seven tests, and the Prospero ELF links
   with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
   `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
-  Repeated FW 5.50 qualification of the public feature-request path is pending.
+  Its first bounded FW 5.500.008 run produced exactly 4608 green pixels
+  (`20260728T051424Z-geometry-run1.log`), returned normally, and left websrv
+  responsive. No retry was attempted; one independent run remains before the
+  public feature-request path is hardware-qualified.
 - Tessellation pipelines require standard `PATCH_LIST` input and compile the
   fused LS+HS stage in Wave32 alongside TES+NGG and PS. The device lazily owns
   one 256-byte-aligned factor ring, offchip ring, and descriptor table, builds

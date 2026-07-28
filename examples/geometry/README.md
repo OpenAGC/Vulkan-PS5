@@ -21,3 +21,8 @@ feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
 `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
 Two new independent FW 5.50 runs are required before this public feature path
 is considered hardware-qualified.
+
+The first bounded FW 5.500.008 run produced exactly 4608 green pixels
+(`20260728T051424Z-geometry-run1.log`). The application returned normally and
+a bounded post-run websrv request confirmed that the console remained
+responsive. The runner did not retry it; one independent run remains.
