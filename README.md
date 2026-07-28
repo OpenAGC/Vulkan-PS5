@@ -110,6 +110,18 @@ etaHEN websrv responsive, but again produced a zeroed target
 (`20260728T024632Z-tessellation-run1.log`). It was not retried. Correct LDS
 rounding is required, but it is not the remaining VS-to-TCS dataflow fix.
 
+The next locally verified candidate fixes that dataflow directly. RADV had
+copied its monolithic VS+TCS same-invocation optimization into both shader-info
+records, while openagc-psbc disabled it only for the separately emitted LS
+front. The HS back consequently retained `load_per_vertex_input` operations;
+standalone ACO compiled those unavailable temporary-VGPR values as zero, which
+made the TCS write zero positions to the offchip ring. openagc-psbc now forces
+both halves through the common LDS ABI and rejects compilation if an HS input
+survives lowering. Host inspection confirms the HS loads are `load_shared`, all
+seven ICD tests pass, and the Prospero ELF links with `-lunwind -lc++abi -lc++
+-lm`. This candidate has not been uploaded or launched; a fresh bounded run is
+required before any second run or feature advertisement.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console
