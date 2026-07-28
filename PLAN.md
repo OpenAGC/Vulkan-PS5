@@ -69,7 +69,12 @@
   oracle is now implemented: independent execution words localize a missing HS
   launch, copied VS positions localize a broken LDS path, and a passing buffer
   alongside a black image isolates the remaining offchip/TES path. The host
-  and Prospero builds pass; one bounded FW 5.50 run awaits a fresh console
+  and Prospero builds passed, but its one bounded FW 5.50 launch faulted an SQC
+  data read at unmapped `0x2_00000000`. Kernel evidence and ACO agree that the
+  HS indirect descriptor-set-table SGPR was zero. openagc-psbc API v7 now
+  exposes that ABI and the ICD supplies a GPU-visible set-pointer table; host
+  tests prove the table address and bound entry reach PM4. The materially
+  distinct corrected ELF awaits one bounded run after a fresh console
   availability signal.
 
 ## Summary

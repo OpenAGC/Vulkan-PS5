@@ -132,15 +132,31 @@ marker and the VS position it read from LDS. After the existing bounded fence
 wait, the sample invalidates and checks that mapped buffer before reporting the
 image oracle. This separates LS-to-HS execution/LDS failures from downstream
 HS-offchip/TES failures without exposing a private driver API. Host pipeline
-creation, command recording, all seven ICD tests, and the Prospero link pass;
-the candidate ELF has SHA-256
-`1fc24f7fc3f12a930d2fd1815f84941ef9d6aa062820a20a68eba3f31594bbfc`.
-It has not been launched on hardware yet.
+creation, command recording, all seven ICD tests, and the Prospero link passed.
+Its first and only FW 5.500.008 launch froze graphics until Shell UI restarted
+(`20260728T031733Z-tessellation-run1.log`). The ps5debug-NG kernel stream
+identified PID 129 with an SQC-data read protection fault at unmapped VA
+`0x0000000200000000`; the faulting wave reported `XNACK_ERROR MEMVIOL`. No
+test process remained after recovery, so no unrelated process was killed and
+the candidate was not retried.
+
+ACO inspection showed that the separately compiled HS uses its indirect
+descriptor-set-table pointer in `s14`. openagc-psbc API v7 now reports that
+indirect pointer distinctly from ordinary direct set pointers, and the ICD
+allocates a GPU-visible array of bound-set low addresses and writes the array
+address to the compiler-selected register before drawing. The command test
+requires the pointer, its bound set-1 entry, and its PM4 register value all to
+be nonzero. Both seven-test host configurations pass and the Prospero link
+includes `-lunwind -lc++abi -lc++ -lm`. The corrected ELF has SHA-256
+`6f356b0ed9eb4c243feefc281bb6074f198fa356c4a9204068b503f919a4af61` and
+has not been launched on hardware.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console
-reachability, FTP upload, and HTTP launch operations all use bounded timeouts:
+reachability, FTP upload, and HTTP launch operations all use bounded timeouts.
+Advanced-stage HTTP launches allow 60 seconds for runtime pipeline compilation
+while retaining the one-run default:
 
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh geometry

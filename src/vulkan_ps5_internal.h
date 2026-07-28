@@ -31,5 +31,9 @@ VkResult vk_ps5_device_prepare_tessellation(
     uint64_t *ring_descriptor_address);
 uint32_t vk_ps5_command_buffer_dwords(
     VkCommandBuffer command_buffer, const uint32_t **commands);
+uint32_t vk_ps5_command_buffer_indirect_descriptor_table(
+    VkCommandBuffer command_buffer);
+uint32_t vk_ps5_command_buffer_indirect_descriptor_entry(
+    VkCommandBuffer command_buffer, uint32_t set);
 
 #endif

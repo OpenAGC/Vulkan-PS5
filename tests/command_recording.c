@@ -785,6 +785,13 @@ int main(int argc, char **argv)
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
+    uint32_t indirect_descriptor_table =
+        vk_ps5_command_buffer_indirect_descriptor_table(command);
+    assert(indirect_descriptor_table != 0u);
+    assert(vk_ps5_command_buffer_indirect_descriptor_entry(command, 1u) !=
+           0u);
+    assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
+                                indirect_descriptor_table) >= 1u);
     assert(has_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                               AGC_REG_SPI_SHADER_USER_DATA_HS_0 + 11u,
                               0x210a2108u));

@@ -60,6 +60,7 @@ typedef struct VkPs5Sampler { AgcSamplerDescriptor descriptor; } VkPs5Sampler;
 #define VK_PS5_VERTEX_TABLE_SIZE 0x4000u
 #define VK_PS5_VERTEX_TABLE_SLICE \
     (VK_PS5_MAX_VERTEX_BINDINGS * sizeof(AgcGfx1013BufferDescriptor))
+#define VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE 256u
 
 typedef struct VkPs5ShaderModule {
     size_t code_size;
@@ -212,6 +213,8 @@ typedef struct VkPs5CommandBuffer {
     VkDeviceSize vertex_offsets[VK_PS5_MAX_VERTEX_BINDINGS];
     AgcGpuMemory vertex_table_memory;
     size_t vertex_table_offset;
+    uint32_t last_indirect_descriptor_table;
+    size_t last_indirect_descriptor_table_offset;
     uint32_t *dcb_storage;
     size_t dcb_size;
     SceAgcCb dcb;
@@ -224,6 +227,27 @@ uint32_t vk_ps5_command_buffer_dwords(
     if (!command || !commands) return 0;
     *commands = command->dcb_storage;
     return agcCbUsedDwords(&command->dcb);
+}
+
+uint32_t vk_ps5_command_buffer_indirect_descriptor_table(
+    VkCommandBuffer command_buffer) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
+    return command ? command->last_indirect_descriptor_table : 0u;
+}
+
+uint32_t vk_ps5_command_buffer_indirect_descriptor_entry(
+    VkCommandBuffer command_buffer, uint32_t set) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
+    if (!command || !command->last_indirect_descriptor_table ||
+        set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS)
+        return 0u;
+    size_t offset = command->last_indirect_descriptor_table_offset;
+    if (offset > VK_PS5_VERTEX_TABLE_SIZE - sizeof(uint32_t) ||
+        set > (VK_PS5_VERTEX_TABLE_SIZE - offset) / sizeof(uint32_t) - 1u)
+        return 0u;
+    const uint32_t *entries = (const uint32_t *)(
+        (const uint8_t *)command->vertex_table_memory.cpu_address + offset);
+    return entries[set];
 }
 
 static void *alloc_object(VkDevice device, const VkAllocationCallbacks *allocator,
@@ -823,6 +847,8 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
         command->index_buffer = NULL;
         memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
         command->vertex_table_offset = 0u;
+        command->last_indirect_descriptor_table = 0u;
+        command->last_indirect_descriptor_table_offset = 0u;
         agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     }
     return VK_SUCCESS;
@@ -927,6 +953,8 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->index_buffer = NULL;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
+    command->last_indirect_descriptor_table = 0u;
+    command->last_indirect_descriptor_table_offset = 0u;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
@@ -966,6 +994,8 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->index_buffer = NULL;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
+    command->last_indirect_descriptor_table = 0u;
+    command->last_indirect_descriptor_table_offset = 0u;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
     agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
@@ -3265,6 +3295,42 @@ static VkResult prepare_vertex_table(
     return VK_SUCCESS;
 }
 
+static VkResult prepare_indirect_descriptor_table(
+    VkPs5CommandBuffer *command, VkPs5DescriptorSet *const *sets,
+    uint32_t *table_address)
+{
+    if (!sets || !table_address ||
+        command->vertex_table_offset >
+            VK_PS5_VERTEX_TABLE_SIZE -
+                VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE)
+        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    size_t table_offset = command->vertex_table_offset;
+    uint32_t *set_addresses = (uint32_t *)(
+        (uint8_t *)command->vertex_table_memory.cpu_address + table_offset);
+    memset(set_addresses, 0, VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE);
+    for (uint32_t set = 0; set < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set) {
+        if (sets[set])
+            set_addresses[set] =
+                (uint32_t)descriptor_table_gpu_address(sets[set]);
+    }
+    if (agcGpuMemoryFlush(&command->vertex_table_memory, table_offset,
+            VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE) != AGC_OK)
+        return VK_ERROR_DEVICE_LOST;
+    uint64_t address = command->vertex_table_memory.gpu_address + table_offset;
+#if defined(OPENAGC_GENERIC)
+    address = ((uint64_t)AGC_GFX1013_ADDRESS32_HIGH << 32u) |
+        (uint32_t)address;
+#endif
+    *table_address = (uint32_t)address;
+    if (!*table_address)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    command->last_indirect_descriptor_table = *table_address;
+    command->last_indirect_descriptor_table_offset = table_offset;
+    command->vertex_table_offset +=
+        VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE;
+    return VK_SUCCESS;
+}
+
 static VkResult prepare_graphics_stage_user_data(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     uint32_t stage_index, bool allow_vertex_table, bool indexed,
@@ -3279,6 +3345,21 @@ static VkResult prepare_graphics_stage_user_data(
         const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
         if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
             continue;
+        if (sgpr->kind ==
+                OPENAGC_PSBC_USER_SGPR_INDIRECT_DESCRIPTOR_SETS) {
+            if (sgpr->dword_count != 1u ||
+                *user_data_count == user_data_capacity)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            uint32_t address;
+            VkResult result = prepare_indirect_descriptor_table(
+                command, command->graphics_sets, &address);
+            if (result != VK_SUCCESS)
+                return result;
+            user_data[(*user_data_count)++] = (AgcRegisterValue){
+                sgpr->register_offset, address,
+            };
+            continue;
+        }
         if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_VERTEX_BUFFER_TABLE) {
             if (!allow_vertex_table || *resource_table_count != 0u ||
                 sgpr->dword_count != 1u)

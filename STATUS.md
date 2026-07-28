@@ -160,10 +160,20 @@ Implemented and host-verified:
   data-flow probe: three independent invocation markers prove HS execution,
   while three copied positions prove hardware LS-to-HS LDS reads. The mapped
   oracle is checked only after the bounded submission fence and cache
-  invalidation. Host pipeline creation and command recording pass, all seven
-  ICD tests pass in both verification builds, and the Prospero ELF links with
-  the required runtime libraries. No hardware run has been attempted for this
-  candidate.
+  invalidation. Its first bounded FW 5.500.008 launch froze graphics and the
+  Shell UI recovered. ps5debug-NG then reported PID 129 faulting an SQC-data
+  read at unmapped VA `0x0000000200000000`, with the wave marked
+  `XNACK_ERROR MEMVIOL`; no application process remained to kill. The retained
+  runner log is `20260728T031733Z-tessellation-run1.log`, and no retry was
+  attempted. Generated ACO uses `s14` as RADV's indirect descriptor-set-table
+  pointer for the separately compiled HS. openagc-psbc API v7 now exports that
+  SGPR kind, and the ICD builds a GPU-visible low-address table of bound set
+  pointers and programs the reported register before the draw. The host
+  command regression requires a nonzero table pointer, a nonzero set-1 entry,
+  and the matching PM4 write. Both seven-test host configurations pass and the
+  Prospero ELF links with `-lunwind -lc++abi -lc++ -lm`; corrected ELF SHA-256
+  is `6f356b0ed9eb4c243feefc281bb6074f198fa356c4a9204068b503f919a4af61`.
+  It awaits one bounded run after a fresh console-availability signal.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
@@ -174,6 +184,9 @@ Implemented and host-verified:
   with the same validated OpenAGC buffer-descriptor path used by compute. A TCS
   command-recording test binds a storage buffer at set 1 and verifies the fused
   tessellation draw can patch its compiler-selected descriptor-table SGPR.
+  Separately compiled merged stages use RADV's indirect-set ABI: the ICD writes
+  bound set addresses into a transient GPU-visible pointer table and programs
+  its compiler-reported SGPR rather than treating it as a direct set pointer.
 - Vulkan sampler objects now translate nearest/linear filtering, mip filtering,
   repeat/mirror/clamp modes, LOD state, comparison, and standard border colors
   into OpenAGC sampler descriptors. Graphics descriptor preparation supports
