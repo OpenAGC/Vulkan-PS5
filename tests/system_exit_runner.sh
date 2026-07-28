@@ -31,6 +31,7 @@ printf '%s\n' \
     '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui' \
     '[SceLncService] KillApp() appId={0x00002016} is requested from 0x00002016' \
     '[AppMgr] All processes exited'
+printf '\000'
 case "${FAKE_KLOG_MODE:-baseline}" in
     clean) ;;
     baseline)

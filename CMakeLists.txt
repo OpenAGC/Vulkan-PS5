@@ -526,6 +526,20 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endforeach()
   if(PROSPERO)
     target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)
+    target_link_libraries(vulkan_ps5_indexed_textured_example PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_mirror_clamp_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_vertex_divisor_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_sampler_anisotropy_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_indirect_draw_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_indirect_parameters_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_buffer_copy_example PRIVATE
+      SceSystemService)
     add_executable(vulkan_ps5_process_cleanup examples/process_cleanup/main.c)
     set_target_properties(vulkan_ps5_process_cleanup PROPERTIES SUFFIX ".elf")
     target_compile_features(vulkan_ps5_process_cleanup PRIVATE c_std_11)

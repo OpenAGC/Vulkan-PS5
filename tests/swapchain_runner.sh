@@ -27,6 +27,7 @@ EOF
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
 printf '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game\n'
+printf '\000'
 printf '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui\n'
 case "${FAKE_KLOG_MODE:-clean}" in
     clean)

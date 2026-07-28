@@ -44,7 +44,13 @@ qualification to one BaseVertex/BaseInstance indirect draw without DrawID or
 multi-draw expansion. That diagnostic exposed the remaining fault: the ICD
 left the non-indexed draw initiator at the indexed/DMA value zero. It now emits
 gfx1013 `DI_SRC_SEL_AUTO_INDEX` value two for non-indexed indirect draws and
-zero for indexed indirect draws, with both exact packet tails host-tested.
+zero for indexed indirect draws, with both exact packet tails host-tested. The
+corrected FW 5.50 run completed the GPU work, produced the exact green readback,
+and did not reset the GPU. Its later SIGSEGV occurred only after PASS while
+returning through the raw-ELF exit path. Prospero samples now self-terminate
+through SystemService after Vulkan cleanup, and bounded runners strip embedded
+NUL bytes from klog captures before PID and lifecycle checks. Runner tests cover
+that binary-log case explicitly.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
 packets for every Vulkan copy region. Recording validates bound memory,

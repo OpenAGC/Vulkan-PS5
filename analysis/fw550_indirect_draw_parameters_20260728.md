@@ -87,8 +87,28 @@ single-indirect hardware fixture likewise used value two. Vulkan now emits
 initiator two for non-indexed and zero for indexed, and exact command tests
 lock both packet tails.
 
-The corrected one-draw Prospero candidate SHA-256 is
-`2692929133f28e936d1035db74df1da535263fc7d887f2fb7cf09d784c86e1d8`.
-All 20 host tests pass, the full Prospero build passes, and the required
-`-lunwind`, `-lc++abi`, `-lc++`, and `-lm` link set is retained. One fresh
-bounded run is required before the indirect feature bits can be promoted.
+The initiator-corrected one-draw candidate launched as native-game PID 85. It
+completed the GPU submission without a reset and produced the exact readback
+oracle `indirect_parameters: PASS green=5736 firstVertex=1 firstInstance=1
+draws=1`. This hardware-qualifies the corrected non-indexed initiator and the
+BaseVertex/BaseInstance path at the one-draw scope. After printing PASS, the
+sample returned through the raw-ELF exit path and received a separate SIGSEGV
+at RIP `0x4000bb`; the graphics queue was already complete. The runner also
+encountered a NUL byte in the captured klog, causing its text parser to reject
+otherwise useful evidence. Evidence is retained in:
+
+- `examples/qualification-logs/20260728T091416Z-indirect-parameters-run1.log`
+- `examples/qualification-logs/20260728T091416Z-indirect-parameters-run1-sanitized.klog`
+
+The rebuilt samples now terminate through the qualified SystemService self-kill
+lifecycle after Vulkan cleanup instead of returning from `main`. Every bounded
+hardware runner removes NUL bytes from captured kernel logs before PID and
+lifecycle parsing; all seven runner regressions inject a real NUL byte. The new
+one-draw Prospero candidate SHA-256 is
+`f2b139a1629141914462a8058ff1ebe5f21da40fd3c8eddf94d6960b6945feb8`.
+All 20 normal host tests and all runner safety tests pass, the full Prospero
+build passes, and the required `-lunwind`, `-lc++abi`, `-lc++`, and `-lm` link
+set is retained. One bounded lifecycle rerun is required before this gate is
+cleanly closed. Public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+`shaderDrawParameters` remain false until their complete multi-draw and shader
+semantics are hardware-qualified.

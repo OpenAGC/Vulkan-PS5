@@ -56,6 +56,12 @@ latest_eboot_pid() {
         tail -n 1
 }
 
+sanitize_klog() {
+    sanitized="$1.sanitized"
+    tr -d '\000' <"$1" >"$sanitized"
+    mv "$sanitized" "$1"
+}
+
 mkdir -p "$log_dir"
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-swapchain-run1.log"
@@ -68,6 +74,7 @@ capture_klog() {
         echo "kernel-log snapshot is empty: $klog" >&2
         return 1
     fi
+    sanitize_klog "$klog"
 }
 
 echo "FW550 swapchain run 1/1"

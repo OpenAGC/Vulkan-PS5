@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../system_service_exit.h"
+
 #define BUFFER_SIZE 256u
 
 #define VK_CHECK(expression) do { \
@@ -192,5 +194,8 @@ int main(void)
     vkFreeMemory(device, source_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(OPENAGC_PROSPERO)
+    vulkan_ps5_system_service_exit("buffer_copy");
+#endif
     return status;
 }

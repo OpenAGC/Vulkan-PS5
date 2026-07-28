@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../system_service_exit.h"
+
 #if defined(VULKAN_PS5_INDIRECT_DRAW_PROBE) || \
     defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
 #define VULKAN_PS5_ANY_INDIRECT_PROBE 1
@@ -869,5 +871,8 @@ int main(void)
     vkFreeMemory(device, target_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(OPENAGC_PROSPERO)
+    vulkan_ps5_system_service_exit(SAMPLE_NAME);
+#endif
     return status;
 }

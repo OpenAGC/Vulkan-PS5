@@ -37,6 +37,12 @@ latest_eboot_pid() {
         tail -n 1
 }
 
+sanitize_klog() {
+    sanitized="$1.sanitized"
+    tr -d '\000' <"$1" >"$sanitized"
+    mv "$sanitized" "$1"
+}
+
 mkdir -p "$log_dir"
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-indirect-draw-run1.log"
@@ -48,6 +54,7 @@ if ! "$script_dir/deploy_websrv.sh" "$elf" \
     vulkan_ps5_indirect_draw >"$log" 2>&1; then
     sleep "$klog_settle_delay"
     nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || true
+    if [ -s "$klog" ]; then sanitize_klog "$klog"; fi
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
         kill_exact_pid "$failed_pid" || true
@@ -62,6 +69,7 @@ if ! nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || [ ! -s "$klog" ]; then
     echo "indirect-draw klog capture failed: $klog" >&2
     exit 1
 fi
+sanitize_klog "$klog"
 sed -n '1,160p' "$log"
 target_pid=$(latest_eboot_pid "$klog")
 if [ -z "$target_pid" ]; then

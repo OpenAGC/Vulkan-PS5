@@ -43,6 +43,12 @@ latest_eboot_pid() {
         tail -n 1
 }
 
+sanitize_klog() {
+    sanitized="$1.sanitized"
+    tr -d '\000' <"$1" >"$sanitized"
+    mv "$sanitized" "$1"
+}
+
 mkdir -p "$log_dir"
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-${file_stem}.log"
@@ -54,6 +60,7 @@ if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
     "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
     sleep "$klog_settle_delay"
     nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || true
+    if [ -s "$klog" ]; then sanitize_klog "$klog"; fi
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
         kill_exact_pid "$failed_pid" || true
@@ -68,6 +75,7 @@ if ! nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || [ ! -s "$klog" ]; then
     echo "${display_name} klog capture failed: $klog" >&2
     exit 1
 fi
+sanitize_klog "$klog"
 sed -n '1,160p' "$log"
 if ! grep -E "$success_regex" "$log" >/dev/null || \
    grep -F "$failure_pattern" "$log" >/dev/null; then
