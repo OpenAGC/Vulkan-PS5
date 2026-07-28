@@ -40,10 +40,12 @@
   22,118 `REPLACE 0x5a` writes exactly matching color coverage; the expanded
   `20260728T003956Z` full gate passed all 12 runs.
   Geometry draw recording and its deterministic standalone Prospero ELF passed
-  twice on FW 5.50. The first tessellation run safely exposed missing DCB ring
-  programming; the corrected OpenAGC ring setup is host-covered and awaits two
-  hardware passes. Both feature bits remain disabled until their standard
-  feature-request paths are enabled and rerun.
+  twice on FW 5.50. Tessellation diagnostics safely fixed missing DCB ring
+  programming and separated the basic OpenAGC-qualified shader dataflow from
+  still-unqualified offchip patch-output reads. The revised basic gate awaits
+  two hardware passes. Geometry can then advance through its standard feature
+  request path; tessellation stays disabled until patch-output reads are fixed
+  and hardware-qualified as well.
 
 ## Summary
 

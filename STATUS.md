@@ -98,8 +98,12 @@ Implemented and host-verified:
   attempt returned safely with a black target and exposed a missing DCB ring
   programming call. Recording now emits OpenAGC's typed tessellation-ring
   setup before the draw, and the host regression requires all four ring UC
-  registers plus `VGT_TF_PARAM`. The corrected ELF still requires two FW 5.50
-  passes before advertising `tessellationShader`.
+  registers plus `VGT_TF_PARAM`. A second black result left offchip
+  patch-output reads as the only material difference from OpenAGC's passing
+  shader path. The basic hardware gate now follows OpenAGC's qualified
+  constant-position dataflow, while patch-output reads remain explicitly
+  unqualified. Even after the revised ELF passes twice, `tessellationShader`
+  must remain false until patch-output reads are fixed and hardware-qualified.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

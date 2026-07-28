@@ -69,11 +69,13 @@ feature-request path is enabled and rerun.
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
 distinct mapped-memory coverage oracle exercises the shared factor/offchip
 rings, ring descriptor table, fused Wave32 LS+HS and TES+NGG records, and
-`DRAW_INDEX_AUTO`. A safe first FW 5.50 launch returned a black target and
-identified missing command-buffer ring programming; the corrected recorder
-now emits OpenAGC's typed ring setup before the draw. Its Prospero ELF also
-cross-links with the required target runtimes; `tessellationShader` remains
-false until the corrected path passes twice.
+`DRAW_INDEX_AUTO`. Two safe black-target diagnostics first identified and fixed
+missing command-buffer ring programming, then left unqualified offchip
+patch-output reads as the only material difference from OpenAGC's passing
+path. The basic hardware gate now uses OpenAGC's qualified constant-position
+shader dataflow. Its Prospero ELF also cross-links with the required target
+runtimes; `tessellationShader` remains false until patch-output reads are fixed
+and separately hardware-qualified, regardless of the basic sample result.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
