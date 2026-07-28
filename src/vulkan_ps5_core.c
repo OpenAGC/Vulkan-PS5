@@ -1455,6 +1455,8 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
                               OpenAgcPsbcStage psbc_stage,
                               const VkPipelineShaderStageCreateInfo *pre_stage,
                               OpenAgcPsbcStage psbc_pre_stage,
+                              const VkPipelineShaderStageCreateInfo *interface_stage,
+                              OpenAgcPsbcStage psbc_interface_stage,
                               const OpenAgcPsbcPipelineContext *context,
                               OpenAgcPsbcOutput *output) {
     if (!stage || stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
@@ -1464,15 +1466,27 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
         (pre_stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
          !pre_stage->module || !pre_stage->pName))
         return VK_ERROR_INITIALIZATION_FAILED;
+    if (interface_stage &&
+        (interface_stage->sType !=
+             VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
+         !interface_stage->module || !interface_stage->pName))
+        return VK_ERROR_INITIALIZATION_FAILED;
     const VkPs5ShaderModule *module = (const VkPs5ShaderModule *)stage->module;
     const VkPs5ShaderModule *pre_module = pre_stage ?
         (const VkPs5ShaderModule *)pre_stage->module : NULL;
-    PsbcSpecialization specialization, pre_specialization;
+    const VkPs5ShaderModule *interface_module = interface_stage ?
+        (const VkPs5ShaderModule *)interface_stage->module : NULL;
+    PsbcSpecialization specialization, pre_specialization,
+                       interface_specialization;
     VkResult result = translate_specialization(stage->pSpecializationInfo,
                                                 &specialization);
     if (result != VK_SUCCESS) return result;
     result = translate_specialization(pre_stage ? pre_stage->pSpecializationInfo : NULL,
                                       &pre_specialization);
+    if (result != VK_SUCCESS) return result;
+    result = translate_specialization(
+        interface_stage ? interface_stage->pSpecializationInfo : NULL,
+        &interface_specialization);
     if (result != VK_SUCCESS) return result;
     const OpenAgcPsbcCompileInfo info = {
         .api_version = OPENAGC_PSBC_API_VERSION,
@@ -1489,6 +1503,17 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
         .pre_specialization_constant_count = pre_specialization.count,
         .pre_specialization_data = pre_specialization.data,
         .pre_specialization_data_size = pre_specialization.data_size,
+        .interface_stage = psbc_interface_stage,
+        .interface_spirv = interface_module ? interface_module->code : NULL,
+        .interface_spirv_size = interface_module ?
+            interface_module->code_size : 0,
+        .interface_entry_point = interface_stage ? interface_stage->pName : NULL,
+        .interface_specialization_constants = interface_specialization.count ?
+            interface_specialization.constants : NULL,
+        .interface_specialization_constant_count =
+            interface_specialization.count,
+        .interface_specialization_data = interface_specialization.data,
+        .interface_specialization_data_size = interface_specialization.data_size,
         .specialization_constants = specialization.count ?
             specialization.constants : NULL,
         .specialization_constant_count = specialization.count,
@@ -1647,6 +1672,7 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         VkResult result = compile_stage(&create->stage, OPENAGC_PSBC_STAGE_COMPUTE,
+                                        NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                         NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                         &context, &pipeline->stages[0]);
         if (result != VK_SUCCESS) {
@@ -1880,6 +1906,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             context.wave32 = true;
             result = compile_stage(tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                   tess_evaluation,
+                                   OPENAGC_PSBC_STAGE_TESS_EVALUATION,
                                    &context, &pipeline->stages[compiled]);
             if (result == VK_SUCCESS) {
                 pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_TESS_CONTROL;
@@ -1894,6 +1922,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                                OPENAGC_PSBC_STAGE_TESS_EVALUATION,
                     geometry ? tess_evaluation : NULL,
                     OPENAGC_PSBC_STAGE_TESS_EVALUATION,
+                    tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
                     &context, &pipeline->stages[compiled]);
                 if (result == VK_SUCCESS) {
                     pipeline->stage_types[compiled] = geometry ?
@@ -1907,6 +1936,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             context.wave32 = true;
             result = compile_stage(geometry, OPENAGC_PSBC_STAGE_GEOMETRY,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
+                                   NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
             if (result == VK_SUCCESS) {
                 pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_GEOMETRY;
@@ -1917,6 +1947,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             context.wave32 = true;
             result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
+                                   NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
             if (result == VK_SUCCESS) {
                 pipeline->stage_types[compiled] = OPENAGC_PSBC_STAGE_VERTEX;
@@ -1926,6 +1957,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (result == VK_SUCCESS) {
             context.enable_ngg = false;
             result = compile_stage(fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
+                                   NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
             if (result == VK_SUCCESS) {

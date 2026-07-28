@@ -110,17 +110,20 @@ Implemented and host-verified:
   `20260728T013031Z-tessellation-run1.log`) and is hardware-qualified at that
   scope. `tessellationShader` remains false until patch-output reads are fixed
   and hardware-qualified.
-  The next patch-output-read candidate no longer uses the fixture-specific
-  `TCS_OFFCHIP_LAYOUT` constant. openagc-psbc API v4 reports the linked LS/HS
+  The patch-output-read candidate no longer uses the fixture-specific
+  `TCS_OFFCHIP_LAYOUT` constant. openagc-psbc reports the linked LS/HS
   output counts, patch/control-point counts, primitive mode, and tess-factor
   reads for each compiled pipeline; the ICD validates those values and asks
   OpenAGC to build separate TCS and TES layout words. Host command-recording
-  tests verify that both compiler-derived values reach PM4. This candidate is
-  not hardware-qualified yet. Its first bounded FW 5.500.008 run returned
+  tests verify that both compiler-derived values reach PM4. Its first bounded
+  FW 5.500.008 run returned
   cleanly without a hang or kernel panic but produced a zeroed target
-  (`20260728T015236Z-tessellation-run1.log`). The next compiler fix must link
-  the TCS-output/TES-input interface so both separately compiled programs use
-  the same offchip location remap; no automatic retry was attempted.
+  (`20260728T015236Z-tessellation-run1.log`); no automatic retry was attempted.
+  openagc-psbc API v5 now accepts a non-executable adjacent interface module,
+  and the ICD supplies TES to TCS compilation and TCS to TES/TES+GS
+  compilation. This links both separately emitted programs to the same
+  offchip location remap. All seven host tests and the Prospero cross-build
+  pass, but this revised candidate is not hardware-qualified yet.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

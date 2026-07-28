@@ -81,10 +81,14 @@ green pixels, hardware-qualifying the basic standalone workload.
 separately hardware-qualified.
 
 The current unqualified candidate derives its TCS/TES offchip layout words
-from openagc-psbc API v4 metadata and OpenAGC's typed layout builder rather
-than reusing the OpenAGC fixture constant. Host command-recording tests cover
-the compiler-derived PM4 values; the public feature bit remains disabled until
-the restored patch-output sample passes the bounded hardware gate twice.
+from openagc-psbc API v5 metadata and OpenAGC's typed layout builder rather
+than reusing the OpenAGC fixture constant. Pipeline creation also supplies the
+adjacent TES module while compiling TCS and the adjacent TCS module while
+compiling TES or TES+GS. The compiler links that non-executable interface
+module so both separately emitted programs share one offchip location remap.
+Host command-recording tests cover the linked compiler path and derived PM4
+values; the public feature bit remains disabled until the restored patch-output
+sample passes the bounded hardware gate twice.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
