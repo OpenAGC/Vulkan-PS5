@@ -34,7 +34,11 @@ static uint32_t find_memory_type(VkPhysicalDevice physical, uint32_t bits,
 int main(void) {
     atomic_init(&validation_messages, 0);
     const char *layers[] = { "VK_LAYER_KHRONOS_validation" };
-    const char *extensions[] = { VK_EXT_DEBUG_UTILS_EXTENSION_NAME };
+    const char *extensions[] = {
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME,
+    };
     VkDebugUtilsMessengerCreateInfoEXT debug_info = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
         .messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
@@ -55,7 +59,7 @@ int main(void) {
         .pApplicationInfo = &app,
         .enabledLayerCount = 1,
         .ppEnabledLayerNames = layers,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = 3,
         .ppEnabledExtensionNames = extensions,
     };
     VkInstance instance = VK_NULL_HANDLE;
@@ -79,6 +83,20 @@ int main(void) {
     assert(properties.properties.vendorID == 0x1002);
     assert(maintenance.maxMemoryAllocationSize != 0);
 
+    VkHeadlessSurfaceCreateInfoEXT surface_info = {
+        .sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT,
+    };
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    assert(vkCreateHeadlessSurfaceEXT(instance, &surface_info, NULL, &surface) ==
+           VK_SUCCESS);
+    VkSurfaceCapabilitiesKHR surface_capabilities;
+    assert(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        physical, surface, &surface_capabilities) == VK_SUCCESS);
+    uint32_t surface_format_count = 1;
+    VkSurfaceFormatKHR surface_format;
+    assert(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        physical, surface, &surface_format_count, &surface_format) == VK_SUCCESS);
+
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queue_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -90,11 +108,37 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames =
+            (const char *const[]){VK_KHR_SWAPCHAIN_EXTENSION_NAME},
     };
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
+
+    VkSwapchainCreateInfoKHR swapchain_info = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = surface,
+        .minImageCount = surface_capabilities.minImageCount,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
+        .imageExtent = surface_capabilities.currentExtent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .preTransform = surface_capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+        .clipped = VK_TRUE,
+    };
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    assert(vkCreateSwapchainKHR(device, &swapchain_info, NULL, &swapchain) ==
+           VK_SUCCESS);
+    uint32_t swapchain_image_count = 0;
+    assert(vkGetSwapchainImagesKHR(device, swapchain,
+        &swapchain_image_count, NULL) == VK_SUCCESS);
+    assert(swapchain_image_count == 3);
 
     VkBufferCreateInfo buffer_info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -233,7 +277,9 @@ int main(void) {
     vkFreeMemory(device, image_memory, NULL);
     vkDestroyBuffer(device, buffer, NULL);
     vkFreeMemory(device, buffer_memory, NULL);
+    vkDestroySwapchainKHR(device, swapchain, NULL);
     vkDestroyDevice(device, NULL);
+    vkDestroySurfaceKHR(instance, surface, NULL);
     vkDestroyInstance(instance, NULL);
     assert(atomic_load(&validation_messages) == 0);
     return 0;

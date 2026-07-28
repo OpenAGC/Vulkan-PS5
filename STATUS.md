@@ -57,10 +57,8 @@ Implemented:
 
 Deliberately unavailable before later milestones:
 
-- Geometry feature advertisement until its standard feature-request path is
-  enabled and verified.
 - Sparse and protected resources, external handles, multiview, YCbCr conversion,
-  timeline semaphores, descriptor indexing, and VideoOut WSI.
+  timeline semaphores, and descriptor indexing.
 
 ## Milestone 3: OpenAGC command emission (qualified)
 
@@ -374,3 +372,29 @@ FW 5.50 compute/triangle hardware gate:
   query then passed twice with `samples=18432 green=18432`; query is restored
   to the repeated Milestone 3 regression suite. The staged probes remain for
   isolating lifecycle, reset, idle-ZPASS, and live-counting regressions.
+
+## Milestone 4: VideoOut WSI (host qualified, hardware gate pending)
+
+Implemented:
+
+- Standard `VK_KHR_surface`, `VK_EXT_headless_surface`, and
+  `VK_KHR_swapchain` entrypoints and proc-table dispatch, including device-group
+  present queries and `vkAcquireNextImage2KHR`.
+- A fixed, capability-derived 1920x1080 BGRA8-sRGB FIFO surface contract with
+  three Vulkan-owned linear images backed by direct write-combined memory.
+- Thread-safe acquire tracking, binary semaphore/fence handoff, FIFO present
+  after the queue's synchronous EOP completion, bounded VideoOut waits, and
+  old-swapchain retirement/recreation.
+- OpenAGC owns the FW 5.50 linear-registration patch, immediate byte-verified
+  restoration, VideoOut registration, flip equeue, and deterministic teardown.
+- Direct host WSI tests cover enumeration, `VK_INCOMPLETE`, exhaustion,
+  acquire/present synchronization, device groups, and recreation. All eight
+  host tests and the WSI-enabled Validation Layers test pass with zero messages.
+- `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
+  ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
+  `bbb5e02d340d60b582a52f5b9f631cf21b08b0ec463b8689f7b8c23363226760`.
+
+Pending:
+
+- One bounded FW 5.50 1,800-frame run and a post-run console responsiveness
+  probe. No automatic retry is permitted.

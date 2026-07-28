@@ -2,8 +2,9 @@
 
 Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
 current implementation includes the host-testable Milestone 1 ICD, the
-Milestone 2 runtime-pipeline path, and the first Milestone 3 OpenAGC DCB
-recording path. It exposes the
+Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3 OpenAGC
+DCB path, and the host-qualified Milestone 4 headless-surface/swapchain path.
+It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
 synchronization objects, loader dispatch, a static SDK library, and a
@@ -35,6 +36,27 @@ sufficient—the packages must be built and installed into the SDK prefix.
 
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
+
+## Headless surface and swapchain sample
+
+`VK_EXT_headless_surface` is the standard PS5 VideoOut surface. The ICD
+advertises `VK_KHR_surface`, `VK_EXT_headless_surface`, and `VK_KHR_swapchain`,
+reports a fixed 1920x1080 BGRA8-sRGB FIFO contract, and owns three linear
+write-combined scanout images. Firmware patching, buffer registration, flip
+events, bounded waits, and teardown remain inside OpenAGC.
+
+`vulkan_ps5_swapchain_example` uses only standard Vulkan calls and runs 1,800
+acquire/submit/present frames with binary semaphores and a fence. Its host run,
+the eight-test ICD suite, and Validation Layers pass; its Prospero ELF links
+with `-lunwind -lc++abi -lc++ -lm`. Run exactly one bounded FW 5.50 gate after
+an explicit console-availability signal:
+
+```sh
+PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
+```
+
+The runner never retries automatically. On timeout it asks ps5debug-NG to kill
+only the matching qualification process before returning failure.
 
 ## Standalone compute and triangle samples
 

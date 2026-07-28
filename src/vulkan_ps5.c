@@ -159,6 +159,24 @@ void vk_ps5_device_free(VkDevice device_handle, const VkAllocationCallbacks *all
     ps5_free(selected, ptr);
 }
 
+void *vk_ps5_instance_alloc(VkInstance instance_handle,
+                            const VkAllocationCallbacks *allocator,
+                            size_t size, size_t alignment,
+                            VkSystemAllocationScope scope) {
+    VkPs5Instance *instance = (VkPs5Instance *)instance_handle;
+    const VkAllocationCallbacks *selected = allocator;
+    if (!selected && instance) selected = instance_allocator(instance);
+    return ps5_alloc(selected, size, alignment, scope);
+}
+
+void vk_ps5_instance_free(VkInstance instance_handle,
+                          const VkAllocationCallbacks *allocator, void *ptr) {
+    VkPs5Instance *instance = (VkPs5Instance *)instance_handle;
+    const VkAllocationCallbacks *selected = allocator;
+    if (!selected && instance) selected = instance_allocator(instance);
+    ps5_free(selected, ptr);
+}
+
 VkResult vk_ps5_set_device_loader_data(VkDevice device_handle, void *object) {
     if (!device_handle || !object) return VK_ERROR_INITIALIZATION_FAILED;
     set_loader_magic_value(object);
@@ -255,6 +273,9 @@ static VkResult enumerate_items(uint32_t total, size_t item_size, const void *it
 }
 
 static const VkExtensionProperties instance_extensions[] = {
+    { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION },
+    { VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME,
+      VK_EXT_HEADLESS_SURFACE_SPEC_VERSION },
     { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, 2 },
     { VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME, 1 },
     { VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME, 1 },
@@ -263,6 +284,7 @@ static const VkExtensionProperties instance_extensions[] = {
 };
 
 static const VkExtensionProperties device_extensions[] = {
+    { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
     { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
       VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
 };
@@ -1381,6 +1403,12 @@ static const ProcEntry instance_procs[] = {
     ENTRY(vkGetPhysicalDeviceExternalSemaphoreProperties),
     ENTRY(vkEnumerateDeviceExtensionProperties), ENTRY(vkEnumerateDeviceLayerProperties),
     ENTRY(vkCreateDevice),
+    ENTRY(vkDestroySurfaceKHR), ENTRY(vkCreateHeadlessSurfaceEXT),
+    ENTRY(vkGetPhysicalDeviceSurfaceSupportKHR),
+    ENTRY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR),
+    ENTRY(vkGetPhysicalDeviceSurfaceFormatsKHR),
+    ENTRY(vkGetPhysicalDeviceSurfacePresentModesKHR),
+    ENTRY(vkGetPhysicalDevicePresentRectanglesKHR),
     ALIAS("vkEnumeratePhysicalDeviceGroupsKHR", vkEnumeratePhysicalDeviceGroups),
     ALIAS("vkGetPhysicalDeviceFeatures2KHR", vkGetPhysicalDeviceFeatures2),
     ALIAS("vkGetPhysicalDeviceProperties2KHR", vkGetPhysicalDeviceProperties2),
@@ -1406,6 +1434,11 @@ static const ProcEntry device_procs[] = {
     ENTRY(vkQueueWaitIdle), ENTRY(vkAllocateMemory), ENTRY(vkFreeMemory),
     ENTRY(vkMapMemory), ENTRY(vkUnmapMemory), ENTRY(vkFlushMappedMemoryRanges),
     ENTRY(vkInvalidateMappedMemoryRanges),
+    ENTRY(vkCreateSwapchainKHR), ENTRY(vkDestroySwapchainKHR),
+    ENTRY(vkGetSwapchainImagesKHR), ENTRY(vkAcquireNextImageKHR),
+    ENTRY(vkAcquireNextImage2KHR), ENTRY(vkQueuePresentKHR),
+    ENTRY(vkGetDeviceGroupPresentCapabilitiesKHR),
+    ENTRY(vkGetDeviceGroupSurfacePresentModesKHR),
     ENTRY(vkQueueSubmit), ENTRY(vkQueueBindSparse),
     ENTRY(vkGetDeviceMemoryCommitment), ENTRY(vkBindBufferMemory),
     ENTRY(vkBindImageMemory), ENTRY(vkGetBufferMemoryRequirements),

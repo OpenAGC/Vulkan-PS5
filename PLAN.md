@@ -144,6 +144,19 @@
   post-run websrv checks confirmed the console remained responsive, and
   neither was retried. This closes the public `geometryShader` feature gate;
   Milestone 4 VideoOut WSI work can now resume.
+  Milestone 4 now has a host-qualified implementation: standard headless
+  surface and swapchain entrypoints expose only a fixed 1920x1080 BGRA8-sRGB
+  FIFO mode, allocate three direct write-combined scanout images, and route all
+  firmware patching, registration, event queues, bounded flip waits, and
+  teardown through OpenAGC. The direct WSI test covers exhaustion,
+  synchronization, device groups, and recreation; all eight host tests and the
+  WSI-enabled VVL test pass without messages. The standalone sample completes
+  1,800 host frames and its Prospero ELF links with
+  `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
+  `bbb5e02d340d60b582a52f5b9f631cf21b08b0ec463b8689f7b8c23363226760`.
+  One bounded FW 5.50 run remains before this
+  milestone is hardware qualified; the runner has no automatic retry and uses
+  ps5debug-NG cleanup only on a timeout/failure.
 
 ## Summary
 

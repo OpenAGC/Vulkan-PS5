@@ -64,7 +64,8 @@ set_target_properties(OpenAgcPsbc::Compiler PROPERTIES
 
 add_library(vulkan_ps5_objects OBJECT
   src/vulkan_ps5.c
-  src/vulkan_ps5_core.c)
+  src/vulkan_ps5_core.c
+  src/vulkan_ps5_wsi.c)
 set_target_properties(vulkan_ps5_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(vulkan_ps5_objects PRIVATE c_std_11)
 target_include_directories(vulkan_ps5_objects
@@ -111,6 +112,9 @@ if(VULKAN_PS5_BUILD_TESTS)
   target_link_libraries(vulkan_ps5_robustness_test
     PRIVATE vulkan_ps5_static Threads::Threads)
   add_test(NAME vulkan_ps5.robustness COMMAND vulkan_ps5_robustness_test)
+  add_executable(vulkan_ps5_wsi_test tests/wsi.c)
+  target_link_libraries(vulkan_ps5_wsi_test PRIVATE vulkan_ps5_static)
+  add_test(NAME vulkan_ps5.wsi COMMAND vulkan_ps5_wsi_test)
   find_program(GLSLANG_VALIDATOR glslangValidator)
   if(GLSLANG_VALIDATOR)
     set(PIPELINE_SHADER_OUTPUTS)
@@ -193,6 +197,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VERBATIM)
   add_executable(vulkan_ps5_compute_example
     examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  add_executable(vulkan_ps5_swapchain_example examples/swapchain/main.c)
   set(VULKAN_PS5_TRIANGLE_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_vert_spv.h")
   set(VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER
@@ -356,6 +361,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example
+      vulkan_ps5_swapchain_example
       vulkan_ps5_mrt_example vulkan_ps5_query_example
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
       vulkan_ps5_query_idle_probe
@@ -367,6 +373,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_mrt_example
+      vulkan_ps5_swapchain_example
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example)

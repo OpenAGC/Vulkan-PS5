@@ -57,12 +57,19 @@ int main(void) {
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 1);
-    VkExtensionProperties extension;
+    assert(extension_count == 2);
+    VkExtensionProperties extensions[2];
     assert(vkEnumerateDeviceExtensionProperties(
-        physical, NULL, &extension_count, &extension) == VK_SUCCESS);
-    assert(strcmp(extension.extensionName,
-                  VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0);
+        physical, NULL, &extension_count, extensions) == VK_SUCCESS);
+    VkBool32 has_host_query_reset = VK_FALSE;
+    VkBool32 has_swapchain = VK_FALSE;
+    for (uint32_t i = 0; i < extension_count; ++i) {
+        has_host_query_reset |= strcmp(extensions[i].extensionName,
+            VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
+        has_swapchain |= strcmp(extensions[i].extensionName,
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0;
+    }
+    assert(has_host_query_reset && has_swapchain);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,

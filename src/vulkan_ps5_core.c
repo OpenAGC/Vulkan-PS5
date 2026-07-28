@@ -15,6 +15,31 @@ typedef struct VkPs5Fence { atomic_bool signaled; } VkPs5Fence;
 typedef struct VkPs5Semaphore { atomic_bool signaled; } VkPs5Semaphore;
 typedef struct VkPs5Event { atomic_int status; } VkPs5Event;
 
+VkResult vk_ps5_signal_acquire(VkSemaphore semaphore_handle,
+                               VkFence fence_handle) {
+    if (!semaphore_handle && !fence_handle)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (semaphore_handle)
+        atomic_store(&((VkPs5Semaphore *)semaphore_handle)->signaled, true);
+    if (fence_handle)
+        atomic_store(&((VkPs5Fence *)fence_handle)->signaled, true);
+    return VK_SUCCESS;
+}
+
+VkResult vk_ps5_consume_semaphores(uint32_t semaphore_count,
+                                   const VkSemaphore *semaphores) {
+    if (semaphore_count && !semaphores)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    for (uint32_t i = 0; i < semaphore_count; ++i) {
+        VkPs5Semaphore *semaphore = (VkPs5Semaphore *)semaphores[i];
+        if (!semaphore || !atomic_load(&semaphore->signaled))
+            return VK_NOT_READY;
+    }
+    for (uint32_t i = 0; i < semaphore_count; ++i)
+        atomic_store(&((VkPs5Semaphore *)semaphores[i])->signaled, false);
+    return VK_SUCCESS;
+}
+
 typedef struct VkPs5Buffer {
     VkDeviceSize size;
     VkBufferUsageFlags usage;
