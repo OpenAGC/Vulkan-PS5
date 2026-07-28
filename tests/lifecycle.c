@@ -159,6 +159,8 @@ int main(void) {
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
     assert(features11.shaderDrawParameters == VK_TRUE);
+    assert(features11.variablePointers == VK_TRUE);
+    assert(features11.variablePointersStorageBuffer == VK_TRUE);
     assert(features2.features.depthBiasClamp == VK_TRUE);
     assert(features2.features.depthClamp == VK_TRUE);
     assert(features2.features.drawIndirectFirstInstance == VK_TRUE);
@@ -187,6 +189,17 @@ int main(void) {
     };
     vkGetPhysicalDeviceFeatures2(physical, &shader_draw_features2);
     assert(shader_draw_features.shaderDrawParameters == VK_TRUE);
+
+    VkPhysicalDeviceVariablePointersFeatures variable_pointer_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 variable_pointer_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &variable_pointer_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &variable_pointer_features2);
+    assert(variable_pointer_features.variablePointers == VK_TRUE);
+    assert(variable_pointer_features.variablePointersStorageBuffer == VK_TRUE);
 
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor_features_ext = {
         .sType =
@@ -334,6 +347,8 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
         .pNext = &enabled_divisor,
         .shaderDrawParameters = VK_TRUE,
+        .variablePointers = VK_TRUE,
+        .variablePointersStorageBuffer = VK_TRUE,
     };
     enabled_features2.pNext = &enabled_features11;
     VkDeviceGroupDeviceCreateInfo group_info = {
@@ -367,6 +382,18 @@ int main(void) {
                           &shader_draw_device) == VK_SUCCESS);
     assert(shader_draw_device != VK_NULL_HANDLE);
     vkDestroyDevice(shader_draw_device, NULL);
+    VkPhysicalDeviceVariablePointersFeatures enabled_variable_pointers = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
+        .variablePointers = VK_TRUE,
+        .variablePointersStorageBuffer = VK_TRUE,
+    };
+    VkDeviceCreateInfo variable_pointer_device_info = device_info;
+    variable_pointer_device_info.pNext = &enabled_variable_pointers;
+    VkDevice variable_pointer_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &variable_pointer_device_info, NULL,
+                          &variable_pointer_device) == VK_SUCCESS);
+    assert(variable_pointer_device != VK_NULL_HANDLE);
+    vkDestroyDevice(variable_pointer_device, NULL);
     VkPhysicalDeviceFeatures legacy_geometry_features = {
         .depthBiasClamp = VK_TRUE,
         .depthClamp = VK_TRUE,

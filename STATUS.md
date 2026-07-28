@@ -695,6 +695,21 @@ This closes Milestone 5 at the reusable static SDK/package scope.
 
 ## Milestone 6: Eden compatibility profile (in progress)
 
+`variablePointers` and `variablePointersStorageBuffer` are public through the
+standalone and Vulkan 1.1 Features2 paths, and both request forms are accepted
+at device creation. The bounded 64-invocation SPIR-V probe exercises both
+branches of selected StorageBuffer and Workgroup pointers with an exact
+1,024-dword oracle. The crash investigation isolated a cross-layer wave-mode
+mismatch: openagc-psbc emitted Wave32 compute code, while Vulkan left the
+gfx1013 dispatch initiator at its zero Wave64 default. Vulkan now sets
+OpenAGC's named Wave32 modifier; no shader-side barrier or application
+workaround is required. Both 34/34 normal and ASAN/UBSAN suites, the release
+Prospero build, and repeated public FW 5.50 gates pass. Evidence is retained
+in `20260728T144957Z-variable-pointers-run1.log` and
+`20260728T145026Z-variable-pointers-run1.log`. The live Eden profile is now
+six feature gaps, and the public ELF SHA-256 is
+`d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
+
 Initial audit at `../eden-ps5` revision `39763e7321`:
 
 - Eden requires Vulkan 1.1, four device extensions, 29 feature bits, four

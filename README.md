@@ -11,13 +11,15 @@ Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 30 hard gaps rather than an application-specific bypass.
 Query-complete driver-properties, conservative shader-float-controls, and the
 exact-count occlusion path reduce the live count to 27.
-The current profile has 8 hard feature gaps. The latest closure is core
-`vertexPipelineStoresAndAtomics`: one combined VS/TCS/TES/GS pipeline proves
-an exact atomic marker and direct SSBO store from every applicable
-pre-fragment stage. The final FW 5.50 gate rendered exactly 7,200 green pixels
-through the normal legacy feature-query/device-enable path. Its public-path
-Prospero ELF SHA-256 is
-`e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
+The current profile has 6 hard feature gaps. The latest closure is
+`variablePointers` plus `variablePointersStorageBuffer`. A 64-invocation
+SPIR-V 1.3 compute probe selects distinct StorageBuffer and Workgroup pointers
+on both branches and validates exact mapped-memory output. Investigation found
+that Wave32 ACO code had been dispatched with the Wave64 packet default;
+Vulkan now selects OpenAGC's explicit Wave32 compute modifier. Repeated public
+FW 5.50 gates passed all load, store, Workgroup, and guard checks. The
+public-path Prospero ELF SHA-256 is
+`d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
 `VK_KHR_sampler_mirror_clamp_to_edge` is enumerated and accepted after both its
 internal-path and extension-enabled FW 5.50 probes produced 18,432 gray pixels
 with exact center `0xff808080`, clean process exit, and clean target-only klog.

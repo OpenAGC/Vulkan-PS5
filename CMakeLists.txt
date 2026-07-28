@@ -225,6 +225,11 @@ if(VULKAN_PS5_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.vertex_pipeline_stores_atomics_runner PROPERTIES
       TIMEOUT 15)
+    add_test(NAME vulkan_ps5.variable_pointers_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/variable_pointers_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.variable_pointers_runner PROPERTIES
+      TIMEOUT 15)
     add_test(NAME vulkan_ps5.ps5debug_process_identity
       COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
@@ -329,8 +334,14 @@ endif()
 
 if(VULKAN_PS5_BUILD_EXAMPLES)
   find_program(VULKAN_PS5_GLSLANG_VALIDATOR glslangValidator REQUIRED)
+  find_program(VULKAN_PS5_SPIRV_AS spirv-as REQUIRED)
+  find_program(VULKAN_PS5_SPIRV_VAL spirv-val REQUIRED)
   set(VULKAN_PS5_COMPUTE_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
+  set(VULKAN_PS5_VARIABLE_POINTERS_BINARY
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_variable_pointers.spv")
+  set(VULKAN_PS5_VARIABLE_POINTERS_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_variable_pointers_spv.h")
   add_custom_command(OUTPUT "${VULKAN_PS5_COMPUTE_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
       --vn vulkan_ps5_compute_spv
@@ -340,6 +351,27 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VERBATIM)
   add_executable(vulkan_ps5_compute_example
     examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  add_custom_command(
+    OUTPUT "${VULKAN_PS5_VARIABLE_POINTERS_BINARY}"
+      "${VULKAN_PS5_VARIABLE_POINTERS_HEADER}"
+    COMMAND "${VULKAN_PS5_SPIRV_AS}" --target-env spv1.3
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/variable_pointers/variable_pointers.spvasm"
+      -o "${VULKAN_PS5_VARIABLE_POINTERS_BINARY}"
+    COMMAND "${VULKAN_PS5_SPIRV_VAL}" --target-env vulkan1.1
+      "${VULKAN_PS5_VARIABLE_POINTERS_BINARY}"
+    COMMAND "${CMAKE_COMMAND}"
+      -DINPUT=${VULKAN_PS5_VARIABLE_POINTERS_BINARY}
+      -DOUTPUT=${VULKAN_PS5_VARIABLE_POINTERS_HEADER}
+      -DSYMBOL=vulkan_ps5_variable_pointers_spv
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/variable_pointers/variable_pointers.spvasm"
+      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_spirv.cmake"
+    VERBATIM)
+  add_executable(vulkan_ps5_variable_pointers_probe
+    examples/compute/main.c "${VULKAN_PS5_VARIABLE_POINTERS_HEADER}")
+  target_compile_definitions(vulkan_ps5_variable_pointers_probe PRIVATE
+    VULKAN_PS5_VARIABLE_POINTERS_PROBE=1)
   add_executable(vulkan_ps5_swapchain_example examples/swapchain/main.c)
   set(VULKAN_PS5_TRIANGLE_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_vert_spv.h")
@@ -779,6 +811,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/buffer_copy/main.c)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
+      vulkan_ps5_variable_pointers_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
@@ -804,7 +837,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
-      vulkan_ps5_compute_example vulkan_ps5_triangle_example
+      vulkan_ps5_compute_example vulkan_ps5_variable_pointers_probe
+      vulkan_ps5_triangle_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
       vulkan_ps5_wide_lines_probe
@@ -834,6 +868,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(${example_target} PRIVATE vulkan_ps5_static)
   endforeach()
   if(PROSPERO)
+    target_link_libraries(vulkan_ps5_variable_pointers_probe PRIVATE
+      SceSystemService)
     target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)
     target_link_libraries(vulkan_ps5_depth_bias_clamp_probe PRIVATE
       SceSystemService)

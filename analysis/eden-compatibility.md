@@ -63,14 +63,12 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=8 limits=0 queues=0 total=8
+eden-profile: extensions=0 features=6 limits=0 queues=0 total=6
 ```
 
-The 8 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
-`robustBufferAccess`,
-`sampleRateShading`, `shaderStorageImageWriteWithoutFormat`,
-`variablePointers`, and
-`variablePointersStorageBuffer`.
+The 6 feature gaps are `dualSrcBlend`, `imageCubeArray`, `multiViewport`,
+`robustBufferAccess`, `sampleRateShading`, and
+`shaderStorageImageWriteWithoutFormat`.
 
 These bits must only be enabled as their complete Vulkan and shader semantics
 become hardware-qualified. Eden continuing after logging an unsuitable driver
@@ -305,6 +303,21 @@ exact `green=7200 stages=VS,TCS,TES,GS atomic=4 stores=4`, matching
 SystemService self-exit, no stale process, and only the known single
 `amount=0x4000` baseline warning. The public Prospero ELF SHA-256 is
 `e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
+
+The promoted Vulkan 1.1 `variablePointers` and
+`variablePointersStorageBuffer` features are implemented and
+hardware-qualified. Standalone and `VkPhysicalDeviceVulkan11Features` queries
+report both bits, and device creation accepts both request paths. The bounded
+SPIR-V 1.3 probe uses divergent OpSelect pointers for StorageBuffer reads,
+StorageBuffer writes, and Workgroup writes/reads across 64 invocations, with
+an exact 1,024-dword oracle and zero guards. The earlier corruption and GPU
+faults were caused by dispatching Wave32 ACO code with the Wave64 packet
+default, not by SPIR-V lowering. Vulkan now uses OpenAGC's explicit Wave32
+compute modifier. Both 34/34 normal and ASAN/UBSAN suites pass; repeated public
+FW 5.50 runs at `20260728T144957Z` and `20260728T145026Z` passed the exact
+oracle, exited cleanly, and emitted only the known `amount=0x4000` baseline
+warning. The public Prospero ELF SHA-256 is
+`d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
 
 ## Runtime compatibility
 

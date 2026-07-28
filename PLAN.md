@@ -424,7 +424,16 @@
   `20260728T133515Z-vertex-pipeline-stores-atomics-run1.log`; the public ELF
   SHA-256 is
   `e79e33fe4bc5c8f780e1801456e3ea9bae4a1034148d873b039563ac11dd171a`.
-- The live Eden compatibility profile is now eight feature gaps.
+- `variablePointers` and `variablePointersStorageBuffer` are hardware-qualified
+  through a bounded 64-invocation SPIR-V probe covering both OpSelect branches
+  for StorageBuffer loads/stores and Workgroup stores/loads. The root cause of
+  the earlier corruption was a Wave32 compiler/Wave64 dispatch mismatch;
+  Vulkan now sets OpenAGC's named Wave32 compute modifier. Both 34/34 host
+  suites and repeated public FW 5.50 gates pass. Evidence is retained in
+  `20260728T144957Z-variable-pointers-run1.log` and
+  `20260728T145026Z-variable-pointers-run1.log`; the public ELF SHA-256 is
+  `d6d0669f82d2fcd7bac06099eaee6aa9511c8620744548d0a952001779d2702f`.
+- The live Eden compatibility profile is now six feature gaps.
 
 ## Test Plan and Assumptions
 

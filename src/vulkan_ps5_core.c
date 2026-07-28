@@ -3578,6 +3578,7 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
         .group_count_x = x,
         .group_count_y = y,
         .group_count_z = z,
+        .modifier = AGC_GFX1013_COMPUTE_DISPATCH_WAVE32,
         .resource_tables = tables,
         .num_resource_tables = table_count,
     };

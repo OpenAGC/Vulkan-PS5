@@ -890,8 +890,8 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES: {
             VkPhysicalDeviceVariablePointersFeatures *f =
                 (VkPhysicalDeviceVariablePointersFeatures *)next;
-            f->variablePointersStorageBuffer = VK_FALSE;
-            f->variablePointers = VK_FALSE;
+            f->variablePointersStorageBuffer = VK_TRUE;
+            f->variablePointers = VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_FEATURES:
@@ -929,8 +929,8 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             f->multiview = VK_FALSE;
             f->multiviewGeometryShader = VK_FALSE;
             f->multiviewTessellationShader = VK_FALSE;
-            f->variablePointersStorageBuffer = VK_FALSE;
-            f->variablePointers = VK_FALSE;
+            f->variablePointersStorageBuffer = VK_TRUE;
+            f->variablePointers = VK_TRUE;
             f->protectedMemory = VK_FALSE;
             f->samplerYcbcrConversion = VK_FALSE;
             f->shaderDrawParameters = VK_TRUE;
@@ -1086,9 +1086,6 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES: {
-            const VkPhysicalDeviceVariablePointersFeatures *f =
-                (const VkPhysicalDeviceVariablePointersFeatures *)next;
-            if (f->variablePointersStorageBuffer || f->variablePointers) return VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_FEATURES:
@@ -1117,7 +1114,6 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             if (f->storageBuffer16BitAccess || f->uniformAndStorageBuffer16BitAccess ||
                 f->storagePushConstant16 || f->storageInputOutput16 || f->multiview ||
                 f->multiviewGeometryShader || f->multiviewTessellationShader ||
-                f->variablePointersStorageBuffer || f->variablePointers ||
                 f->protectedMemory || f->samplerYcbcrConversion)
                 return VK_TRUE;
             break;

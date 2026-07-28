@@ -4,15 +4,24 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE)
+#include "vulkan_ps5_variable_pointers_spv.h"
+#define vulkan_ps5_compute_spv vulkan_ps5_variable_pointers_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "variable_pointers"
+#define VALUE_COUNT 1024u
+#define GROUP_COUNT 1u
+#else
 #include "vulkan_ps5_compute_spv.h"
-
+#define SAMPLE_LABEL "compute"
 #define VALUE_COUNT 1024u
 #define GROUP_COUNT (VALUE_COUNT / 64u)
+#endif
 
 #define VK_CHECK(expression) do { \
     VkResult check_result = (expression); \
     if (check_result != VK_SUCCESS) { \
-        printf("compute: %s failed (%d)\n", #expression, check_result); \
+        printf(SAMPLE_LABEL ": %s failed (%d)\n", #expression, check_result); \
         return 1; \
     } \
 } while (0)
@@ -67,8 +76,27 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+#ifdef VULKAN_PS5_VARIABLE_POINTERS_PROBE
+    VkPhysicalDeviceVariablePointersFeatures variable_pointer_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &variable_pointer_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &features2);
+    if (!variable_pointer_features.variablePointers ||
+        !variable_pointer_features.variablePointersStorageBuffer) {
+        printf("variable_pointers: required features are unavailable\n");
+        return 1;
+    }
+    const void *device_features = &variable_pointer_features;
+#else
+    const void *device_features = NULL;
+#endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = device_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
     };
@@ -99,6 +127,12 @@ int main(void)
     VK_CHECK(vkBindBufferMemory(device, buffer, memory, 0));
     VK_CHECK(vkMapMemory(device, memory, 0, buffer_size, 0, &mapped));
     memset(mapped, 0, (size_t)buffer_size);
+#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE)
+    uint32_t *initial_values = mapped;
+    memset(initial_values, 0, (size_t)buffer_size);
+    initial_values[0] = 0x00000100u;
+    initial_values[1] = 0x00000200u;
+#endif
     const VkMappedMemoryRange mapped_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .memory = memory,
@@ -218,8 +252,42 @@ int main(void)
     VK_CHECK(vkQueueSubmit(queue, 1, &submit_info, fence));
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &mapped_range));
-    int status = 0;
     const uint32_t *values = mapped;
+#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE)
+    uint32_t expected[VALUE_COUNT] = {0};
+    expected[0] = 0x00000100u;
+    expected[1] = 0x00000200u;
+    for (uint32_t i = 0; i < 64u; ++i) {
+        expected[2u + i] = (i & 1u) ? 0x00000200u : 0x00000100u;
+        expected[66u + 2u * i + (i & 1u)] = 0x00000400u + i;
+        expected[194u + i] = 0x00000800u + i;
+    }
+    int status = memcmp(values, expected, sizeof(expected)) != 0;
+    if (status) {
+        uint32_t mismatch = 0u;
+        while (mismatch < VALUE_COUNT && values[mismatch] == expected[mismatch])
+            ++mismatch;
+        printf("variable_pointers: mismatch index=%u actual=%08x expected=%08x\n",
+            mismatch, mismatch < VALUE_COUNT ? values[mismatch] : 0u,
+            mismatch < VALUE_COUNT ? expected[mismatch] : 0u);
+        for (uint32_t i = 0; i < 8u; ++i) {
+            printf("variable_pointers: lane=%u load=%08x store_a=%08x store_b=%08x workgroup=%08x\n",
+                i, values[2u + i], values[66u + 2u * i],
+                values[67u + 2u * i], values[194u + i]);
+        }
+        uint32_t unexpected_guards = 0u;
+        for (uint32_t i = 258u;
+             i < VALUE_COUNT && unexpected_guards < 16u; ++i) {
+            if (values[i] == 0u) continue;
+            printf("variable_pointers: guard index=%u value=%08x\n",
+                i, values[i]);
+            ++unexpected_guards;
+        }
+    } else {
+        printf("variable_pointers: PASS invocations=64 storage_load=64 storage_store=64 workgroup=64\n");
+    }
+#else
+    int status = 0;
     for (uint32_t i = 0; i < VALUE_COUNT; ++i) {
         uint32_t expected = i ^ 0x5a5a5a5au;
         if (values[i] != expected) {
@@ -231,6 +299,7 @@ int main(void)
     }
     if (!status)
         printf("compute: PASS %u deterministic values\n", VALUE_COUNT);
+#endif
 
     vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, command_pool, NULL);
@@ -244,5 +313,9 @@ int main(void)
     vkFreeMemory(device, memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) && defined(OPENAGC_PROSPERO)
+    fflush(stdout);
+    vulkan_ps5_system_service_exit(SAMPLE_LABEL);
+#endif
     return status;
 }

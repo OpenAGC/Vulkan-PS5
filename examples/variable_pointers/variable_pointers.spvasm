@@ -1,0 +1,86 @@
+; SPIR-V
+; Version: 1.3
+; Exercises both OpSelect branches on unique StorageBuffer and Workgroup
+; pointers across a hardware-qualified 64-invocation compute workgroup. The
+; host allocation remains the qualified 4096-byte compute size; words 258..1023
+; are zero guards checked by the sample oracle.
+               OpCapability Shader
+               OpCapability VariablePointersStorageBuffer
+               OpCapability VariablePointers
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
+               OpExecutionMode %main LocalSize 64 1 1
+               OpDecorate %gl_GlobalInvocationID BuiltIn GlobalInvocationId
+               OpDecorate %runtime_uint ArrayStride 4
+               OpDecorate %Buffer Block
+               OpMemberDecorate %Buffer 0 Offset 0
+               OpDecorate %buffer DescriptorSet 0
+               OpDecorate %buffer Binding 0
+
+       %void = OpTypeVoid
+    %function = OpTypeFunction %void
+       %bool = OpTypeBool
+       %uint = OpTypeInt 32 0
+     %v3uint = OpTypeVector %uint 3
+     %uint_0 = OpConstant %uint 0
+     %uint_1 = OpConstant %uint 1
+     %uint_2 = OpConstant %uint 2
+    %uint_66 = OpConstant %uint 66
+   %uint_128 = OpConstant %uint 128
+   %uint_194 = OpConstant %uint 194
+   %uint_264 = OpConstant %uint 264
+  %uint_2048 = OpConstant %uint 2048
+  %uint_1024 = OpConstant %uint 1024
+      %int_0 = OpConstant %uint 0
+
+%runtime_uint = OpTypeRuntimeArray %uint
+     %Buffer = OpTypeStruct %runtime_uint
+%ptr_StorageBuffer_Buffer = OpTypePointer StorageBuffer %Buffer
+%ptr_StorageBuffer_uint = OpTypePointer StorageBuffer %uint
+%ptr_Input_v3uint = OpTypePointer Input %v3uint
+%ptr_Input_uint = OpTypePointer Input %uint
+%array_uint_128 = OpTypeArray %uint %uint_128
+%ptr_Workgroup_array = OpTypePointer Workgroup %array_uint_128
+%ptr_Workgroup_uint = OpTypePointer Workgroup %uint
+
+     %buffer = OpVariable %ptr_StorageBuffer_Buffer StorageBuffer
+%gl_GlobalInvocationID = OpVariable %ptr_Input_v3uint Input
+ %workgroup = OpVariable %ptr_Workgroup_array Workgroup
+
+       %main = OpFunction %void None %function
+      %entry = OpLabel
+     %id_ptr = OpAccessChain %ptr_Input_uint %gl_GlobalInvocationID %uint_0
+         %id = OpLoad %uint %id_ptr
+     %parity = OpBitwiseAnd %uint %id %uint_1
+       %cond = OpINotEqual %bool %parity %uint_0
+      %twice = OpShiftLeftLogical %uint %id %uint_1
+
+ %choice_a_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %uint_0
+ %choice_b_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %uint_1
+%choice_ptr = OpSelect %ptr_StorageBuffer_uint %cond %choice_b_ptr %choice_a_ptr
+     %choice = OpLoad %uint %choice_ptr
+ %load_index = OpIAdd %uint %uint_2 %id
+%load_out_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %load_index
+               OpStore %load_out_ptr %choice
+
+%store_a_index = OpIAdd %uint %uint_66 %twice
+%store_b_index = OpIAdd %uint %store_a_index %uint_1
+   %store_a_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %store_a_index
+   %store_b_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %store_b_index
+%store_ptr = OpSelect %ptr_StorageBuffer_uint %cond %store_b_ptr %store_a_ptr
+%store_marker = OpIAdd %uint %uint_1024 %id
+               OpStore %store_ptr %store_marker
+
+       %wg_a = OpAccessChain %ptr_Workgroup_uint %workgroup %twice
+%wg_b_index = OpIAdd %uint %twice %uint_1
+       %wg_b = OpAccessChain %ptr_Workgroup_uint %workgroup %wg_b_index
+     %wg_ptr = OpSelect %ptr_Workgroup_uint %cond %wg_b %wg_a
+  %wg_marker = OpIAdd %uint %uint_2048 %id
+               OpStore %wg_ptr %wg_marker
+               OpControlBarrier %uint_2 %uint_2 %uint_264
+   %wg_value = OpLoad %uint %wg_ptr
+   %wg_index = OpIAdd %uint %uint_194 %id
+%wg_out_ptr = OpAccessChain %ptr_StorageBuffer_uint %buffer %int_0 %wg_index
+               OpStore %wg_out_ptr %wg_value
+               OpReturn
+               OpFunctionEnd
