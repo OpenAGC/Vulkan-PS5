@@ -6,9 +6,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(VULKAN_PS5_INDIRECT_DRAW_PROBE) || \
+    defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
+#define VULKAN_PS5_ANY_INDIRECT_PROBE 1
+#endif
+
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
 #include "vulkan_ps5_indirect_draw_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indirect_draw_vert_spv
+#elif defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
+#include "vulkan_ps5_indirect_parameters_vert_spv.h"
+#define SAMPLE_VERTEX_SPV vulkan_ps5_indirect_parameters_vert_spv
 #else
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
@@ -25,6 +33,10 @@
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
 #define SAMPLE_NAME "indirect_draw"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
+#define SAMPLE_NAME "indirect_parameters"
 #define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 #define SAMPLE_FILTER VK_FILTER_NEAREST
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
@@ -225,7 +237,7 @@ int main(void)
         {{ 0.75f, -0.75f}, {0.75f, 0.25f}},
         {{ 0.00f,  0.75f}, {0.25f, 0.75f}},
     };
-#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+#elif defined(VULKAN_PS5_ANY_INDIRECT_PROBE)
     const Vertex vertices[4] = {
         {{9.0f, 9.0f}, {0.25f, 0.25f}},
         {{-0.35f, -0.50f}, {0.25f, 0.25f}},
@@ -278,11 +290,17 @@ int main(void)
         {VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, NULL, index_memory, 0, VK_WHOLE_SIZE},
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 2, upload_ranges));
+#ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
     const VkDrawIndirectCommand indirect_commands[2] = {
         {3u, 1u, 1u, 1u},
         {3u, 1u, 1u, 2u},
     };
+#else
+    const VkDrawIndirectCommand indirect_commands[1] = {
+        {3u, 1u, 1u, 1u},
+    };
+#endif
     VkBuffer indirect_buffer;
     VkDeviceMemory indirect_memory;
     void *indirect_mapped;
@@ -624,9 +642,14 @@ int main(void)
     VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
 #endif
+#ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
     vkCmdDrawIndirect(command, indirect_buffer, 0u, 2u,
                       sizeof(VkDrawIndirectCommand));
+#else
+    vkCmdDrawIndirect(command, indirect_buffer, 0u, 1u,
+                      sizeof(VkDrawIndirectCommand));
+#endif
 #else
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3,
@@ -678,7 +701,7 @@ int main(void)
             distinct[distinct_count++] = pixel;
     }
 #if !defined(VULKAN_PS5_ANISOTROPY_PROBE) && \
-    !defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+    !defined(VULKAN_PS5_ANY_INDIRECT_PROBE)
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
 #endif
@@ -705,6 +728,26 @@ int main(void)
     } else {
         printf("indirect_draw: PASS green=%u blue=%u firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2\n",
             green, blue);
+    }
+#elif defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
+    uint32_t green = 0u, red = 0u, unexpected = 0u;
+    for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+        if (pixels[i] == 0xff00ff00u)
+            green++;
+        else if (pixels[i] == 0xff0000ffu)
+            red++;
+        else if (pixels[i] != 0u)
+            unexpected++;
+    }
+    if (green < 5000u || green > 6500u || red != 0u || unexpected != 0u ||
+        covered != green || opaque != covered || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("indirect_parameters: mismatch green=%u red=%u unexpected=%u covered=%u\n",
+            green, red, unexpected, covered);
+        status = 1;
+    } else {
+        printf("indirect_parameters: PASS green=%u firstVertex=1 firstInstance=1 draws=1\n",
+            green);
     }
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
     uint32_t linear_count = 0u, anisotropic_count = 0u;
@@ -807,7 +850,7 @@ int main(void)
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);
     vkDestroyImageView(device, target_view, NULL);
-#ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
+#ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
     vkUnmapMemory(device, indirect_memory);
     vkDestroyBuffer(device, indirect_buffer, NULL);
     vkFreeMemory(device, indirect_memory, NULL);

@@ -44,3 +44,13 @@ Public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
 `shaderDrawParameters` remain false. The sequential-single-packet candidate
 must not be repeated; the submission fault needs a materially narrower probe
 before another bounded hardware run.
+
+The next bounded diagnostic is
+`vulkan_ps5_indirect_parameters_probe.elf`, SHA-256
+`43ceea64dccc1983a27065a63defb47e5b7f1163a00e9e28c65c0e15866aa20a`.
+It records exactly one non-indexed indirect draw, consumes BaseVertex and
+BaseInstance, and does not consume DrawID or enter the multi-draw expansion.
+An exact-green readback therefore isolates the compiler-selected
+start-vertex/start-instance packet locations from the rejected DrawID paths.
+The host suite passes 20/20 and the Prospero link includes `-lunwind`,
+`-lc++abi`, `-lc++`, and `-lm`.

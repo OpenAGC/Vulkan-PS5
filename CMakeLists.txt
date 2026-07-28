@@ -421,6 +421,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indexed_textured_frag_spv.h")
   set(VULKAN_PS5_INDIRECT_DRAW_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indirect_draw_vert_spv.h")
+  set(VULKAN_PS5_INDIRECT_PARAMETERS_VERTEX_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indirect_parameters_vert_spv.h")
   add_custom_command(OUTPUT "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
       --vn vulkan_ps5_indexed_textured_vert_spv
@@ -444,6 +446,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       -o "${VULKAN_PS5_INDIRECT_DRAW_VERTEX_HEADER}"
     DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/indirect_draw.vert"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_INDIRECT_PARAMETERS_VERTEX_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_indirect_parameters_vert_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/indirect_parameters.vert"
+      -o "${VULKAN_PS5_INDIRECT_PARAMETERS_VERTEX_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/indirect_parameters.vert"
     VERBATIM)
   add_executable(vulkan_ps5_indexed_textured_example
     examples/indexed_textured/main.c
@@ -473,6 +483,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_indirect_draw_probe PRIVATE
     VULKAN_PS5_INDIRECT_DRAW_PROBE=1)
+  add_executable(vulkan_ps5_indirect_parameters_probe
+    examples/indexed_textured/main.c
+    "${VULKAN_PS5_INDIRECT_PARAMETERS_VERTEX_HEADER}"
+    "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_indirect_parameters_probe PRIVATE
+    VULKAN_PS5_INDIRECT_PARAMETERS_PROBE=1)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
@@ -484,7 +500,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
       vulkan_ps5_vertex_divisor_probe vulkan_ps5_sampler_anisotropy_probe
-      vulkan_ps5_indirect_draw_probe
+      vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
@@ -497,7 +513,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
       vulkan_ps5_vertex_divisor_probe vulkan_ps5_sampler_anisotropy_probe
-      vulkan_ps5_indirect_draw_probe)
+      vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE

@@ -39,6 +39,9 @@ hardware-qualified single-indirect packets, programming DrawIndex for each
 command; shaders that do not use it retain OpenAGC's FW 5.50-qualified native
 multi packet. A 2026-07-28 attempt to use a speculative Mesa-style 10-dword
 multi packet caused a PID-scoped GPU fault/reset, so that form was removed.
+The standalone `vulkan_ps5_indirect_parameters_probe` narrows subsequent
+qualification to one BaseVertex/BaseInstance indirect draw without DrawID or
+multi-draw expansion.
 The corrected bounded probe validates `firstVertex = 1`, `firstInstance = 1,2`,
 and `gl_DrawID = 0,1` through exact green/blue readback. The optional
 `multiDrawIndirect`, `drawIndirectFirstInstance`, and `shaderDrawParameters`

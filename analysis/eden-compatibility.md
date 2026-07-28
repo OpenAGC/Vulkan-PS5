@@ -101,6 +101,8 @@ does not turn a failed requirement into support.
    is required before the three related core bits are promoted. The rejected
    packet experiments, GPU-reset evidence, and PID-reuse runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
+   A one-draw BaseVertex/BaseInstance-only diagnostic is built for the next
+   bounded run; it removes DrawID and multi expansion from the fault boundary.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
 4. Add only the allowed Eden changes: Prospero surface creation, build/link
