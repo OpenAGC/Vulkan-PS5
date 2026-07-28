@@ -19,3 +19,8 @@ Two independent FW 5.500.008 runs produced exactly 7200 green pixels, completing
 the earlier constant-position qualification gate. Those results do not qualify
 this restored patch-output-read candidate. The driver must not advertise
 `tessellationShader` until this path is hardware-qualified twice.
+
+The first bounded run of the restored candidate on FW 5.500.008 returned
+normally, left the console responsive, and produced a zeroed target
+(`20260728T015236Z-tessellation-run1.log`). This is a safe negative result, not
+qualification; the runner did not retry it.

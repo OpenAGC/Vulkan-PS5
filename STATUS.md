@@ -116,7 +116,11 @@ Implemented and host-verified:
   reads for each compiled pipeline; the ICD validates those values and asks
   OpenAGC to build separate TCS and TES layout words. Host command-recording
   tests verify that both compiler-derived values reach PM4. This candidate is
-  not hardware-qualified yet.
+  not hardware-qualified yet. Its first bounded FW 5.500.008 run returned
+  cleanly without a hang or kernel panic but produced a zeroed target
+  (`20260728T015236Z-tessellation-run1.log`). The next compiler fix must link
+  the TCS-output/TES-input interface so both separately compiled programs use
+  the same offchip location remap; no automatic retry was attempted.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
