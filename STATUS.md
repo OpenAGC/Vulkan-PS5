@@ -137,6 +137,12 @@ Implemented and host-verified:
   produced a zeroed target (`20260728T023553Z-tessellation-run1.log`). No retry
   was attempted. Hull LDS allocation alone therefore did not fix the restored
   VS-to-TCS-to-TES dataflow, and this candidate remains unqualified.
+  Mesa comparison after that run found that gfx10.3 rounds HS LDS allocation
+  to 1024 bytes before encoding the result in 512-byte register units. The
+  earlier OpenAGC patch rounded directly to 512 bytes and could therefore emit
+  an illegal odd field value. OpenAGC now performs the two-step rounding, and
+  the Vulkan command regression requires a nonzero even encoding. This
+  corrected candidate has not been launched on hardware.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

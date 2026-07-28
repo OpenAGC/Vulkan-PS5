@@ -32,3 +32,8 @@ also encoded the compiler-reported hull LDS allocation in
 (`20260728T023553Z-tessellation-run1.log`) while etaHEN websrv remained
 responsive. Neither failure was retried, and `tessellationShader` remains
 disabled.
+
+The next candidate corrects the remaining gfx10.3 hull-LDS packing detail:
+allocation is rounded to 1024 bytes before being encoded in 512-byte register
+units, making every legal field value even. Host command tests enforce that
+invariant; this candidate has not yet been launched on hardware.

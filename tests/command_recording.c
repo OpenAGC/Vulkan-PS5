@@ -792,8 +792,10 @@ int main(int argc, char **argv)
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_SH_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_SPI_SHADER_PGM_RSRC2_HS) {
-            found_tess_hull_lds |=
-                (dwords[i + 2] & (0x1ffu << 18u)) != 0u;
+            const uint32_t encoded_lds =
+                (dwords[i + 2] >> 18u) & 0x1ffu;
+            found_tess_hull_lds |= encoded_lds != 0u &&
+                (encoded_lds & 1u) == 0u;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {

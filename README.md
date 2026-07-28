@@ -101,6 +101,13 @@ returned normally and left etaHEN websrv responsive, but the target was still
 zeroed (`20260728T023553Z-tessellation-run1.log`). The runner did not retry it;
 hull LDS allocation alone therefore does not qualify patch-output reads.
 
+Post-failure comparison with Mesa exposed a gfx10.3 encoding detail in that
+candidate: HS LDS bytes must first be rounded to a 1024-byte allocation and
+then represented in the register's 512-byte units. OpenAGC now emits only the
+resulting even field values, and the Vulkan command regression rejects a zero
+or odd encoding. This corrected rounding candidate is host-qualified but has
+not been launched on hardware.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

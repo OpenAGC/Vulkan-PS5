@@ -49,7 +49,9 @@
   patch-output reads are fixed and hardware-qualified as well. Linked
   TCS/TES interfaces and a nonzero hull-LDS allocation have each been exercised
   by one bounded FW 5.500.008 run; both returned safely but produced a zeroed
-  target, so neither candidate was retried or qualified.
+  target, so neither candidate was retried or qualified. The next local
+  candidate corrects gfx10.3's two-step 1024-byte-allocation/512-byte-encoding
+  rule and awaits its own single bounded hardware gate.
 
 ## Summary
 
