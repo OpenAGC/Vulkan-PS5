@@ -73,14 +73,14 @@ and constants into OpenAGC's typed gfx1013 blend state. Every baseline,
 geometry, indirect, and tessellation draw restores that state. The exact PM4
 regression uses one disabled full-mask target and one enabled GB-only target,
 requiring distinct control words, target mask `0x6f`, and all four constants.
-Both normal and ASAN/UBSAN suites pass 21/21 and the Prospero build passes.
+Both normal and ASAN/UBSAN suites pass 22/22 and the Prospero build passes.
 The standalone MRT gate now requires target zero to retain opaque green while
 target one resolves to half-intensity magenta through constant-color/alpha
 factors, followed by the shared SystemService lifecycle. Since exact 0.5 is a
 tie when converted to 8-bit UNORM, the gate accepts only `0x7f7f007f` or
 `0x80800080`.
 Its runner covers clean, fatal, NUL-containing, PID-reuse, and exact-identity
-paths. Both host configurations pass 21/21; Prospero ELF SHA-256 is
+paths. Both host configurations pass 22/22; Prospero ELF SHA-256 is
 `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`.
 The first bounded hardware run produced the correct target-zero coverage and
 nonzero target-one coverage, then completed the matching self-kill lifecycle
@@ -89,6 +89,21 @@ target-one pixels without logging their value. The next candidate logs both
 center pixels and accepts only the two legal half-intensity encodings. Public
 `independentBlend` therefore remains false; dual-source blend and logic
 operations remain separate unsupported features.
+
+The host-side `depthBiasClamp` contract is now implemented without advertising
+the feature. Static pipelines and `VK_DYNAMIC_STATE_DEPTH_BIAS` both preserve
+constant, clamp, and slope factors; `vkCmdSetDepthBias` records command-local
+dynamic values. Baseline, indexed, indirect, geometry, and tessellation paths
+enable front/back polygon offset and emit OpenAGC's typed D16/D32 format,
+clamp, slope, and constant registers. Exact PM4 and pipeline regressions pass
+in both 22/22 host configurations. The standalone bounded probe supplies an
+oversized constant bias with clamp 0.125 and requires raw D32 depth to move
+from 0.25/0.75 to exact 0.375/0.875 while preserving the established color and
+stencil decisions. Its runner covers matching-self-kill, NUL, later-PID, fatal,
+and exact-identity paths. The Prospero ELF links the required runtime set and
+has SHA-256
+`8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
+Public `depthBiasClamp` remains false pending one bounded FW 5.50 run.
 
 ## Runtime compatibility
 

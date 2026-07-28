@@ -676,7 +676,16 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_NONE,
+        .depthBiasEnable = VK_TRUE,
         .lineWidth = 1,
+    };
+    const VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_DEPTH_BIAS,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 1u,
+        .pDynamicStates = dynamic_states,
     };
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -736,6 +745,7 @@ int main(int argc, char **argv)
         .pMultisampleState = &multisample,
         .pDepthStencilState = &depth_stencil,
         .pColorBlendState = &blend,
+        .pDynamicState = &dynamic_state,
         .layout = graphics_layout,
         .renderPass = render_pass,
     };
@@ -743,6 +753,17 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &graphics_info, NULL,
                                      &graphics_pipeline) == VK_SUCCESS);
+    VkPipelineRasterizationStateCreateInfo static_bias_raster = rasterization;
+    static_bias_raster.depthBiasConstantFactor = 2.0f;
+    static_bias_raster.depthBiasClamp = 0.25f;
+    static_bias_raster.depthBiasSlopeFactor = -1.5f;
+    VkGraphicsPipelineCreateInfo static_bias_info = graphics_info;
+    static_bias_info.pRasterizationState = &static_bias_raster;
+    static_bias_info.pDynamicState = NULL;
+    VkPipeline static_bias_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &static_bias_info, NULL,
+                                     &static_bias_pipeline) == VK_SUCCESS);
     const VkPipelineShaderStageCreateInfo geometry_stages[] = {
         graphics_stages[0],
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
@@ -840,6 +861,7 @@ int main(int argc, char **argv)
         .renderArea = {{0, 0}, {256, 256}},
     };
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     vkCmdBeginQuery(command, query_pool, 1, VK_QUERY_CONTROL_PRECISE_BIT);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
@@ -858,6 +880,9 @@ int main(int argc, char **argv)
                       sizeof(VkDrawIndirectCommand));
     vkCmdDrawIndexedIndirect(command, indirect_buffer, 64u, 2u,
                              sizeof(VkDrawIndexedIndirectCommand));
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      static_bias_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
@@ -951,6 +976,8 @@ int main(int argc, char **argv)
     bool found_independent_blend = false, found_blend_mask = false;
     bool found_blend_constants = false;
     bool found_depth_control = false, found_stencil_control = false;
+    bool found_depth_bias_format = false, found_depth_bias_values = false;
+    bool found_depth_bias_enable = false;
     uint32_t occlusion_snapshots = 0;
     bool found_query_reset = false, found_query_availability = false;
     uint32_t last_single_sh_register = UINT32_MAX;
@@ -1045,6 +1072,24 @@ int main(int argc, char **argv)
                 dwords[i + 4] == 0x3f400000u &&
                 dwords[i + 5] == 0x3f800000u;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] ==
+                       AGC_REG_PA_SU_POLY_OFFSET_DB_FMT_CNTL) {
+            found_depth_bias_format |= packet_length == 3u &&
+                dwords[i + 2] == 0x000001e9u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 6 < count &&
+                   dwords[i + 1] == AGC_REG_PA_SU_POLY_OFFSET_CLAMP) {
+            found_depth_bias_values |= packet_length == 7u &&
+                dwords[i + 2] == 0x3e800000u &&
+                dwords[i + 3] == 0xc1c00000u &&
+                dwords[i + 4] == 0x40000000u &&
+                dwords[i + 5] == 0xc1c00000u &&
+                dwords[i + 6] == 0x40000000u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_PA_SU_SC_MODE_CNTL) {
+            found_depth_bias_enable |=
+                (dwords[i + 2] & AGC_GFX1013_DEPTH_BIAS_RASTER_MODE) ==
+                    AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
             uint64_t image_address_1 =
                 vk_ps5_memory_gpu_address(image_memory_1, 0);
@@ -1105,6 +1150,8 @@ int main(int argc, char **argv)
            found_color_target_1 && found_dual_export &&
            found_independent_blend && found_blend_mask &&
            found_blend_constants &&
+           found_depth_bias_format && found_depth_bias_values &&
+           found_depth_bias_enable &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
            found_query_availability);
@@ -1150,6 +1197,7 @@ int main(int argc, char **argv)
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
+    vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);

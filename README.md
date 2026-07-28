@@ -60,7 +60,7 @@ non-indexed DrawID pipelines into single packets and is host-checked for stable
 BaseVertex/BaseInstance register locations, the exact DrawIndex `0,0,1,0,1`
 sequence, and indexed/non-indexed initiators. PM4 tests now walk packet
 boundaries, so address payloads cannot impersonate packet headers under
-sanitizers. Both normal and ASAN/UBSAN suites pass 21/21, and the bounded runner
+sanitizers. Both normal and ASAN/UBSAN suites pass 22/22, and the bounded runner
 requires the shared matching-self-kill lifecycle before accepting the gate.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
@@ -617,8 +617,14 @@ triangle to two attachments: target zero must remain opaque green with blending
 disabled, while target one must become half-intensity magenta through
 constant-color/alpha factors. The 8-bit UNORM tie may encode as `0x7f7f007f`
 or `0x80800080`; no other value is accepted. Its bounded runner requires
-the shared self-kill lifecycle. Static depth compare/write and front/back stencil state are translated
-to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
+the shared self-kill lifecycle. Static and `VK_DYNAMIC_STATE_DEPTH_BIAS`
+pipelines translate constant, clamp, and slope factors to OpenAGC's typed D16
+or D32 depth-bias state for every graphics draw path. The standalone
+`vulkan_ps5_depth_bias_clamp_probe` applies a deliberately oversized constant
+bias with a 0.125 clamp and requires exact D32 depth shifts from 0.25/0.75 to
+0.375/0.875. Public `depthBiasClamp` remains false until that bounded hardware
+gate passes. Static depth compare/write and front/back stencil state are
+translated to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
 addresses, and restore host-readable cache state after drawing. Depth/stencil
 clears remain unavailable; the first hardware gate initializes mapped direct

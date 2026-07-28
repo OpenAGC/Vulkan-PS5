@@ -289,18 +289,30 @@ Implemented and host-verified:
   A standalone bounded probe requires opaque green on the disabled target and
   half-intensity magenta (`0x7f7f007f` or `0x80800080`, the two legal 8-bit
   UNORM tie results) on the constant-factor target, then
-  exits through SystemService. Both host suites pass 21/21, its Prospero ELF
-  current diagnostic ELF SHA-256 is
+  exits through SystemService. Both host suites pass 22/22. Its current
+  diagnostic Prospero ELF SHA-256 is
   `8ed187f8781a34717481d6f3c186f5ebe645d76e48989fc985503a9878c18da7`,
   and `independentBlend` remains false. The first bounded run reached the
   matching self-kill lifecycle without a fatal GPU signature, but its older
   single-value oracle rejected all target-one pixels before logging their
   value; the next candidate records center pixels and accepts only the two
   legal half-intensity encodings.
-  Begin/end
-  transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
-  enables every active slot, and fragment export context carries the real MRT
-  count. The command regression verifies CB1 and dual RGBA8 export `0x44`.
+  Begin/end transitions cover every attachment, OpenAGC binds CB0-CB7, the
+  target mask enables every active slot, and fragment export context carries
+  the real MRT count. The command regression verifies CB1 and dual RGBA8
+  export `0x44`.
+- Static and dynamic depth bias are host-complete for baseline, indexed,
+  indirect, geometry, and tessellation draws. Pipeline creation accepts
+  `VK_DYNAMIC_STATE_DEPTH_BIAS`, `vkCmdSetDepthBias` records command-local
+  state, and OpenAGC emits exact D16/D32 format scaling plus clamp and
+  front/back slope/constant registers. Exact PM4 and pipeline regressions pass
+  in both 22/22 host suites. The bounded depth-bias-clamp probe uses an
+  oversized constant with a 0.125 clamp and requires D32 values 0.375 and
+  0.875 instead of the unbiased 0.25 and 0.75, followed by the shared
+  matching-self-kill lifecycle. The Prospero ELF links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `8e73f6cd45ad1b3ba9f21fc8b1956582190b23a2422d65c0827875506c89aa57`.
+  Public `depthBiasClamp` remains false until one bounded FW 5.50 run passes.
 - The standalone MRT sample writes green and magenta from fragment locations
   0 and 1 to two mapped linear RGBA8 attachments. It host-builds, cross-links
   with the required target runtimes, and is included in the repeated FW 5.50

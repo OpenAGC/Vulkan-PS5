@@ -7,6 +7,17 @@
 #include "vulkan_ps5_depth_frag_spv.h"
 #include "vulkan_ps5_depth_vert_spv.h"
 
+#if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+#include "../system_service_exit.h"
+#define SAMPLE_NAME "depth_bias_clamp"
+#define NEAR_DEPTH_BITS 0x3ec00000u
+#define FAR_DEPTH_BITS 0x3f600000u
+#else
+#define SAMPLE_NAME "depth"
+#define NEAR_DEPTH_BITS 0x3e800000u
+#define FAR_DEPTH_BITS 0x3f400000u
+#endif
+
 #define WIDTH 256u
 #define HEIGHT 256u
 #define GREEN 0xff00ff00u
@@ -15,7 +26,7 @@
 #define VK_CHECK(call) do { \
     VkResult result_ = (call); \
     if (result_ != VK_SUCCESS) { \
-        printf("depth: %s failed (%d)\n", #call, result_); \
+        printf(SAMPLE_NAME ": %s failed (%d)\n", #call, result_); \
         return 1; \
     } \
 } while (0)
@@ -43,7 +54,7 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) {
-        printf("depth: expected one physical device\n");
+        printf(SAMPLE_NAME ": expected one physical device\n");
         return 1;
     }
     const float priority = 1.0f;
@@ -237,8 +248,19 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_NONE,
+#if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+        .depthBiasEnable = VK_TRUE,
+#endif
         .lineWidth = 1.0f,
     };
+#if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+    const VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_DEPTH_BIAS};
+    const VkPipelineDynamicStateCreateInfo dynamic_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 1u,
+        .pDynamicStates = dynamic_states,
+    };
+#endif
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
@@ -283,6 +305,9 @@ int main(void)
         .pMultisampleState = &multisample,
         .pDepthStencilState = &depth_state,
         .pColorBlendState = &blend,
+#if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+        .pDynamicState = &dynamic_state,
+#endif
         .layout = layout,
         .renderPass = render_pass,
     };
@@ -313,6 +338,9 @@ int main(void)
     };
     vkCmdBeginRenderPass(command, &begin_render, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+#if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+    vkCmdSetDepthBias(command, 1000000000.0f, 0.125f, 0.0f);
+#endif
     vkCmdDraw(command, 9, 1, 0, 0);
     vkCmdEndRenderPass(command);
     VK_CHECK(vkEndCommandBuffer(command));
@@ -343,8 +371,8 @@ int main(void)
     const uint32_t *depth_words = depth_data;
     for (size_t i = 0; i < depth_requirements.size / sizeof(uint32_t); ++i) {
         if (depth_words[i] == 0x3f800000u) ++clear_depth;
-        else if (depth_words[i] == 0x3e800000u) ++near_depth;
-        else if (depth_words[i] == 0x3f400000u) ++far_depth;
+        else if (depth_words[i] == NEAR_DEPTH_BITS) ++near_depth;
+        else if (depth_words[i] == FAR_DEPTH_BITS) ++far_depth;
     }
     uint32_t stencil_written = 0;
     const uint8_t *depth_bytes = depth_data;
@@ -357,11 +385,11 @@ int main(void)
         near_depth < 1000u || far_depth < 1000u ||
         stencil_written != green + red;
     if (status)
-        printf("depth: mismatch green=%u red=%u other=%u left=%08x right=%08x raw=%u/%u/%u stencil=%u\n",
+        printf(SAMPLE_NAME ": mismatch green=%u red=%u other=%u left=%08x right=%08x raw=%u/%u/%u stencil=%u\n",
             green, red, other, left, right, clear_depth, near_depth, far_depth,
             stencil_written);
     else
-        printf("depth: PASS green=%u red=%u raw=%u/%u/%u stencil=%u\n",
+        printf(SAMPLE_NAME ": PASS green=%u red=%u raw=%u/%u/%u stencil=%u\n",
             green, red, clear_depth, near_depth, far_depth, stencil_written);
 
     vkDestroyFence(device, fence, NULL);
@@ -382,5 +410,9 @@ int main(void)
     vkFreeMemory(device, color_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(OPENAGC_PROSPERO) && \
+    defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
+    vulkan_ps5_system_service_exit(SAMPLE_NAME);
+#endif
     return status;
 }

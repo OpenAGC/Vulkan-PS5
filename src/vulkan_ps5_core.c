@@ -155,6 +155,9 @@ typedef struct VkPs5Pipeline {
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
     AgcGfx1013ColorBlendState color_blend;
+    AgcGfx1013DepthBiasState depth_bias;
+    VkBool32 depth_bias_enable;
+    VkBool32 depth_bias_dynamic;
     AgcGfx1013DepthStencilState depth_stencil;
     VkBool32 has_depth_stencil;
     const AgcGfx1013TessellationState *tessellation;
@@ -230,6 +233,8 @@ typedef struct VkPs5CommandBuffer {
     uint32_t active_subpass;
     AgcGfx1013FrameState frame_state;
     AgcGfx1013DepthSurfaceState depth_surface_state;
+    AgcGfx1013DepthBiasState dynamic_depth_bias;
+    VkBool32 dynamic_depth_bias_set;
     VkPs5QueryPool *active_query_pool;
     uint32_t active_query;
     VkPs5Buffer *index_buffer;
@@ -1100,6 +1105,7 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->active_framebuffer = NULL;
     command->active_query_pool = NULL;
     command->index_buffer = NULL;
+    command->dynamic_depth_bias_set = VK_FALSE;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
     command->last_indirect_descriptor_table = 0u;
@@ -1142,6 +1148,7 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->active_framebuffer = NULL;
     command->active_query_pool = NULL;
     command->index_buffer = NULL;
+    command->dynamic_depth_bias_set = VK_FALSE;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
     command->vertex_table_offset = 0u;
     command->last_indirect_descriptor_table = 0u;
@@ -1902,9 +1909,20 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             !create->pViewportState->pViewports ||
             !create->pViewportState->pScissors)
             return VK_ERROR_INITIALIZATION_FAILED;
-        if (create->pDynamicState &&
-            create->pDynamicState->dynamicStateCount != 0u)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkBool32 dynamic_depth_bias = VK_FALSE;
+        if (create->pDynamicState) {
+            if (create->pDynamicState->dynamicStateCount &&
+                !create->pDynamicState->pDynamicStates)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            for (uint32_t dynamic_index = 0u;
+                 dynamic_index < create->pDynamicState->dynamicStateCount;
+                 ++dynamic_index) {
+                if (create->pDynamicState->pDynamicStates[dynamic_index] !=
+                        VK_DYNAMIC_STATE_DEPTH_BIAS || dynamic_depth_bias)
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                dynamic_depth_bias = VK_TRUE;
+            }
+        }
         if (!create->pRasterizationState || !create->pMultisampleState ||
             !create->pColorBlendState)
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -1916,7 +1934,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             create->pColorBlendState;
         if (raster->depthClampEnable || raster->rasterizerDiscardEnable ||
             raster->polygonMode != VK_POLYGON_MODE_FILL ||
-            raster->cullMode != VK_CULL_MODE_NONE || raster->depthBiasEnable ||
+            raster->cullMode != VK_CULL_MODE_NONE ||
             raster->lineWidth != 1.0f ||
             multisample->rasterizationSamples != VK_SAMPLE_COUNT_1_BIT ||
             multisample->sampleShadingEnable || multisample->alphaToCoverageEnable ||
@@ -2112,6 +2130,13 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         pipeline->vertex_binding_mask = vertex_binding_mask;
         pipeline->color_blend = color_blend;
+        pipeline->depth_bias = (AgcGfx1013DepthBiasState){
+            .constant_factor = raster->depthBiasConstantFactor,
+            .clamp = raster->depthBiasClamp,
+            .slope_factor = raster->depthBiasSlopeFactor,
+        };
+        pipeline->depth_bias_enable = raster->depthBiasEnable;
+        pipeline->depth_bias_dynamic = dynamic_depth_bias;
         pipeline->has_depth_stencil = has_depth_stencil;
         pipeline->depth_stencil = depth_stencil;
         memcpy(pipeline->vertex_strides, vertex_strides,
@@ -3473,8 +3498,18 @@ vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetLineWidth(VkCommandBuffer c, float w) { IGNORE(c); IGNORE(w); }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdSetDepthBias(VkCommandBuffer c, float a, float b, float d) {
-    IGNORE(c); IGNORE(a); IGNORE(b); IGNORE(d);
+vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
+                  float clamp, float slopeFactor) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    command->dynamic_depth_bias = (AgcGfx1013DepthBiasState){
+        .constant_factor = constantFactor,
+        .clamp = clamp,
+        .slope_factor = slopeFactor,
+    };
+    command->dynamic_depth_bias_set = VK_TRUE;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) { IGNORE(c); IGNORE(v); }
@@ -3714,6 +3749,34 @@ static bool record_color_blend(
     return false;
 }
 
+static bool record_depth_bias(
+    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
+    AgcGfx1013FrameState *frame)
+{
+    if (!pipeline->depth_bias_enable)
+        return true;
+    AgcGfx1013DepthBiasState state = pipeline->depth_bias;
+    if (pipeline->depth_bias_dynamic) {
+        if (!command->dynamic_depth_bias_set) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return false;
+        }
+        state = command->dynamic_depth_bias;
+    }
+    frame->raster_mode_control |= AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
+    if (!pipeline->has_depth_stencil ||
+        command->depth_surface_state.format ==
+            AGC_GFX1013_DEPTH_FORMAT_S8_UINT)
+        return true;
+    state.format = command->depth_surface_state.format;
+    int32_t result = agcGfx1013SetDepthBiasState(&command->dcb, &state);
+    if (result == AGC_OK)
+        return true;
+    command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+        VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+    return false;
+}
+
 static void record_tessellation_draw(
     VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline,
     uint32_t element_count, uint32_t instance_count,
@@ -3818,7 +3881,8 @@ static void record_tessellation_draw(
         .vertex_count = element_count,
         .draw_modifier = 0x40000000u,
     };
-    if (!record_color_blend(command, pipeline))
+    if (!record_color_blend(command, pipeline) ||
+        !record_depth_bias(command, pipeline, &draw_frame))
         return;
     int32_t draw_result = agcGfx1013SetTessellationRings(
         &command->dcb, pipeline->tessellation);
@@ -3955,6 +4019,9 @@ static void record_graphics_draw(
         command->record_error = prepare_result;
         return;
     }
+    if (!record_color_blend(command, pipeline) ||
+        !record_depth_bias(command, pipeline, &prepared.frame))
+        return;
     int32_t result;
     if (indexed) {
         VkPs5Buffer *index = command->index_buffer;
@@ -3979,12 +4046,8 @@ static void record_graphics_draw(
             .index_count = element_count,
             .draw_initiator = 0u,
         };
-        if (!record_color_blend(command, pipeline))
-            return;
         result = agcGfx1013DrawBaselineIndexed(&command->dcb, &indexed_draw);
     } else {
-        if (!record_color_blend(command, pipeline))
-            return;
         result = agcGfx1013DrawBaselineIndexAuto(
             &command->dcb, &prepared.draw);
     }
@@ -4097,7 +4160,8 @@ static void record_graphics_indirect(
             index->memory_offset + command->index_offset);
         draw.index_buffer_count = (uint32_t)(available / element_size);
     }
-    if (!record_color_blend(command, pipeline))
+    if (!record_color_blend(command, pipeline) ||
+        !record_depth_bias(command, pipeline, &prepared.frame))
         return;
     uint32_t packet_count = expand_draw_index ? draw_count : 1u;
     for (uint32_t n = 0u; n < packet_count; ++n) {
