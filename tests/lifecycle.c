@@ -79,11 +79,14 @@ int main(void) {
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(features11.shaderDrawParameters == VK_FALSE);
+    assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
 
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
+    assert(features.geometryShader == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
+    features.geometryShader = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
@@ -136,6 +139,7 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &enabled_host_query_reset,
         .features = {
+            .geometryShader = VK_TRUE,
             .tessellationShader = VK_TRUE,
         },
     };
@@ -147,7 +151,7 @@ int main(void) {
     };
     device_info.pNext = &group_info;
     VkPhysicalDeviceFeatures unsupported_features = {
-        .geometryShader = VK_TRUE,
+        .wideLines = VK_TRUE,
     };
     VkDeviceCreateInfo unsupported_device_info = device_info;
     unsupported_device_info.pNext = NULL;
@@ -156,6 +160,17 @@ int main(void) {
     assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
                           &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(unsupported_device == VK_NULL_HANDLE);
+    VkPhysicalDeviceFeatures legacy_geometry_features = {
+        .geometryShader = VK_TRUE,
+    };
+    VkDeviceCreateInfo legacy_geometry_device_info = device_info;
+    legacy_geometry_device_info.pNext = NULL;
+    legacy_geometry_device_info.pEnabledFeatures = &legacy_geometry_features;
+    VkDevice legacy_geometry_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &legacy_geometry_device_info, NULL,
+                          &legacy_geometry_device) == VK_SUCCESS);
+    assert(legacy_geometry_device != VK_NULL_HANDLE);
+    vkDestroyDevice(legacy_geometry_device, NULL);
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
     VkQueue queue = VK_NULL_HANDLE;

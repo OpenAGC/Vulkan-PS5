@@ -62,9 +62,14 @@ triangle coverage and cannot pass through a vertex-only path accidentally. The
 host command regression records an indexed draw with the fused VS+GS primitive
 record; its Prospero output is `vulkan_ps5_geometry_example.elf`. Two
 independent FW 5.500.008 launches each produced exactly 4608 green pixels, so
-the standalone geometry workload is hardware-qualified. The driver continues
-to report `geometryShader = VK_FALSE` until the standard feature-request path
-is enabled and rerun.
+the standalone geometry workload is hardware-qualified. The ICD now reports
+`geometryShader = VK_TRUE` through both core feature-query forms and accepts it
+through legacy `pEnabledFeatures` and `VkPhysicalDeviceFeatures2`, while still
+rejecting unadvertised features. The sample queries and requests geometry
+normally. Both seven-test host configurations and the Prospero build pass; the
+feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+`386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
+Repeated FW 5.50 qualification of this public feature path remains pending.
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its

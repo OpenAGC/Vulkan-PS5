@@ -91,8 +91,14 @@ Implemented and host-verified:
   produced exactly 4608 green pixels
   (`20260728T012020Z-geometry-run1.log` and
   `20260728T012034Z-geometry-run1.log`). The standalone geometry workload is
-  hardware-qualified; the core feature remains disabled until the standard
-  feature-request path is enabled and rerun.
+  hardware-qualified. The core feature is now exposed by both feature-query
+  forms and accepted through legacy and Features2 device creation. Lifecycle
+  tests cover both success paths and retain rejection of unsupported
+  `wideLines`; the standalone sample queries and requests geometry normally.
+  Both host configurations pass all seven tests, and the Prospero ELF links
+  with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
+  `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
+  Repeated FW 5.50 qualification of the public feature-request path is pending.
 - Tessellation pipelines require standard `PATCH_LIST` input and compile the
   fused LS+HS stage in Wave32 alongside TES+NGG and PS. The device lazily owns
   one 256-byte-aligned factor ring, offchip ring, and descriptor table, builds

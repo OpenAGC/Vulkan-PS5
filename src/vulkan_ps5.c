@@ -512,6 +512,7 @@ vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
 
 static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
+    features->geometryShader = VK_TRUE;
     features->tessellationShader = VK_TRUE;
 }
 

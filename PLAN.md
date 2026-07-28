@@ -128,6 +128,16 @@
   console remained responsive, and neither candidate was retried. This closes
   the repeated qualification gate for the correction and public
   `tessellationShader` feature path at the current standalone scope.
+  Geometry's already qualified shader path is now promoted through the same
+  standard feature contract: both feature-query forms report
+  `geometryShader`, legacy and Features2 device creation accept it, and the
+  standalone sample queries and requests it. Lifecycle regressions cover both
+  acceptance forms and unsupported `wideLines` rejection. Both seven-test host
+  configurations and the Prospero build pass with
+  `-lunwind -lc++abi -lc++ -lm`; candidate ELF SHA-256 is
+  `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
+  Two bounded FW 5.50 runs after independent console-availability signals are
+  the remaining geometry feature gate before Milestone 4 WSI work resumes.
 
 ## Summary
 

@@ -100,7 +100,17 @@ int main(void)
         printf(SAMPLE_LABEL ": expected one physical device\n");
         return 1;
     }
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.geometryShader) {
+        printf("geometry: geometryShader is not supported\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .geometryShader = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.tessellationShader) {
@@ -134,7 +144,8 @@ int main(void)
 #endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#if defined(VULKAN_PS5_GEOMETRY_SAMPLE) || \
+    defined(VULKAN_PS5_TESSELLATION_SAMPLE)
         .pEnabledFeatures = &enabled_features,
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE)
