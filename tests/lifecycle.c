@@ -151,6 +151,7 @@ int main(void) {
     assert(features2.features.independentBlend == VK_TRUE);
     assert(features2.features.logicOp == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
+    assert(features2.features.samplerAnisotropy == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
 
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor_features_ext = {
@@ -176,6 +177,7 @@ int main(void) {
     assert(features.independentBlend == VK_TRUE);
     assert(features.logicOp == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
+    assert(features.samplerAnisotropy == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     features.depthBiasClamp = VK_FALSE;
     features.depthClamp = VK_FALSE;
@@ -184,6 +186,7 @@ int main(void) {
     features.independentBlend = VK_FALSE;
     features.logicOp = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
+    features.samplerAnisotropy = VK_FALSE;
     features.tessellationShader = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
@@ -255,6 +258,7 @@ int main(void) {
             .independentBlend = VK_TRUE,
             .logicOp = VK_TRUE,
             .occlusionQueryPrecise = VK_TRUE,
+            .samplerAnisotropy = VK_TRUE,
             .tessellationShader = VK_TRUE,
         },
     };
@@ -293,6 +297,7 @@ int main(void) {
         .independentBlend = VK_TRUE,
         .logicOp = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
+        .samplerAnisotropy = VK_TRUE,
     };
     VkDeviceCreateInfo legacy_geometry_device_info = device_info;
     legacy_geometry_device_info.pNext = NULL;

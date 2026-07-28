@@ -683,7 +683,7 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   `20260728T075658Z-eden-vma-run1-target.klog` and
   `20260728T075920Z-eden-vma-run1.log`; VMA runtime allocation patterns are
   hardware-qualified at this scope.
-- The hidden sampler-anisotropy path now validates the Vulkan 1x-16x range,
+- The sampler-anisotropy path validates the Vulkan 1x-16x range,
   switches point/linear requests to gfx1013 anisotropic filter modes, and
   encodes the quantized maximum with OpenAGC's typed descriptor helper. Direct
   host tests cover valid 8x creation and invalid low/high ratios. A standalone
@@ -691,12 +691,15 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   16x-anisotropic samplers into separate target halves. Its oracle checks equal
   coverage and neutral means, proves that the bilinear control aliases, and
   requires the anisotropic mean absolute deviation to be at least 25% lower.
-  The one-shot runner has clean/crash exact-PID coverage and the full host suite
-  passes 18/18. The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
-  SHA-256
-  `1e7cfcaa9bcf6ca0c9afd1ede0d6ae519888b5db832a4d44deb7f68e3519a0f5`.
-  `samplerAnisotropy` remains `VK_FALSE` until one fresh explicit FW 5.50 run
-  passes and the normal feature-query/request contract is enabled.
+  `samplerAnisotropy` is now `VK_TRUE` through legacy and Features2 queries and
+  is accepted through both device-creation paths. Both full 25-test host suites
+  pass. The internal and public FW 5.50 gates each reported
+  `linear=9830/127/63 aniso=9830/127/5`, removed exact PIDs 104 and 105, and
+  left clean PID-scoped klogs. Evidence is retained in
+  `20260728T111713Z-sampler-anisotropy-run1.log` and
+  `20260728T112026Z-sampler-anisotropy-run1.log`. The public Prospero ELF links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `28319bef31f227ea45b9aacc35138e10b9cb136b88dbba350bc2a562a16c49b9`.
 - `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect` now use OpenAGC's typed
   gfx1013 indirect path. Common draw preparation binds shaders, frame/depth
   state, descriptors, and vertex tables while openagc-psbc API v9 supplies the

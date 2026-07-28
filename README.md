@@ -26,14 +26,13 @@ nonzero divisor support while zero divisor and nonzero-first-instance support
 remain false. The public-path ELF SHA-256 is
 `5647b97d9ad8944028c4e242c49503a36f307ecc9ff603d765aec2f56b0c1503`.
 Sampler creation also carries validated 1x-16x anisotropy into gfx1013's
-anisotropic point/linear modes and maximum-ratio field. The public
-`samplerAnisotropy` bit remains false until a deterministic hardware readback
-gate validates the filtering result. That gate is now prepared: equal bilinear
-and 16x-anisotropic draws sample the same high-frequency stripe texture with an
-elongated footprint, and the mapped-memory oracle requires the anisotropic
-half's mean absolute deviation from neutral gray to fall materially below the
-bilinear control. Its runner permits one launch and applies the established
-PID-and-process-name crash, cleanup, warning, and console-response checks.
+anisotropic point/linear modes and maximum-ratio field. `samplerAnisotropy` is
+advertised through legacy and Features2 queries and accepted through both
+device-creation paths. Internal and public-path FW 5.50 gates each rendered
+equal 9,830-pixel bilinear and 16x-anisotropic footprints; their neutral-gray
+mean absolute deviations were 63 and 5 respectively, followed by clean process
+exit and clean target-only klog. The public-path ELF SHA-256 is
+`28319bef31f227ea45b9aacc35138e10b9cb136b88dbba350bc2a562a16c49b9`.
 Qualification runners select only `category=native_game` EXEC records and
 require cleanup targets to retain the exact `eboot.bin` identity, preventing a
 reused PID from targeting ShellUI or another system process.

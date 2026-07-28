@@ -53,17 +53,24 @@ exact-white pixels with center `0xffffffff`, clean SystemService self-exit, no
 stale process, and clean target-only klog. The public-path Prospero ELF SHA-256
 is `5647b97d9ad8944028c4e242c49503a36f307ecc9ff603d765aec2f56b0c1503`.
 
+Sampler anisotropy is now public and hardware-qualified through both legacy and
+Features2 feature-query/device-enable paths. The internal and public FW 5.50
+contrast gates each reported `linear=9830/127/63 aniso=9830/127/5`, followed by
+clean exact-PID exit and clean target-only klog. The public-path Prospero ELF
+SHA-256 is
+`28319bef31f227ea45b9aacc35138e10b9cb136b88dbba350bc2a562a16c49b9`.
+
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=20 limits=0 queues=0 total=20
+eden-profile: extensions=0 features=19 limits=0 queues=0 total=19
 ```
 
-The 20 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
+The 19 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
 `fragmentStoresAndAtomics`, `imageCubeArray`, `largePoints`,
 `multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
-`samplerAnisotropy`, `sampleRateShading`,
-`shaderClipDistance`, `shaderCullDistance`, `shaderImageGatherExtended`,
+`sampleRateShading`, `shaderClipDistance`, `shaderCullDistance`,
+`shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
 `wideLines`, `shaderDemoteToHelperInvocation`, `shaderDrawParameters`,
 `variablePointers`, and `variablePointersStorageBuffer`.
@@ -204,11 +211,9 @@ timeout.
 2. Promote mandatory feature groups only after command/compiler coverage and
    hardware qualification; prioritize the existing OpenAGC raster, blend,
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
-   semantics are implemented and host-tested. Its deterministic paired
-   bilinear/16x filtering probe, mapped-memory contrast oracle, bounded runner,
-   and Prospero ELF are prepared; one fresh-console run remains before normal
-   feature advertisement and device-enable handling can be promoted. Indirect
-   draw recording is no longer a stub. Compiler metadata now includes DrawIndex,
+   semantics and the core feature contract are implemented, host-tested, and
+   hardware-qualified by paired bilinear/16x filtering readback on FW 5.50.
+   Indirect draw recording is no longer a stub. Compiler metadata includes DrawIndex,
    and DrawID-using multi draws expand into hardware-qualified single packets.
    Its paired multi-draw/nonzero-first-instance/DrawID exact-color gate faulted
    during submission even after reverting to sequential single packets. A

@@ -123,7 +123,17 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
+#if defined(VULKAN_PS5_ANISOTROPY_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.samplerAnisotropy) {
+        printf("sampler_anisotropy: required core feature is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .samplerAnisotropy = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_VERTEX_DIVISOR_PROBE)
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT supported_divisor = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT,
@@ -171,6 +181,8 @@ int main(void)
         .pNext = &enabled_divisor,
         .enabledExtensionCount = 1u,
         .ppEnabledExtensionNames = device_extensions,
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
+        .pEnabledFeatures = &enabled_features,
 #endif
     };
     VkDevice device;
