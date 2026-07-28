@@ -686,14 +686,23 @@ int main(int argc, char **argv)
         {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
             VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
             VK_COLOR_COMPONENT_A_BIT},
-        {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-            VK_COLOR_COMPONENT_A_BIT},
+        {
+            .blendEnable = VK_TRUE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT,
+        },
     };
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .attachmentCount = 2,
         .pAttachments = blend_attachments,
+        .blendConstants = {0.25f, 0.5f, 0.75f, 1.0f},
     };
     const VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -939,6 +948,8 @@ int main(int argc, char **argv)
     bool found_tess_hull_lds = false;
     bool found_color_target = false, found_color_target_1 = false;
     bool found_dual_export = false, found_depth_surface = false;
+    bool found_independent_blend = false, found_blend_mask = false;
+    bool found_blend_constants = false;
     bool found_depth_control = false, found_stencil_control = false;
     uint32_t occlusion_snapshots = 0;
     bool found_query_reset = false, found_query_availability = false;
@@ -1018,6 +1029,21 @@ int main(int argc, char **argv)
                 (dwords[i + 2] >> 18u) & 0x1ffu;
             found_tess_hull_lds |= encoded_lds != 0u &&
                 (encoded_lds & 1u) == 0u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 9 < count &&
+                   dwords[i + 1] == AGC_REG_CB_BLEND0_CONTROL) {
+            found_independent_blend |= packet_length == 10u &&
+                dwords[i + 2] == 0x00010001u &&
+                dwords[i + 3] == 0x60010504u;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_CB_TARGET_MASK) {
+            found_blend_mask |= dwords[i + 2] == 0x6fu;
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 5 < count &&
+                   dwords[i + 1] == AGC_REG_CB_BLEND_RED) {
+            found_blend_constants |= packet_length == 6u &&
+                dwords[i + 2] == 0x3e800000u &&
+                dwords[i + 3] == 0x3f000000u &&
+                dwords[i + 4] == 0x3f400000u &&
+                dwords[i + 5] == 0x3f800000u;
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_CB_COLOR0_BASE + 15u) {
             uint64_t image_address_1 =
@@ -1036,8 +1062,7 @@ int main(int argc, char **argv)
         } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_STENCIL_CONTROL) {
             found_stencil_control |= dwords[i + 2] == 0x00030030u;
-        } else if (((dwords[i] >> 8) & 0xffu) ==
-                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+        } else if (opcode == AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_PARAM) {
             found_tess_context |= dwords[i + 2] == 0x61u;
         } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
@@ -1078,6 +1103,8 @@ int main(int argc, char **argv)
            found_tess_ring_base_hi && found_tess_hull_lds &&
            found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
+           found_independent_blend && found_blend_mask &&
+           found_blend_constants &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
            found_query_availability);

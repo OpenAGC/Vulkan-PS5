@@ -154,6 +154,7 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013ScissorState scissor;
     uint32_t vertex_binding_mask;
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
+    AgcGfx1013ColorBlendState color_blend;
     AgcGfx1013DepthStencilState depth_stencil;
     VkBool32 has_depth_stencil;
     const AgcGfx1013TessellationState *tessellation;
@@ -621,6 +622,121 @@ static bool stencil_face_state(
     dest->reference = source->reference;
     dest->compare_mask = source->compareMask;
     dest->write_mask = source->writeMask;
+    return true;
+}
+
+static bool blend_factor(
+    VkBlendFactor source, AgcGfx1013BlendFactor *destination)
+{
+    if (!destination) return false;
+    switch (source) {
+    case VK_BLEND_FACTOR_ZERO:
+        *destination = AGC_GFX1013_BLEND_ZERO; break;
+    case VK_BLEND_FACTOR_ONE:
+        *destination = AGC_GFX1013_BLEND_ONE; break;
+    case VK_BLEND_FACTOR_SRC_COLOR:
+        *destination = AGC_GFX1013_BLEND_SRC_COLOR; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_SRC_COLOR; break;
+    case VK_BLEND_FACTOR_DST_COLOR:
+        *destination = AGC_GFX1013_BLEND_DST_COLOR; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_DST_COLOR; break;
+    case VK_BLEND_FACTOR_SRC_ALPHA:
+        *destination = AGC_GFX1013_BLEND_SRC_ALPHA; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_SRC_ALPHA; break;
+    case VK_BLEND_FACTOR_DST_ALPHA:
+        *destination = AGC_GFX1013_BLEND_DST_ALPHA; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_DST_ALPHA; break;
+    case VK_BLEND_FACTOR_CONSTANT_COLOR:
+        *destination = AGC_GFX1013_BLEND_CONSTANT_COLOR; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_CONSTANT_COLOR; break;
+    case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+        *destination = AGC_GFX1013_BLEND_CONSTANT_ALPHA; break;
+    case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+        *destination = AGC_GFX1013_BLEND_ONE_MINUS_CONSTANT_ALPHA; break;
+    case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+        *destination = AGC_GFX1013_BLEND_SRC_ALPHA_SATURATE; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static bool blend_operation(VkBlendOp source, AgcGfx1013BlendOp *destination)
+{
+    if (!destination) return false;
+    switch (source) {
+    case VK_BLEND_OP_ADD:
+        *destination = AGC_GFX1013_BLEND_OP_ADD; break;
+    case VK_BLEND_OP_SUBTRACT:
+        *destination = AGC_GFX1013_BLEND_OP_SUBTRACT; break;
+    case VK_BLEND_OP_REVERSE_SUBTRACT:
+        *destination = AGC_GFX1013_BLEND_OP_REVERSE_SUBTRACT; break;
+    case VK_BLEND_OP_MIN:
+        *destination = AGC_GFX1013_BLEND_OP_MIN; break;
+    case VK_BLEND_OP_MAX:
+        *destination = AGC_GFX1013_BLEND_OP_MAX; break;
+    default:
+        return false;
+    }
+    return true;
+}
+
+static bool color_blend_state(
+    const VkPipelineColorBlendStateCreateInfo *source,
+    uint32_t target_count, AgcGfx1013ColorBlendState *destination)
+{
+    const VkColorComponentFlags component_mask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    if (!source || !destination || !target_count ||
+        target_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
+        source->attachmentCount != target_count || !source->pAttachments)
+        return false;
+    memset(destination, 0, sizeof(*destination));
+    destination->target_count = target_count;
+    memcpy(destination->constants, source->blendConstants,
+        sizeof(destination->constants));
+    for (uint32_t i = 0u; i < target_count; ++i) {
+        const VkPipelineColorBlendAttachmentState *attachment =
+            &source->pAttachments[i];
+        AgcGfx1013ColorBlendTargetState *target =
+            &destination->targets[i];
+        if (attachment->colorWriteMask & ~component_mask)
+            return false;
+        target->enable = attachment->blendEnable;
+        target->write_mask = attachment->colorWriteMask;
+        if (!attachment->blendEnable) {
+            target->color_source = AGC_GFX1013_BLEND_ONE;
+            target->color_destination = AGC_GFX1013_BLEND_ZERO;
+            target->color_operation = AGC_GFX1013_BLEND_OP_ADD;
+            target->alpha_source = AGC_GFX1013_BLEND_ONE;
+            target->alpha_destination = AGC_GFX1013_BLEND_ZERO;
+            target->alpha_operation = AGC_GFX1013_BLEND_OP_ADD;
+            continue;
+        }
+        if (!blend_factor(attachment->srcColorBlendFactor,
+                &target->color_source) ||
+            !blend_factor(attachment->dstColorBlendFactor,
+                &target->color_destination) ||
+            !blend_operation(attachment->colorBlendOp,
+                &target->color_operation) ||
+            !blend_factor(attachment->srcAlphaBlendFactor,
+                &target->alpha_source) ||
+            !blend_factor(attachment->dstAlphaBlendFactor,
+                &target->alpha_destination) ||
+            !blend_operation(attachment->alphaBlendOp,
+                &target->alpha_operation))
+            return false;
+        target->separate_alpha =
+            target->alpha_source != target->color_source ||
+            target->alpha_destination != target->color_destination ||
+            target->alpha_operation != target->color_operation;
+    }
     return true;
 }
 
@@ -1809,12 +1925,6 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             !blend->pAttachments)
             return VK_ERROR_FEATURE_NOT_PRESENT;
-        for (uint32_t j = 0; j < blend->attachmentCount; ++j)
-            if (blend->pAttachments[j].blendEnable ||
-                blend->pAttachments[j].colorWriteMask !=
-                    (VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
         const VkViewport *viewport = create->pViewportState->pViewports;
         const VkRect2D *scissor = create->pViewportState->pScissors;
         if (viewport->x != 0.0f || viewport->y != 0.0f ||
@@ -1952,8 +2062,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return VK_ERROR_INITIALIZATION_FAILED;
         uint32_t color_attachment_count =
             render_pass->subpasses[create->subpass].color_attachment_count;
-        if (!color_attachment_count ||
-            blend->attachmentCount != color_attachment_count)
+        AgcGfx1013ColorBlendState color_blend;
+        if (!color_blend_state(blend, color_attachment_count, &color_blend))
             return VK_ERROR_FEATURE_NOT_PRESENT;
         AgcGfx1013DepthStencilState depth_stencil = {0};
         VkBool32 has_depth_stencil = render_pass->subpasses[create->subpass].
@@ -2001,6 +2111,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
         pipeline->vertex_binding_mask = vertex_binding_mask;
+        pipeline->color_blend = color_blend;
         pipeline->has_depth_stencil = has_depth_stencil;
         pipeline->depth_stencil = depth_stencil;
         memcpy(pipeline->vertex_strides, vertex_strides,
@@ -3591,6 +3702,18 @@ static VkResult prepare_graphics_stage_user_data(
     return VK_SUCCESS;
 }
 
+static bool record_color_blend(
+    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline)
+{
+    int32_t result = agcGfx1013SetColorBlendState(
+        &command->dcb, &pipeline->color_blend);
+    if (result == AGC_OK)
+        return true;
+    command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+        VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+    return false;
+}
+
 static void record_tessellation_draw(
     VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline,
     uint32_t element_count, uint32_t instance_count,
@@ -3695,6 +3818,8 @@ static void record_tessellation_draw(
         .vertex_count = element_count,
         .draw_modifier = 0x40000000u,
     };
+    if (!record_color_blend(command, pipeline))
+        return;
     int32_t draw_result = agcGfx1013SetTessellationRings(
         &command->dcb, pipeline->tessellation);
     if (draw_result == AGC_OK)
@@ -3854,8 +3979,12 @@ static void record_graphics_draw(
             .index_count = element_count,
             .draw_initiator = 0u,
         };
+        if (!record_color_blend(command, pipeline))
+            return;
         result = agcGfx1013DrawBaselineIndexed(&command->dcb, &indexed_draw);
     } else {
+        if (!record_color_blend(command, pipeline))
+            return;
         result = agcGfx1013DrawBaselineIndexAuto(
             &command->dcb, &prepared.draw);
     }
@@ -3968,6 +4097,8 @@ static void record_graphics_indirect(
             index->memory_offset + command->index_offset);
         draw.index_buffer_count = (uint32_t)(available / element_size);
     }
+    if (!record_color_blend(command, pipeline))
+        return;
     uint32_t packet_count = expand_draw_index ? draw_count : 1u;
     for (uint32_t n = 0u; n < packet_count; ++n) {
         if (expand_draw_index) {

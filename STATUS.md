@@ -280,7 +280,14 @@ Implemented and host-verified:
   FW 5.50 runner. Two FW runs reported exactly 22,118 stencil writes, equal to
   `green=12288 + red=9830`, with identical near/far depth decisions.
 - Inline render passes and graphics pipelines accept one to eight color
-  attachments with matching full-component, blend-disabled state. Begin/end
+  attachments with independent static blend equations and color write masks.
+  Vulkan's non-dual-source factors, five core operations, separate alpha state,
+  and four constants translate to OpenAGC's typed gfx1013 blend controls before
+  every baseline, geometry, indirect, or tessellation draw. The command test
+  requires distinct disabled/enabled MRT targets, exact control words, target
+  mask `0x6f`, and exact float constants in normal and ASAN/UBSAN builds.
+  `independentBlend` remains false until a deterministic hardware gate passes.
+  Begin/end
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
   enables every active slot, and fragment export context carries the real MRT
   count. The command regression verifies CB1 and dual RGBA8 export `0x44`.
@@ -324,7 +331,7 @@ Implemented and host-verified:
   inline single-color pass translates Vulkan layouts to OpenAGC transitions,
   emits `agcGfx1013BuildFramePrologue`, binds the image allocation as CB0, and
   applies fixed viewport/scissor state before `DRAW_INDEX_AUTO`. Draws outside
-  an active pass and unsupported clear/dynamic/multisample/blend state fail
+  an active pass and unsupported clear/dynamic/multisample/logic-op state fail
   command-buffer or pipeline creation instead of recording incomplete state.
 - The standalone triangle sample uses only Vulkan 1.1 APIs and verifies a
   mapped 256x256 linear RGBA8 result after a VS/PS draw and fence wait. Both

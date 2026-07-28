@@ -606,9 +606,13 @@ The initial graphics render-pass path supports one single-sampled linear color
 attachment or up to eight MRT color attachments, an optional OpenAGC-laid-out
 optimal depth/stencil attachment, one
 inline subpass, load/don't-care operations, fixed full-range viewport/scissor
-state, fill rasterization without culling, disabled blending, and all-component
-writes. MRT currently requires blending disabled and all components enabled on
-every target. Static depth compare/write and front/back stencil state are translated
+state, fill rasterization without culling, and static per-target blending and
+color write masks. Vulkan blend factors and operations, separate alpha state,
+four blend constants, and up to eight independent attachment records translate
+to OpenAGC's typed gfx1013 blend state before baseline, geometry, indirect, and
+tessellation draws. Dual-source factors and logic operations remain rejected.
+The public `independentBlend` bit stays false pending deterministic hardware
+readback. Static depth compare/write and front/back stencil state are translated
 to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
 addresses, and restore host-readable cache state after drawing. Depth/stencil

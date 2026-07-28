@@ -66,6 +66,18 @@ These bits must only be enabled as their complete Vulkan and shader semantics
 become hardware-qualified. Eden continuing after logging an unsuitable driver
 does not turn a failed requirement into support.
 
+The host-side `independentBlend` contract is now implemented. Graphics
+pipelines translate distinct per-attachment enable state, non-dual-source
+factors, all five core blend operations, separate alpha equations, write masks,
+and constants into OpenAGC's typed gfx1013 blend state. Every baseline,
+geometry, indirect, and tessellation draw restores that state. The exact PM4
+regression uses one disabled full-mask target and one enabled GB-only target,
+requiring distinct control words, target mask `0x6f`, and all four constants.
+Both normal and ASAN/UBSAN suites pass 20/20 and the Prospero build passes.
+Public `independentBlend` remains false until a deterministic MRT readback gate
+is added and hardware-qualified; dual-source blend and logic operations remain
+separate unsupported features.
+
 ## Runtime compatibility
 
 | Area | Current evidence | State |
