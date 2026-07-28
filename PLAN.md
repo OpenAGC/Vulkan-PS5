@@ -53,7 +53,14 @@
   candidate corrects gfx10.3's two-step 1024-byte-allocation/512-byte-encoding
   rule. Its single bounded run also returned safely with a zeroed target, so it
   was not retried and tessellation feature exposure remains blocked on the
-  separate LS-front/HS-back dataflow.
+  separate LS-front/HS-back dataflow. Local ACO inspection then identified the
+  dataflow defect: the independently compiled HS back retained RADV's
+  monolithic same-invocation temporary-VGPR path and consequently wrote zero
+  input positions. openagc-psbc now disables that shortcut in both halves,
+  lowers the TCS inputs to shared LDS loads, and rejects surviving per-vertex
+  HS inputs. Host compiler tests, all seven ICD tests, and the Prospero build
+  pass. The corrected candidate is deliberately not hardware-qualified yet;
+  its next action is one bounded FW 5.50 run after a fresh console-up signal.
 
 ## Summary
 
