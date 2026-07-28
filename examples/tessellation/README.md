@@ -25,9 +25,8 @@ tessellation: PASS <count> green pixels
 ```
 
 Two independent FW 5.500.008 runs produced exactly 7200 green pixels, completing
-the earlier constant-position qualification gate. Those results do not qualify
-this restored patch-output-read candidate. The driver must not advertise
-`tessellationShader` until this path is hardware-qualified twice.
+the earlier constant-position qualification gate. Those results did not by
+themselves qualify the restored patch-output-read candidate.
 
 The first bounded run of the restored candidate on FW 5.500.008 returned
 normally, left the console responsive, and produced a zeroed target
@@ -51,6 +50,12 @@ websrv responsive, but produced another zeroed target
 
 The corrected separate-hull LDS-load candidate also returned safely but left
 the image zeroed (`20260728T030535Z-tessellation-run1.log`). It was not
-retried. The storage-buffer probe is a materially distinct candidate built to
-localize that remaining downstream failure. Host pipeline creation, command
-recording, and the Prospero cross-link pass; it has not been run on PS5 yet.
+retried. The storage-buffer probe then localized the remaining failure to a
+missing indirect descriptor-set-table pointer in the separately compiled HS.
+After openagc-psbc exposed that ABI and the ICD programmed its compiler-selected
+SGPR, two independent bounded runs passed all three hull markers, all copied
+positions, and exactly 7200 green pixels
+(`20260728T034030Z-tessellation-run1.log` and
+`20260728T034211Z-tessellation-run1.log`). Both returned normally and left the
+console responsive. This patch-output-read path is now hardware-qualified at
+the sample's scope.

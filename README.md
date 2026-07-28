@@ -156,8 +156,12 @@ completed its first bounded FW 5.500.008 launch successfully
 all three hull invocation markers (`0x48530000`, `0x48530001`, and
 `0x48530002`) and the exact three input control-point positions; the image
 oracle reported exactly 7200 green pixels. The runner returned normally, and
-no retry was attempted. `tessellationShader` remains disabled until the same
-ELF passes one more independent run after a fresh console-availability signal.
+no retry was attempted. A second independent fresh-console run reproduced all
+hull markers, positions, and exactly 7200 green pixels
+(`20260728T034211Z-tessellation-run1.log`); the console remained responsive.
+The restored patch-output path is hardware-qualified at this scope and is
+ready for standard `tessellationShader` feature advertisement and device
+feature-request validation.
 
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage

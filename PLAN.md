@@ -78,9 +78,12 @@
   ELF completed its first bounded FW 5.500.008 run successfully: all three hull
   invocation markers and copied control-point positions matched, and the image
   contained exactly 7200 green pixels
-  (`20260728T034030Z-tessellation-run1.log`). No retry was attempted. One more
-  independent pass after a fresh console-availability signal remains before
-  `tessellationShader` can advance through its standard feature-request path.
+  (`20260728T034030Z-tessellation-run1.log`). No retry was attempted. A second
+  independent run after a fresh console-availability signal reproduced every
+  hull and image oracle (`20260728T034211Z-tessellation-run1.log`) and left the
+  console responsive. Patch-output tessellation is now hardware-qualified at
+  this scope and can advance through its standard `tessellationShader`
+  advertisement and device-feature request path.
 
 ## Summary
 

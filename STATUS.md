@@ -179,8 +179,11 @@ Implemented and host-verified:
   markers `0x48530000` through `0x48530002`, all three copied input positions,
   and exactly 7200 green pixels
   (`20260728T034030Z-tessellation-run1.log`). It returned normally, and no
-  retry was attempted. One independent fresh-console pass remains before
-  `tessellationShader` feature exposure can be considered.
+  retry was attempted. A second independent fresh-console run reproduced the
+  complete hull and image oracle (`20260728T034211Z-tessellation-run1.log`)
+  and left the console responsive. Patch-output tessellation is now
+  hardware-qualified at this scope and can be exposed through the normal
+  `tessellationShader` feature path.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table
