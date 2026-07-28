@@ -121,6 +121,10 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/swapchain_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.swapchain_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.system_exit_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/system_exit_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.system_exit_runner PROPERTIES TIMEOUT 15)
   endif()
   find_program(GLSLANG_VALIDATOR glslangValidator)
   if(GLSLANG_VALIDATOR)
@@ -398,6 +402,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_compile_options(vulkan_ps5_process_cleanup PRIVATE
       -Wall -Wextra -Wpedantic)
     target_link_libraries(vulkan_ps5_process_cleanup PRIVATE
+      kernel_sys SceSystemService unwind c++abi c++ m)
+    add_executable(vulkan_ps5_system_exit_probe
+      examples/system_exit_probe/main.c)
+    set_target_properties(vulkan_ps5_system_exit_probe PROPERTIES SUFFIX ".elf")
+    target_compile_features(vulkan_ps5_system_exit_probe PRIVATE c_std_11)
+    target_compile_options(vulkan_ps5_system_exit_probe PRIVATE
+      -Wall -Wextra -Wpedantic)
+    target_link_libraries(vulkan_ps5_system_exit_probe PRIVATE
       kernel_sys SceSystemService unwind c++abi c++ m)
   endif()
 endif()

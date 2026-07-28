@@ -195,6 +195,13 @@
   the flip event before closing VideoOut and deleting its still-live equeue; a
   fresh bounded run will distinguish that resource from a FW 5.50/raw-ELF
   baseline warning.
+  The balanced-lifecycle run (`20260728T064111Z-swapchain-run1.log`) again
+  completed 1,800 frames and the full safe app-exit lifecycle without a crash,
+  but retained the warning. A new SystemService-only probe contains no Vulkan,
+  OpenAGC, GPU, VideoOut, equeue, or custom-memory operations and has a bounded
+  runner that accepts only a clean lifecycle or exactly one matching baseline
+  warning. Its ELF SHA-256 is
+  `e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.
   A separately built recovery payload refuses to act unless exactly one other
   `eboot.elf` exists. One new bounded run remains before this milestone is
   hardware qualified; the runner has no automatic retry and uses exact-PID

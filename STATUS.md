@@ -450,3 +450,12 @@ Pending:
   by `All processes exited`, and
   requires exact-PID process absence before PASS. Post-PASS failures also
   attempt cleanup of that exact PID.
+- The balanced flip-event lifecycle run
+  (`20260728T064111Z-swapchain-run1.log`) again completed 1,800 frames, Vulkan
+  cleanup, self-KillApp, exact-PID removal, and shell restoration without a
+  crash, but retained the warning. `vulkan_ps5_system_exit_probe` now isolates
+  the raw-ELF/SystemService path with no Vulkan, OpenAGC, GPU, VideoOut, equeue,
+  or custom-memory work. Its bounded runner distinguishes clean teardown from
+  exactly one matching `0x4000` baseline warning and rejects other warnings or
+  fatal lifecycle evidence. Probe ELF SHA-256:
+  `e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.

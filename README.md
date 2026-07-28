@@ -113,6 +113,21 @@ klogs contain the identical one-page warning. OpenAGC `4f66aa7` now balances
 the remaining flip-event lifecycle explicitly—unregister event, close
 VideoOut, then delete the still-live equeue. A fresh bounded run will determine
 whether that removes the warning or confirms a FW 5.50/raw-ELF baseline.
+The balanced-lifecycle run (`20260728T064111Z-swapchain-run1.log`) again
+completed 1,800 frames, Vulkan cleanup, self-KillApp, exact-PID removal, and
+shell restoration without a crash, but retained the same warning. The bounded
+`vulkan_ps5_system_exit_probe` now isolates the raw-ELF/SystemService path: it
+links only `kernel_sys`, `SceSystemService`, `unwind`, `c++abi`, `c++`, and `m`,
+performs no Vulkan, OpenAGC, GPU, VideoOut, equeue, or custom-memory work, and
+classifies either a clean teardown or exactly one baseline `0x4000` warning.
+Its ELF SHA-256 is
+`e585e74f872a4dfc7fa63910437b106843334666157672f9959c27558afe06a9`.
+Run it only after a fresh explicit console signal:
+
+```sh
+PS5_HOST=10.0.1.41 examples/run_fw550_system_exit_probe.sh
+```
+
 `vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
 to act unless exactly one other `eboot.elf` exists. One new bounded hardware
 run is required.
