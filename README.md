@@ -30,12 +30,16 @@ exact-PID crash, cleanup, warning, and console-response checks.
 Single and multi `vkCmdDrawIndirect`/`vkCmdDrawIndexedIndirect` recording now
 uses OpenAGC's application-neutral gfx1013 indirect-draw wrapper instead of a
 no-op. The ICD validates usage, alignment, stride, range, and index bindings,
-and supplies compiler-selected base-vertex/start-instance user-SGPR locations.
-The optional `multiDrawIndirect` and `drawIndirectFirstInstance` bits remain
-false pending deterministic hardware readback. A bounded probe is prepared:
-one multi-draw buffer uses `firstVertex = 1` to skip a decoy and nonzero
-`firstInstance` values 1 and 2 to produce separate exact green/blue triangles.
-Its mapped oracle fails if either command or either indirect argument is lost.
+and supplies compiler-selected base-vertex, start-instance, and DrawIndex
+user-SGPR locations. Shaders using DrawIndex expand a Vulkan multi draw into
+hardware-qualified single-indirect packets, programming DrawIndex for each
+command; shaders that do not use it retain OpenAGC's FW 5.50-qualified native
+multi packet. A 2026-07-28 attempt to use a speculative Mesa-style 10-dword
+multi packet caused a PID-scoped GPU fault/reset, so that form was removed.
+The corrected bounded probe validates `firstVertex = 1`, `firstInstance = 1,2`,
+and `gl_DrawID = 0,1` through exact green/blue readback. The optional
+`multiDrawIndirect`, `drawIndirectFirstInstance`, and `shaderDrawParameters`
+bits remain false until the corrected candidate passes a fresh hardware run.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;

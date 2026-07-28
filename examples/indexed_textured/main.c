@@ -703,7 +703,7 @@ int main(void)
             green, blue, red, unexpected, covered);
         status = 1;
     } else {
-        printf("indirect_draw: PASS green=%u blue=%u firstVertex=1 firstInstance=1,2 draws=2\n",
+        printf("indirect_draw: PASS green=%u blue=%u firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2\n",
             green, blue);
     }
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)

@@ -598,25 +598,30 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   The one-shot runner has clean/crash exact-PID coverage and the full host suite
   passes 18/18. The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
   SHA-256
-  `28f7a3ec4ddd68b4f835a7dd7db0243b57d6509679e3055e4e3cdd93c59ae835`.
+  `1e7cfcaa9bcf6ca0c9afd1ede0d6ae519888b5db832a4d44deb7f68e3519a0f5`.
   `samplerAnisotropy` remains `VK_FALSE` until one fresh explicit FW 5.50 run
   passes and the normal feature-query/request contract is enabled.
 - `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect` now use OpenAGC's typed
-  gfx1013 single/multi packet path. Common draw preparation binds shaders,
-  frame/depth state, descriptors, and vertex tables while indirect metadata
-  supplies the compiler-selected base-vertex and start-instance registers.
+  gfx1013 indirect path. Common draw preparation binds shaders, frame/depth
+  state, descriptors, and vertex tables while openagc-psbc API v9 supplies the
+  compiler-selected base-vertex, start-instance, and DrawIndex registers.
   Buffer usage, alignment, stride, full command range, and index bindings are
-  validated; zero draw count remains a legal no-op. Host recording verifies
-  the single non-indexed, multi non-indexed, and multi indexed PM4 opcodes plus
-  range rejection. All 18 tests and the Prospero static build pass.
+  validated; zero draw count remains a legal no-op. DrawIndex-using multi draws
+  expand into single packets with explicit values 0..N-1. This avoids the
+  speculative 10-dword gfx10+ packet that caused PID 156 to receive a fatal GPU
+  signal and triggered a GPU reset during the bounded 2026-07-28 run. OpenAGC
+  restored the earlier FW 5.50-qualified 7-dword PS5 packet for shaders that do
+  not consume DrawIndex.
   A deterministic hardware gate now packs two commands into one indirect
   buffer. Both use `firstVertex = 1` to skip a decoy; nonzero first instances
-  1 and 2 make the shader place exact green and blue triangles in opposite
-  target halves. The oracle rejects a missing command, ignored base/instance,
-  red fallback, unexpected color, unequal coverage, or damaged background.
+  1 and 2 plus DrawIndex values 0 and 1 make the shader place exact green and
+  blue triangles in opposite target halves. The oracle rejects a missing
+  command, ignored base/instance/draw index, red fallback, unexpected color,
+  unequal coverage, or damaged background.
   The bounded runner has clean/crash exact-PID safety coverage, all 19 host
   tests pass, and the Prospero ELF links `-lunwind -lc++abi -lc++ -lm` with
   SHA-256
-  `e4668308a8d3477253427080c0cd647120153f9dfe6b38f670b163742c51a42d`.
-  `multiDrawIndirect` and `drawIndirectFirstInstance` stay `VK_FALSE` pending
-  one fresh explicit FW 5.50 run.
+  `cbd05b90dc471644f7e278236abff26845124e69cb0562d8d7727f650b0e87b8`.
+  `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+  `shaderDrawParameters` stay `VK_FALSE` pending one fresh explicit FW 5.50
+  run of the corrected candidate.

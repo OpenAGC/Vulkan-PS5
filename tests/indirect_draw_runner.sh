@@ -13,7 +13,7 @@ cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
 for arg do
     case "$arg" in
-        */hbldr*) printf '%s\n' 'indirect_draw: PASS green=5760 blue=5760 firstVertex=1 firstInstance=1,2 draws=2' ;;
+        */hbldr*) printf '%s\n' 'indirect_draw: PASS green=5760 blue=5760 firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2' ;;
     esac
 done
 EOF
@@ -55,7 +55,7 @@ run_runner() {
 }
 
 run_runner clean "$test_root/clean.out"
-grep -F 'FW550 indirect-draw: PASS (multi/first-instance readback and clean PID-scoped klog)' \
+grep -F 'FW550 indirect-draw: PASS (multi/draw-parameters readback and clean PID-scoped klog)' \
     "$test_root/clean.out" >/dev/null
 grep -F -- '--assert-absent --pid 323' "$test_root/uv.log" >/dev/null
 

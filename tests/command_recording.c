@@ -888,8 +888,7 @@ int main(int argc, char **argv)
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                                 OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(1)) == 0u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
-    bool found_single_indirect = false, found_indirect = false;
-    bool found_indexed_indirect = false;
+    uint32_t indirect_count = 0u, indexed_indirect_count = 0u;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;
     bool found_tess_ring_base = false, found_tess_ring_base_hi = false;
@@ -918,21 +917,18 @@ int main(int argc, char **argv)
                        AGC_PM4_OP_DRAW_INDIRECT) {
             assert(i + 4 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
-            found_single_indirect = true;
+            indirect_count++;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
+            assert(i + 4 < count);
+            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            indexed_indirect_count++;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
-            assert(i + 6 < count);
-            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
-            assert(dwords[i + 4] == 2u);
-            assert(dwords[i + 5] == sizeof(VkDrawIndirectCommand));
-            found_indirect = true;
+            assert(!"DrawID pipeline must expand non-indexed multi draws");
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
-            assert(i + 6 < count);
-            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
-            assert(dwords[i + 4] == 2u);
-            assert(dwords[i + 5] == sizeof(VkDrawIndexedIndirectCommand));
-            found_indexed_indirect = true;
+            assert(!"DrawID pipeline must expand indexed multi draws");
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDEX_AUTO) {
             found_tess_draw |= i + 2 < count && dwords[i + 1] == 3u;
@@ -1006,9 +1002,8 @@ int main(int argc, char **argv)
             found_query_availability = true;
         }
     }
-    assert(found_dispatch && found_draw && found_single_indirect &&
-           found_indirect &&
-           found_indexed_indirect && found_tess_draw &&
+    assert(found_dispatch && found_draw && indirect_count == 3u &&
+           indexed_indirect_count == 2u && found_tess_draw &&
            found_tess_context && found_tess_ring_size &&
            found_tess_offchip && found_tess_ring_base &&
            found_tess_ring_base_hi && found_tess_hull_lds &&

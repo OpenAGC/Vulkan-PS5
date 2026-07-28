@@ -3428,7 +3428,7 @@ static VkResult prepare_graphics_stage_user_data(
     uint32_t stage_index, bool allow_vertex_table, bool indexed,
     uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
     bool indirect_draw, uint32_t *base_vertex_location,
-    uint32_t *start_instance_location,
+    uint32_t *start_instance_location, uint32_t *draw_index_location,
     AgcGfx1013ResourceTableBinding *resource_tables,
     uint32_t *resource_table_count, AgcRegisterValue *user_data,
     uint32_t *user_data_count, uint32_t user_data_capacity)
@@ -3470,10 +3470,13 @@ static VkResult prepare_graphics_stage_user_data(
         uint32_t value;
         if (indirect_draw &&
             (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX ||
-             sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)) {
-            uint32_t *location =
-                sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX ?
-                    base_vertex_location : start_instance_location;
+             sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE ||
+             sgpr->kind == OPENAGC_PSBC_USER_SGPR_DRAW_INDEX)) {
+            uint32_t *location = draw_index_location;
+            if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
+                location = base_vertex_location;
+            else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
+                location = start_instance_location;
             if (!location || *location != UINT32_MAX ||
                 sgpr->dword_count != 1u)
                 return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -3484,6 +3487,8 @@ static VkResult prepare_graphics_stage_user_data(
             value = indexed ? (uint32_t)vertex_offset : first_element;
         else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
             value = first_instance;
+        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DRAW_INDEX)
+            value = 0u;
         else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_PUSH_CONSTANT_POINTER &&
                  metadata->push_constant_size == 0u)
             value = 0u;
@@ -3522,20 +3527,20 @@ static void record_tessellation_draw(
     uint32_t pixel_table_count = 0u;
     VkResult result = prepare_graphics_stage_user_data(
         command, pipeline, 0u, true, false, first_element, 0,
-        first_instance, false, NULL, NULL,
+        first_instance, false, NULL, NULL, NULL,
         hull_tables, &hull_table_count, user_data,
         &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result == VK_SUCCESS)
         result = prepare_graphics_stage_user_data(
             command, pipeline, 1u, false, false, first_element, 0,
-            first_instance, false, NULL, NULL,
+            first_instance, false, NULL, NULL, NULL,
             primitive_tables, &primitive_table_count,
             user_data, &user_data_count,
             3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result == VK_SUCCESS)
         result = prepare_graphics_stage_user_data(
             command, pipeline, 2u, false, false, first_element, 0,
-            first_instance, false, NULL, NULL,
+            first_instance, false, NULL, NULL, NULL,
             pixel_tables, &pixel_table_count, user_data,
             &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     uint32_t descriptor_count = 0u;
@@ -3622,6 +3627,7 @@ typedef struct VkPs5PreparedBaselineDraw {
     AgcGfx1013BaselineDrawState draw;
     uint32_t base_vertex_location;
     uint32_t start_instance_location;
+    uint32_t draw_index_location;
 } VkPs5PreparedBaselineDraw;
 
 static VkResult prepare_baseline_draw(
@@ -3633,13 +3639,15 @@ static VkResult prepare_baseline_draw(
     memset(prepared, 0, sizeof(*prepared));
     prepared->base_vertex_location = UINT32_MAX;
     prepared->start_instance_location = UINT32_MAX;
+    prepared->draw_index_location = UINT32_MAX;
     uint32_t primitive_table_count = 0u;
     uint32_t pixel_table_count = 0u;
     uint32_t user_data_count = 0u;
     VkResult result = prepare_graphics_stage_user_data(
         command, pipeline, 0u, true, indexed, first_element, vertex_offset,
         first_instance, indirect_draw, &prepared->base_vertex_location,
-        &prepared->start_instance_location, prepared->primitive_tables,
+        &prepared->start_instance_location, &prepared->draw_index_location,
+        prepared->primitive_tables,
         &primitive_table_count, prepared->user_data, &user_data_count,
         OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result != VK_SUCCESS)
@@ -3830,11 +3838,21 @@ static void record_graphics_indirect(
     }
     uint64_t argument_address = vk_ps5_memory_gpu_address(arguments->memory,
         arguments->memory_offset + offset);
+    bool expand_draw_index = prepared.draw_index_location != UINT32_MAX;
+    if (expand_draw_index) {
+        if (prepared.draw.num_post_bind_sh_registers >=
+                OPENAGC_PSBC_MAX_USER_SGPRS) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        prepared.user_data[prepared.draw.num_post_bind_sh_registers++] =
+            (AgcRegisterValue){ prepared.draw_index_location, 0u };
+    }
     AgcGfx1013IndirectDrawState draw = {
         .draw = prepared.draw,
         .argument_buffer_address = argument_address & ~UINT64_C(7),
         .argument_offset = (uint32_t)(argument_address & UINT64_C(7)),
-        .draw_count = draw_count,
+        .draw_count = expand_draw_index ? 1u : draw_count,
         .stride = stride,
         .base_vertex_location = prepared.base_vertex_location == UINT32_MAX ?
             0u : prepared.base_vertex_location,
@@ -3862,10 +3880,22 @@ static void record_graphics_indirect(
             index->memory_offset + command->index_offset);
         draw.index_buffer_count = (uint32_t)(available / element_size);
     }
-    int32_t result = agcGfx1013DrawBaselineIndirect(&command->dcb, &draw);
-    if (result != AGC_OK)
-        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
-            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t packet_count = expand_draw_index ? draw_count : 1u;
+    for (uint32_t n = 0u; n < packet_count; ++n) {
+        if (expand_draw_index) {
+            uint64_t draw_address = argument_address + (uint64_t)n * stride;
+            draw.argument_buffer_address = draw_address & ~UINT64_C(7);
+            draw.argument_offset = (uint32_t)(draw_address & UINT64_C(7));
+            prepared.user_data[prepared.draw.num_post_bind_sh_registers - 1u]
+                .value = n;
+        }
+        int32_t result = agcGfx1013DrawBaselineIndirect(&command->dcb, &draw);
+        if (result != AGC_OK) {
+            command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+                VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+    }
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

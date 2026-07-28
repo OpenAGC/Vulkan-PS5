@@ -72,7 +72,7 @@ target_exec_line=$(grep -n "^<${target_pid}> EXEC /app0/eboot\.bin " "$klog" | \
     tail -n 1 | cut -d: -f1)
 sed -n "${target_exec_line},\$p" "$klog" >"$target_klog"
 target_pid_hex=$(printf '%x' "$target_pid")
-if ! grep -E '^indirect_draw: PASS green=[0-9]+ blue=[0-9]+ firstVertex=1 firstInstance=1,2 draws=2$' \
+if ! grep -E '^indirect_draw: PASS green=[0-9]+ blue=[0-9]+ firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2$' \
         "$log" >/dev/null || \
    grep -Eq \
     "# proc ID: *${target_pid}$|mDBG: Sending signal\(pid: *${target_pid},|App Crash : PID=0x0*${target_pid_hex}([^0-9a-f]|$)|SYSTEM_XO_VIOLATION" \
@@ -103,6 +103,6 @@ if grep -F '[KERNEL] WARNING:' "$target_klog" | grep -Fvx "$warning" \
     exit 1
 fi
 
-echo "FW550 indirect-draw: PASS (multi/first-instance readback and clean PID-scoped klog)"
+echo "FW550 indirect-draw: PASS (multi/draw-parameters readback and clean PID-scoped klog)"
 echo "log: $log"
 echo "klog: $target_klog"

@@ -320,29 +320,24 @@
   lingering process, or unavailable websrv. Host sampler tests plus runner
   clean/crash simulations pass in the 18/18 suite; the Prospero candidate links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `28f7a3ec4ddd68b4f835a7dd7db0243b57d6509679e3055e4e3cdd93c59ae835`.
+  `1e7cfcaa9bcf6ca0c9afd1ede0d6ae519888b5db832a4d44deb7f68e3519a0f5`.
   The feature remains false until one fresh-console hardware gate qualifies the
   filtering result and the standard feature-query/request path is promoted.
-  Vulkan indirect graphics commands now record through OpenAGC's existing
-  validated gfx1013 wrappers rather than silently doing nothing. The common
-  draw-state path supplies descriptors, vertex tables, render state, and
-  compiler-selected base-vertex/start-instance register locations for single
-  or multi, indexed or non-indexed packets. Recording validates indirect-buffer
-  usage, four-byte alignment, minimum stride, complete command ranges, and
-  bound index storage; zero draw count is a no-op. Host PM4 regression covers
-  `DRAW_INDIRECT`, `DRAW_INDIRECT_MULTI`, and
-  `DRAW_INDEX_INDIRECT_MULTI`, plus an out-of-range rejection. The complete
-  host suite and Prospero static build pass. `multiDrawIndirect` and
-  `drawIndirectFirstInstance` remain false. Their deterministic probe is now
-  prepared: two commands use `firstVertex = 1` to skip an off-screen decoy and
-  `firstInstance = 1,2`; `gl_InstanceIndex` shifts them into separate halves
-  and selects exact green/blue texels. The readback requires balanced
-  5,000-6,500-pixel triangles with no red fallback or unexpected pixels, so a
-  missing second command, base vertex, or first instance cannot pass. Its
-  one-shot runner has clean/crash exact-PID coverage. The 19-test host suite
-  passes, the Prospero ELF links `-lunwind -lc++abi -lc++ -lm`, and SHA-256 is
-  `e4668308a8d3477253427080c0cd647120153f9dfe6b38f670b163742c51a42d`.
-  One fresh-console hardware run remains before either bit can be promoted.
+  Vulkan indirect graphics commands now record through OpenAGC's validated
+  gfx1013 wrappers. openagc-psbc API v9 exposes consecutive BaseVertex,
+  BaseInstance, and DrawIndex user-SGPR metadata. Because the Mesa-style
+  10-dword multi packet caused a bounded FW 5.50 GPU fault/reset on 2026-07-28,
+  OpenAGC retains its previously qualified 7-dword PS5 packet. Vulkan expands
+  DrawIndex-using multi draws into single-indirect packets and programs the
+  DrawIndex SGPR per command; native multi remains available when DrawIndex is
+  unused. Host recording locks three non-indexed and two indexed single packets
+  for the DrawIndex shader, alongside range rejection. The probe checks
+  `firstVertex = 1`, `firstInstance = 1,2`, and `gl_DrawID = 0,1` through exact
+  green/blue readback. All 19 host tests pass; the Prospero ELF links
+  `-lunwind -lc++abi -lc++ -lm` and has SHA-256
+  `cbd05b90dc471644f7e278236abff26845124e69cb0562d8d7727f650b0e87b8`.
+  `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+  `shaderDrawParameters` remain false until a fresh bounded run passes.
 
 ## Summary
 
