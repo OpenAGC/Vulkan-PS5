@@ -123,7 +123,34 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_ANISOTROPY_PROBE)
+#if defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+    VkPhysicalDeviceShaderDrawParametersFeatures supported_draw_parameters = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 supported_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &supported_draw_parameters,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &supported_features);
+    if (!supported_features.features.multiDrawIndirect ||
+        !supported_features.features.drawIndirectFirstInstance ||
+        !supported_draw_parameters.shaderDrawParameters) {
+        printf("indirect_draw: required feature contract is unavailable\n");
+        return 1;
+    }
+    VkPhysicalDeviceShaderDrawParametersFeatures enabled_draw_parameters = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+        .shaderDrawParameters = VK_TRUE,
+    };
+    VkPhysicalDeviceFeatures2 enabled_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &enabled_draw_parameters,
+        .features = {
+            .multiDrawIndirect = VK_TRUE,
+            .drawIndirectFirstInstance = VK_TRUE,
+        },
+    };
+#elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.samplerAnisotropy) {
@@ -183,6 +210,8 @@ int main(void)
         .ppEnabledExtensionNames = device_extensions,
 #elif defined(VULKAN_PS5_ANISOTROPY_PROBE)
         .pEnabledFeatures = &enabled_features,
+#elif defined(VULKAN_PS5_INDIRECT_DRAW_PROBE)
+        .pNext = &enabled_features,
 #endif
     };
     VkDevice device;
@@ -759,27 +788,35 @@ int main(void)
 #endif
     int status = 0;
 #ifdef VULKAN_PS5_INDIRECT_DRAW_PROBE
-    uint32_t green = 0u, blue = 0u, red = 0u, unexpected = 0u;
+    uint32_t green = 0u, blue = 0u, red = 0u, white = 0u, unexpected = 0u;
+    uint32_t left_green = 0u, right_green = 0u;
     for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
-        if (pixels[i] == 0xff00ff00u)
+        if (pixels[i] == 0xff00ff00u) {
             green++;
-        else if (pixels[i] == 0xffff0000u)
+            if (i % TARGET_WIDTH < TARGET_WIDTH / 2u)
+                left_green++;
+            else
+                right_green++;
+        } else if (pixels[i] == 0xffff0000u)
             blue++;
         else if (pixels[i] == 0xff0000ffu)
             red++;
+        else if (pixels[i] == 0xffffffffu)
+            white++;
         else if (pixels[i] != 0u)
             unexpected++;
     }
-    if (green < 5000u || green > 6500u || blue < 5000u || blue > 6500u ||
-        green + 64u < blue || blue + 64u < green || red != 0u ||
-        unexpected != 0u || covered != green + blue || opaque != covered ||
+    if (green < 10000u || green > 13000u || left_green < 5000u ||
+        right_green < 5000u || left_green + 64u < right_green ||
+        right_green + 64u < left_green || blue != 0u || red != 0u ||
+        white != 0u || unexpected != 0u || covered != green || opaque != covered ||
         pixels[0] != 0u || pixels[TARGET_WIDTH - 1u] != 0u) {
-        printf("indirect_draw: mismatch green=%u blue=%u red=%u unexpected=%u covered=%u\n",
-            green, blue, red, unexpected, covered);
+        printf("indirect_draw: mismatch green=%u left=%u right=%u baseVertex=%u baseInstance=%u instanceIndex=%u unexpected=%u covered=%u\n",
+            green, left_green, right_green, red, white, blue, unexpected, covered);
         status = 1;
     } else {
-        printf("indirect_draw: PASS green=%u blue=%u firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2\n",
-            green, blue);
+        printf("indirect_draw: PASS green=%u left=%u right=%u firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2\n",
+            green, left_green, right_green);
     }
 #elif defined(VULKAN_PS5_INDIRECT_PARAMETERS_PROBE)
     uint32_t green = 0u, red = 0u, unexpected = 0u;

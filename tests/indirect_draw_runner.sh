@@ -13,7 +13,7 @@ cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
 for arg do
     case "$arg" in
-        */hbldr*) printf '%s\n' 'indirect_draw: PASS green=5760 blue=5760 firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2' ;;
+        */hbldr*) printf '%s\n' 'indirect_draw: PASS green=11520 left=5760 right=5760 firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2' ;;
     esac
 done
 EOF

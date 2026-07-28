@@ -59,15 +59,16 @@ NUL bytes from klog captures before PID and lifecycle checks. Runner tests cover
 that binary-log case explicitly. The rebuilt FW 5.500.008 candidate then passed
 the same exact one-draw oracle as PID 86, self-killed with matching app IDs,
 left idle graphics queues, and produced neither a fatal signal nor a GPU reset.
-Only the isolated raw-ELF `amount=0x4000` VM warning remained. Complete
-multi-draw/DrawID qualification is still required before promoting the related
-public Vulkan feature bits. Its rebuilt two-draw candidate expands indexed and
-non-indexed DrawID pipelines into single packets and is host-checked for stable
-BaseVertex/BaseInstance register locations, the exact DrawIndex `0,0,1,0,1`
-sequence, and indexed/non-indexed initiators. PM4 tests now walk packet
-boundaries, so address payloads cannot impersonate packet headers under
-sanitizers. Both normal and ASAN/UBSAN suites pass 24/24, and the bounded runner
-requires the shared matching-self-kill lifecycle before accepting the gate.
+Only the isolated raw-ELF `amount=0x4000` VM warning remained. The complete
+two-draw diagnostic then showed that BaseVertex and DrawID worked while
+BaseInstance did not. Mesa RADV's gfx10 vertex-user-data order is BaseVertex,
+DrawID, then BaseInstance, but openagc-psbc metadata had exported BaseVertex,
+BaseInstance, then DrawID. Compiler commit `d209d94` fixes that ordering and
+locks it with a library regression. The rebuilt indexed and non-indexed
+DrawID pipelines expand into single packets and pass packet-boundary-safe host
+checks for stable register locations, the exact DrawIndex `0,0,1,0,1`
+sequence, and the correct initiators. Both normal and ASAN/UBSAN suites pass
+25/25, and the bounded runner requires the shared matching-self-kill lifecycle.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
 packets for every Vulkan copy region. Recording validates bound memory,
@@ -76,9 +77,14 @@ source/destination aliasing, and total DCB capacity before emitting any packet.
 The standalone `vulkan_ps5_buffer_copy_example` verifies two offset regions
 and every untouched guard byte through deterministic mapped-memory readback.
 The corrected bounded probe validates `firstVertex = 1`, `firstInstance = 1,2`,
-and `gl_DrawID = 0,1` through exact green/blue readback. The optional
-`multiDrawIndirect`, `drawIndirectFirstInstance`, and `shaderDrawParameters`
-bits remain false until the corrected candidate passes a fresh hardware run.
+and `gl_DrawID = 0,1` through an exact all-green readback split equally across
+the left and right target halves. Both the internal and public FW 5.50 gates
+reported `green=11472 left=5736 right=5736`, exited cleanly, and produced no
+PID-scoped fatal signal or GPU reset. `multiDrawIndirect`,
+`drawIndirectFirstInstance`, and `shaderDrawParameters` are now advertised and
+accepted through their standard core, Features2, Vulkan 1.1, and standalone
+feature paths. The public Prospero ELF has SHA-256
+`d3d80356967a93a9a8cfa0000eaa09089ddd39872f897e73952fe788ab48aa29`.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;

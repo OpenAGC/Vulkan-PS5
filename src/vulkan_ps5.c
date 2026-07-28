@@ -544,10 +544,12 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
     features->depthBiasClamp = VK_TRUE;
     features->depthClamp = VK_TRUE;
+    features->drawIndirectFirstInstance = VK_TRUE;
     features->fillModeNonSolid = VK_TRUE;
     features->geometryShader = VK_TRUE;
     features->independentBlend = VK_TRUE;
     features->logicOp = VK_TRUE;
+    features->multiDrawIndirect = VK_TRUE;
     features->occlusionQueryPrecise = VK_TRUE;
     features->samplerAnisotropy = VK_TRUE;
     features->tessellationShader = VK_TRUE;
@@ -892,7 +894,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
             ((VkPhysicalDeviceShaderDrawParametersFeatures *)next)->shaderDrawParameters =
-                VK_FALSE;
+                VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES:
             ((VkPhysicalDeviceHostQueryResetFeatures *)next)->hostQueryReset =
@@ -918,7 +920,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             f->variablePointers = VK_FALSE;
             f->protectedMemory = VK_FALSE;
             f->samplerYcbcrConversion = VK_FALSE;
-            f->shaderDrawParameters = VK_FALSE;
+            f->shaderDrawParameters = VK_TRUE;
             break;
         }
         default:
@@ -1086,9 +1088,6 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                 return VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
-            if (((const VkPhysicalDeviceShaderDrawParametersFeatures *)next)
-                    ->shaderDrawParameters)
-                return VK_TRUE;
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
             const VkPhysicalDeviceVertexAttributeDivisorFeatures *f =
@@ -1104,7 +1103,7 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                 f->storagePushConstant16 || f->storageInputOutput16 || f->multiview ||
                 f->multiviewGeometryShader || f->multiviewTessellationShader ||
                 f->variablePointersStorageBuffer || f->variablePointers ||
-                f->protectedMemory || f->samplerYcbcrConversion || f->shaderDrawParameters)
+                f->protectedMemory || f->samplerYcbcrConversion)
                 return VK_TRUE;
             break;
         }

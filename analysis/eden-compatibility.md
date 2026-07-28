@@ -63,17 +63,16 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: extensions=0 features=19 limits=0 queues=0 total=19
+eden-profile: extensions=0 features=16 limits=0 queues=0 total=16
 ```
 
-The 19 feature gaps are `drawIndirectFirstInstance`, `dualSrcBlend`,
-`fragmentStoresAndAtomics`, `imageCubeArray`, `largePoints`,
-`multiDrawIndirect`, `multiViewport`, `robustBufferAccess`,
+The 16 feature gaps are `dualSrcBlend`, `fragmentStoresAndAtomics`,
+`imageCubeArray`, `largePoints`, `multiViewport`, `robustBufferAccess`,
 `sampleRateShading`, `shaderClipDistance`, `shaderCullDistance`,
 `shaderImageGatherExtended`,
 `shaderStorageImageWriteWithoutFormat`, `vertexPipelineStoresAndAtomics`,
-`wideLines`, `shaderDemoteToHelperInvocation`, `shaderDrawParameters`,
-`variablePointers`, and `variablePointersStorageBuffer`.
+`wideLines`, `shaderDemoteToHelperInvocation`, `variablePointers`, and
+`variablePointersStorageBuffer`.
 
 These bits must only be enabled as their complete Vulkan and shader semantics
 become hardware-qualified. Eden continuing after logging an unsuitable driver
@@ -190,7 +189,7 @@ and has Prospero ELF SHA-256
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
 | Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
-| Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; corrected one-draw BaseVertex/BaseInstance readback passed with clean SystemService exit and no GPU reset | Hardware-qualified at one-draw parameter scope; complete multi/DrawID gate pending before public feature promotion |
+| Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
 
@@ -198,9 +197,8 @@ The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
 guard bytes. Prospero ELF SHA-256 is
 `eac7fe30a1626502ae7ce27367ebeebdebc89fbf86a3a2b6738a15a6e09ab757`.
-It must not be launched while PS5 interaction is suspended following the
-uncaptured console crash reported after the indirect-parameter deployment
-timeout.
+It remains pending deterministic FW 5.50 readback and should use the same
+bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
 
 ## Implementation order
 
@@ -213,26 +211,21 @@ timeout.
    indirect-draw, query, and shader paths. Sampler-anisotropy descriptor
    semantics and the core feature contract are implemented, host-tested, and
    hardware-qualified by paired bilinear/16x filtering readback on FW 5.50.
-   Indirect draw recording is no longer a stub. Compiler metadata includes DrawIndex,
-   and DrawID-using multi draws expand into hardware-qualified single packets.
-   Its paired multi-draw/nonzero-first-instance/DrawID exact-color gate faulted
-   during submission even after reverting to sequential single packets. A
-   one-draw BaseVertex/BaseInstance diagnostic reproduced the exact fault and
-   proved DrawID was not required. Comparison with upstream RADV and OpenAGC's
-   passing fixture identified a zero-initialized non-indexed draw initiator:
-   Vulkan now emits `DI_SRC_SEL_AUTO_INDEX=2` for non-indexed indirect and zero
-   for indexed indirect, with exact host packet assertions. The corrected
-   one-draw candidate produced the exact expected GPU readback without a reset,
-   then faulted only after PASS while returning through the raw-ELF exit path.
-   The rebuilt probe uses SystemService self-kill after Vulkan cleanup, and all
-   bounded runners sanitize NUL bytes before parsing klog lifecycle evidence.
-   The clean lifecycle rerun passed with the exact oracle, matching self-kill,
-   idle queues, and no fatal signal or GPU reset. The complete multi-draw/DrawID
-   candidate now has packet-boundary-safe normal and sanitizer tests for the
-   exact BaseVertex/BaseInstance locations and DrawIndex `0,0,1,0,1` sequence,
-   plus the shared SystemService lifecycle gate. Its one bounded hardware run
-   remains before the three related core bits can be promoted. The rejected
-   packet experiments, GPU-reset evidence, root cause, and runner hardening are documented in
+   Indirect draw recording is no longer a stub. Compiler metadata includes
+   DrawIndex, and DrawID-using multi draws expand into hardware-qualified single
+   packets. The earlier submission fault was the zero-initialized non-indexed
+   draw initiator; Vulkan now emits `DI_SRC_SEL_AUTO_INDEX=2` for non-indexed
+   indirect and zero for indexed indirect. Later exact-color diagnostics exited
+   cleanly and isolated the remaining combined BaseInstance/DrawID error to
+   reversed openagc-psbc metadata: Mesa RADV's gfx10 order is BaseVertex,
+   DrawID, BaseInstance. Compiler commit `d209d94` fixes and regression-tests
+   that order. The internal and public FW 5.50 gates both produced exact
+   `green=11472 left=5736 right=5736` readback, completed matching self-exit,
+   and produced no PID-scoped fatal signal or GPU reset. Normal and sanitizer
+   suites pass 25/25. `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+   `shaderDrawParameters` are now advertised and accepted through all relevant
+   query and device-create paths. The rejected packet experiments, GPU-reset
+   evidence, both root causes, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.

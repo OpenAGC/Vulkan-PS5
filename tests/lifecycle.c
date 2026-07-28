@@ -143,16 +143,28 @@ int main(void) {
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
-    assert(features11.shaderDrawParameters == VK_FALSE);
+    assert(features11.shaderDrawParameters == VK_TRUE);
     assert(features2.features.depthBiasClamp == VK_TRUE);
     assert(features2.features.depthClamp == VK_TRUE);
+    assert(features2.features.drawIndirectFirstInstance == VK_TRUE);
     assert(features2.features.fillModeNonSolid == VK_TRUE);
     assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.independentBlend == VK_TRUE);
     assert(features2.features.logicOp == VK_TRUE);
+    assert(features2.features.multiDrawIndirect == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
     assert(features2.features.samplerAnisotropy == VK_TRUE);
     assert(features2.features.tessellationShader == VK_TRUE);
+
+    VkPhysicalDeviceShaderDrawParametersFeatures shader_draw_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 shader_draw_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &shader_draw_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &shader_draw_features2);
+    assert(shader_draw_features.shaderDrawParameters == VK_TRUE);
 
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor_features_ext = {
         .sType =
@@ -172,19 +184,23 @@ int main(void) {
     vkGetPhysicalDeviceFeatures(physical, &features);
     assert(features.depthBiasClamp == VK_TRUE);
     assert(features.depthClamp == VK_TRUE);
+    assert(features.drawIndirectFirstInstance == VK_TRUE);
     assert(features.fillModeNonSolid == VK_TRUE);
     assert(features.geometryShader == VK_TRUE);
     assert(features.independentBlend == VK_TRUE);
     assert(features.logicOp == VK_TRUE);
+    assert(features.multiDrawIndirect == VK_TRUE);
     assert(features.occlusionQueryPrecise == VK_TRUE);
     assert(features.samplerAnisotropy == VK_TRUE);
     assert(features.tessellationShader == VK_TRUE);
     features.depthBiasClamp = VK_FALSE;
     features.depthClamp = VK_FALSE;
+    features.drawIndirectFirstInstance = VK_FALSE;
     features.fillModeNonSolid = VK_FALSE;
     features.geometryShader = VK_FALSE;
     features.independentBlend = VK_FALSE;
     features.logicOp = VK_FALSE;
+    features.multiDrawIndirect = VK_FALSE;
     features.occlusionQueryPrecise = VK_FALSE;
     features.samplerAnisotropy = VK_FALSE;
     features.tessellationShader = VK_FALSE;
@@ -253,15 +269,23 @@ int main(void) {
         .features = {
             .depthBiasClamp = VK_TRUE,
             .depthClamp = VK_TRUE,
+            .drawIndirectFirstInstance = VK_TRUE,
             .fillModeNonSolid = VK_TRUE,
             .geometryShader = VK_TRUE,
             .independentBlend = VK_TRUE,
             .logicOp = VK_TRUE,
+            .multiDrawIndirect = VK_TRUE,
             .occlusionQueryPrecise = VK_TRUE,
             .samplerAnisotropy = VK_TRUE,
             .tessellationShader = VK_TRUE,
         },
     };
+    VkPhysicalDeviceVulkan11Features enabled_features11 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &enabled_divisor,
+        .shaderDrawParameters = VK_TRUE,
+    };
+    enabled_features2.pNext = &enabled_features11;
     VkDeviceGroupDeviceCreateInfo group_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO,
         .pNext = &enabled_features2,
@@ -289,13 +313,26 @@ int main(void) {
     assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
                           &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(unsupported_device == VK_NULL_HANDLE);
+    VkPhysicalDeviceShaderDrawParametersFeatures enabled_shader_draw = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
+        .shaderDrawParameters = VK_TRUE,
+    };
+    VkDeviceCreateInfo shader_draw_device_info = device_info;
+    shader_draw_device_info.pNext = &enabled_shader_draw;
+    VkDevice shader_draw_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &shader_draw_device_info, NULL,
+                          &shader_draw_device) == VK_SUCCESS);
+    assert(shader_draw_device != VK_NULL_HANDLE);
+    vkDestroyDevice(shader_draw_device, NULL);
     VkPhysicalDeviceFeatures legacy_geometry_features = {
         .depthBiasClamp = VK_TRUE,
         .depthClamp = VK_TRUE,
+        .drawIndirectFirstInstance = VK_TRUE,
         .fillModeNonSolid = VK_TRUE,
         .geometryShader = VK_TRUE,
         .independentBlend = VK_TRUE,
         .logicOp = VK_TRUE,
+        .multiDrawIndirect = VK_TRUE,
         .occlusionQueryPrecise = VK_TRUE,
         .samplerAnisotropy = VK_TRUE,
     };

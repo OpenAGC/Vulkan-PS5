@@ -713,14 +713,22 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   not consume DrawIndex.
   A deterministic hardware gate now packs two commands into one indirect
   buffer. Both use `firstVertex = 1` to skip a decoy; nonzero first instances
-  1 and 2 plus DrawIndex values 0 and 1 make the shader place exact green and
-  blue triangles in opposite target halves. The oracle rejects a missing
-  command, ignored base/instance/draw index, red fallback, unexpected color,
-  unequal coverage, or damaged background.
-  The bounded runner has clean/crash exact-PID safety coverage, all 19 host
-  tests pass, and the Prospero ELF links `-lunwind -lc++abi -lc++ -lm` with
-  SHA-256
-  `cbd05b90dc471644f7e278236abff26845124e69cb0562d8d7727f650b0e87b8`.
+  1 and 2 plus DrawIndex values 0 and 1 must produce an all-green image split
+  equally across the two target halves. Diagnostic PIDs 106 through 109 exited
+  without a fatal signal or GPU reset and isolated the failure to the combined
+  BaseInstance/DrawID metadata path. Mesa RADV uses BaseVertex, DrawID, then
+  BaseInstance for gfx10 vertex user SGPRs, while openagc-psbc had exported the
+  last two in reverse order. Compiler commit `d209d94` fixes and regression-tests
+  that metadata order.
+  The internal PID 110 and public query/request PID 111 gates both reported
+  `green=11472 left=5736 right=5736 firstVertex=1 firstInstance=1,2 drawID=0,1
+  draws=2`, completed matching SystemService exit, and left no PID-scoped fatal
+  signal or GPU reset. Evidence is retained in
+  `20260728T113157Z-indirect-draw-run1.log` and
+  `20260728T113410Z-indirect-draw-run1.log`. The bounded runner has clean/crash
+  exact-PID safety coverage, both 25/25 host suites pass, and the public
+  Prospero ELF links `-lunwind -lc++abi -lc++ -lm` with SHA-256
+  `d3d80356967a93a9a8cfa0000eaa09089ddd39872f897e73952fe788ab48aa29`.
   `multiDrawIndirect`, `drawIndirectFirstInstance`, and
-  `shaderDrawParameters` stay `VK_FALSE` pending one fresh explicit FW 5.50
-  run of the corrected candidate.
+  `shaderDrawParameters` are advertised and accepted through their standard
+  core, Features2, Vulkan 1.1, and standalone feature paths.

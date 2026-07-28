@@ -40,8 +40,8 @@ Every FW 5.50 runner now selects only EXEC records carrying
 system process. Host regressions include a later fake `category=shell_ui`
 record and a direct PID/name mismatch test.
 
-Public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
-`shaderDrawParameters` remain false. The sequential-single-packet candidate
+At this stage, public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
+`shaderDrawParameters` remained false. The sequential-single-packet candidate
 must not be repeated; the submission fault needs a materially narrower probe
 before another bounded hardware run.
 
@@ -122,8 +122,8 @@ graphics queues with equal read/write pointers. It contains no PID-scoped fatal
 signal and no GPU reset. The runner accepted only the previously isolated
 raw-ELF VM warning `amount=0x4000`, and exact PID/name removal confirmed that
 PID 86 was absent. The one-draw BaseVertex/BaseInstance gate is therefore
-cleanly hardware-qualified. Public `multiDrawIndirect`,
-`drawIndirectFirstInstance`, and `shaderDrawParameters` remain false until
+cleanly hardware-qualified. At this stage, public `multiDrawIndirect`,
+`drawIndirectFirstInstance`, and `shaderDrawParameters` remained false until
 their complete multi-draw and shader semantics are hardware-qualified.
 
 The complete two-draw candidate is now rebuilt with the same SystemService
@@ -141,4 +141,44 @@ archives link and execute under the same runtime. The indirect runner now uses
 the shared lifecycle gate, requiring matching self-kill IDs, ordered `All
 processes exited`, exact PID/name absence, console reachability, binary-klog
 sanitization, and only the isolated `amount=0x4000` warning. One fresh-console,
-single bounded run remains; it must not run without explicit authorization.
+single bounded run remained and required explicit authorization.
+
+## Final resolution
+
+The bounded two-draw candidate was run only after the console returned. PIDs
+106, 107, and 108 completed without a fatal signal or GPU reset while exact
+color diagnostics successively isolated the mismatch to BaseInstance in a
+shader that also consumed DrawID. PID 109's DrawID-only variant produced equal
+left/right coverage, proving DrawID values 0 and 1 and the multi-command
+expansion were correct.
+
+The remaining cause was compiler metadata order. Mesa RADV allocates gfx10
+vertex user SGPRs in the compact order BaseVertex, optional DrawID, optional
+BaseInstance. openagc-psbc had exported BaseVertex, optional BaseInstance,
+optional DrawID, so the ICD programmed the last two values into each other's
+register whenever both were present. openagc-psbc commit `d209d94` corrects the
+order and adds a library regression that requires DrawID immediately after
+BaseVertex and BaseInstance immediately after DrawID.
+
+The restored combined oracle requires BaseVertex, BaseInstance, InstanceIndex,
+and DrawID simultaneously and rejects every fallback color. Internal PID 110
+and the public feature-query/request PID 111 both reported:
+
+```text
+indirect_draw: PASS green=11472 left=5736 right=5736 firstVertex=1 firstInstance=1,2 drawID=0,1 draws=2
+```
+
+Both runs completed matching SystemService exit and left no PID-scoped fatal
+signal or GPU reset; only the established raw-ELF `amount=0x4000` VM warning
+remained. Evidence is retained in:
+
+- `examples/qualification-logs/20260728T113157Z-indirect-draw-run1.log`
+- `examples/qualification-logs/20260728T113410Z-indirect-draw-run1.log`
+
+Both normal and ASAN/UBSAN host suites pass 25/25, and the Prospero build links
+`-lunwind -lc++abi -lc++ -lm`. The public ELF SHA-256 is
+`d3d80356967a93a9a8cfa0000eaa09089ddd39872f897e73952fe788ab48aa29`.
+`multiDrawIndirect`, `drawIndirectFirstInstance`, and
+`shaderDrawParameters` are now advertised and accepted through their standard
+legacy/core, Features2, Vulkan 1.1, and standalone feature paths. The Eden
+compatibility report therefore moved from 19 feature gaps to 16.
