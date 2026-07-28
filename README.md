@@ -27,6 +27,12 @@ elongated footprint, and the mapped-memory oracle requires the anisotropic
 half's mean absolute deviation from neutral gray to fall materially below the
 bilinear control. Its runner permits one launch and applies the established
 exact-PID crash, cleanup, warning, and console-response checks.
+Single and multi `vkCmdDrawIndirect`/`vkCmdDrawIndexedIndirect` recording now
+uses OpenAGC's application-neutral gfx1013 indirect-draw wrapper instead of a
+no-op. The ICD validates usage, alignment, stride, range, and index bindings,
+and supplies compiler-selected base-vertex/start-instance user-SGPR locations.
+The optional `multiDrawIndirect` and `drawIndirectFirstInstance` bits remain
+false pending deterministic hardware readback.
 Milestone 6 also includes a test-only, configurable VulkanMemoryAllocator
 consumer matching Eden's dynamic-dispatch, externally synchronized upload,
 download, stream, device-local, image, manual-bind, and suballocation patterns;

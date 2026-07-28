@@ -598,6 +598,16 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   The one-shot runner has clean/crash exact-PID coverage and the full host suite
   passes 18/18. The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has
   SHA-256
-  `1bd658e47963f1df9de860d844eb46835baf3f050c76ffd9eac9ef1f0142d1ce`.
+  `33b9420a963cf485481e5a42ca19e7b652ecadd32df5e319f542c24ff3185922`.
   `samplerAnisotropy` remains `VK_FALSE` until one fresh explicit FW 5.50 run
   passes and the normal feature-query/request contract is enabled.
+- `vkCmdDrawIndirect` and `vkCmdDrawIndexedIndirect` now use OpenAGC's typed
+  gfx1013 single/multi packet path. Common draw preparation binds shaders,
+  frame/depth state, descriptors, and vertex tables while indirect metadata
+  supplies the compiler-selected base-vertex and start-instance registers.
+  Buffer usage, alignment, stride, full command range, and index bindings are
+  validated; zero draw count remains a legal no-op. Host recording verifies
+  the single non-indexed, multi non-indexed, and multi indexed PM4 opcodes plus
+  range rejection. All 18 tests and the Prospero static build pass.
+  `multiDrawIndirect` and `drawIndirectFirstInstance` stay `VK_FALSE` pending a
+  deterministic hardware execution/readback gate.

@@ -181,6 +181,42 @@ int main(int argc, char **argv)
     const uint16_t index_data[3] = {1, 2, 3};
     memcpy(indices, index_data, sizeof(index_data));
     vkUnmapMemory(device, index_memory);
+    const VkBufferCreateInfo indirect_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 128u,
+        .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VkBuffer indirect_buffer;
+    assert(vkCreateBuffer(device, &indirect_buffer_info, NULL,
+                          &indirect_buffer) == VK_SUCCESS);
+    VkMemoryRequirements indirect_requirements;
+    vkGetBufferMemoryRequirements(device, indirect_buffer,
+                                  &indirect_requirements);
+    const VkMemoryAllocateInfo indirect_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = indirect_requirements.size,
+        .memoryTypeIndex = 0,
+    };
+    VkDeviceMemory indirect_memory;
+    assert(vkAllocateMemory(device, &indirect_memory_info, NULL,
+                            &indirect_memory) == VK_SUCCESS);
+    assert(vkBindBufferMemory(device, indirect_buffer, indirect_memory, 0) ==
+           VK_SUCCESS);
+    uint8_t *indirect_data;
+    assert(vkMapMemory(device, indirect_memory, 0, VK_WHOLE_SIZE, 0,
+                       (void **)&indirect_data) == VK_SUCCESS);
+    const VkDrawIndirectCommand draws[2] = {
+        {3u, 1u, 0u, 0u},
+        {3u, 1u, 0u, 1u},
+    };
+    const VkDrawIndexedIndirectCommand indexed_draws[2] = {
+        {3u, 1u, 0u, 0, 0u},
+        {3u, 1u, 0u, 0, 1u},
+    };
+    memcpy(indirect_data, draws, sizeof(draws));
+    memcpy(indirect_data + 64u, indexed_draws, sizeof(indexed_draws));
+    vkUnmapMemory(device, indirect_memory);
     const VkDescriptorSetLayoutBinding output_binding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
@@ -799,9 +835,36 @@ int main(int argc, char **argv)
                       geometry_pipeline);
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
+    vkCmdDrawIndirect(command, indirect_buffer, 0u, 1u,
+                      sizeof(VkDrawIndirectCommand));
+    vkCmdDrawIndirect(command, indirect_buffer, 0u, 2u,
+                      sizeof(VkDrawIndirectCommand));
+    vkCmdDrawIndexedIndirect(command, indirect_buffer, 64u, 2u,
+                             sizeof(VkDrawIndexedIndirectCommand));
     vkCmdEndQuery(command, query_pool, 1);
     vkCmdEndRenderPass(command);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+
+    VkCommandBuffer invalid_indirect_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &invalid_indirect_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_indirect_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdBindPipeline(invalid_indirect_command,
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, geometry_pipeline);
+    vkCmdBindDescriptorSets(invalid_indirect_command,
+        VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_layout, 0, 1,
+        &texture_set, 0, NULL);
+    vkCmdBeginRenderPass(invalid_indirect_command, &render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindVertexBuffers(invalid_indirect_command, 0, 1, &vertex_buffer,
+                           &vertex_offset);
+    vkCmdDrawIndirect(invalid_indirect_command, output_buffer, 0u, 0u, 0u);
+    vkCmdDrawIndirect(invalid_indirect_command, indirect_buffer, 124u, 1u,
+                      sizeof(VkDrawIndirectCommand));
+    vkCmdEndRenderPass(invalid_indirect_command);
+    assert(vkEndCommandBuffer(invalid_indirect_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
 
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
@@ -825,6 +888,8 @@ int main(int argc, char **argv)
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                                 OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(1)) == 0u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
+    bool found_single_indirect = false, found_indirect = false;
+    bool found_indexed_indirect = false;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;
     bool found_tess_ring_base = false, found_tess_ring_base_hi = false;
@@ -849,6 +914,25 @@ int main(int argc, char **argv)
             assert(dwords[i + 2] == ((uint32_t)index_address & ~1u));
             assert(dwords[i + 3] == (uint32_t)(index_address >> 32));
             found_draw = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_DRAW_INDIRECT) {
+            assert(i + 4 < count);
+            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            found_single_indirect = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
+            assert(i + 6 < count);
+            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            assert(dwords[i + 4] == 2u);
+            assert(dwords[i + 5] == sizeof(VkDrawIndirectCommand));
+            found_indirect = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
+            assert(i + 6 < count);
+            assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
+            assert(dwords[i + 4] == 2u);
+            assert(dwords[i + 5] == sizeof(VkDrawIndexedIndirectCommand));
+            found_indexed_indirect = true;
         } else if (((dwords[i] >> 8) & 0xffu) ==
                        AGC_PM4_OP_DRAW_INDEX_AUTO) {
             found_tess_draw |= i + 2 < count && dwords[i + 1] == 3u;
@@ -922,7 +1006,9 @@ int main(int argc, char **argv)
             found_query_availability = true;
         }
     }
-    assert(found_dispatch && found_draw && found_tess_draw &&
+    assert(found_dispatch && found_draw && found_single_indirect &&
+           found_indirect &&
+           found_indexed_indirect && found_tess_draw &&
            found_tess_context && found_tess_ring_size &&
            found_tess_offchip && found_tess_ring_base &&
            found_tess_ring_base_hi && found_tess_hull_lds &&
@@ -1007,6 +1093,8 @@ int main(int argc, char **argv)
     vkFreeMemory(device, output_memory, NULL);
     vkDestroyBuffer(device, index_buffer, NULL);
     vkFreeMemory(device, index_memory, NULL);
+    vkDestroyBuffer(device, indirect_buffer, NULL);
+    vkFreeMemory(device, indirect_memory, NULL);
     vkDestroyBuffer(device, vertex_buffer, NULL);
     vkFreeMemory(device, vertex_memory, NULL);
     vkDestroyDevice(device, NULL);

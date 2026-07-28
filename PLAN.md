@@ -320,9 +320,21 @@
   lingering process, or unavailable websrv. Host sampler tests plus runner
   clean/crash simulations pass in the 18/18 suite; the Prospero candidate links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `1bd658e47963f1df9de860d844eb46835baf3f050c76ffd9eac9ef1f0142d1ce`.
+  `33b9420a963cf485481e5a42ca19e7b652ecadd32df5e319f542c24ff3185922`.
   The feature remains false until one fresh-console hardware gate qualifies the
   filtering result and the standard feature-query/request path is promoted.
+  Vulkan indirect graphics commands now record through OpenAGC's existing
+  validated gfx1013 wrappers rather than silently doing nothing. The common
+  draw-state path supplies descriptors, vertex tables, render state, and
+  compiler-selected base-vertex/start-instance register locations for single
+  or multi, indexed or non-indexed packets. Recording validates indirect-buffer
+  usage, four-byte alignment, minimum stride, complete command ranges, and
+  bound index storage; zero draw count is a no-op. Host PM4 regression covers
+  `DRAW_INDIRECT`, `DRAW_INDIRECT_MULTI`, and
+  `DRAW_INDEX_INDIRECT_MULTI`, plus an out-of-range rejection. The complete
+  host suite and Prospero static build pass. `multiDrawIndirect` and
+  `drawIndirectFirstInstance` remain false until a distinct hardware oracle
+  qualifies multi-command execution and nonzero first-instance semantics.
 
 ## Summary
 

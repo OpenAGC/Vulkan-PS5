@@ -73,6 +73,7 @@ does not turn a failed requirement into support.
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
 | Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
+| Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC, including compiler-selected base-vertex/start-instance register locations | Host/Prospero build pass; multi-command and nonzero-first-instance hardware readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
 
 ## Implementation order
@@ -91,7 +92,9 @@ does not turn a failed requirement into support.
    semantics are implemented and host-tested. Its deterministic paired
    bilinear/16x filtering probe, mapped-memory contrast oracle, bounded runner,
    and Prospero ELF are prepared; one fresh-console run remains before normal
-   feature advertisement and device-enable handling can be promoted.
+   feature advertisement and device-enable handling can be promoted. Indirect
+   draw recording is no longer a stub; prepare a paired multi-draw/nonzero
+   first-instance readback gate before promoting either related core bit.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
    honest and ASTC/ETC remaining unsupported until conversion is implemented.
 4. Add only the allowed Eden changes: Prospero surface creation, build/link

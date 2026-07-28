@@ -3427,6 +3427,8 @@ static VkResult prepare_graphics_stage_user_data(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     uint32_t stage_index, bool allow_vertex_table, bool indexed,
     uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
+    bool indirect_draw, uint32_t *base_vertex_location,
+    uint32_t *start_instance_location,
     AgcGfx1013ResourceTableBinding *resource_tables,
     uint32_t *resource_table_count, AgcRegisterValue *user_data,
     uint32_t *user_data_count, uint32_t user_data_capacity)
@@ -3466,6 +3468,18 @@ static VkResult prepare_graphics_stage_user_data(
             continue;
         }
         uint32_t value;
+        if (indirect_draw &&
+            (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX ||
+             sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)) {
+            uint32_t *location =
+                sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX ?
+                    base_vertex_location : start_instance_location;
+            if (!location || *location != UINT32_MAX ||
+                sgpr->dword_count != 1u)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            *location = sgpr->register_offset;
+            continue;
+        }
         if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
             value = indexed ? (uint32_t)vertex_offset : first_element;
         else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
@@ -3508,18 +3522,21 @@ static void record_tessellation_draw(
     uint32_t pixel_table_count = 0u;
     VkResult result = prepare_graphics_stage_user_data(
         command, pipeline, 0u, true, false, first_element, 0,
-        first_instance, hull_tables, &hull_table_count, user_data,
+        first_instance, false, NULL, NULL,
+        hull_tables, &hull_table_count, user_data,
         &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result == VK_SUCCESS)
         result = prepare_graphics_stage_user_data(
             command, pipeline, 1u, false, false, first_element, 0,
-            first_instance, primitive_tables, &primitive_table_count,
+            first_instance, false, NULL, NULL,
+            primitive_tables, &primitive_table_count,
             user_data, &user_data_count,
             3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     if (result == VK_SUCCESS)
         result = prepare_graphics_stage_user_data(
             command, pipeline, 2u, false, false, first_element, 0,
-            first_instance, pixel_tables, &pixel_table_count, user_data,
+            first_instance, false, NULL, NULL,
+            pixel_tables, &pixel_table_count, user_data,
             &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
     uint32_t descriptor_count = 0u;
     if (result == VK_SUCCESS)
@@ -3595,6 +3612,93 @@ static void record_tessellation_draw(
             VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
 }
 
+typedef struct VkPs5PreparedBaselineDraw {
+    AgcRegisterValue user_data[OPENAGC_PSBC_MAX_USER_SGPRS];
+    AgcGfx1013ResourceTableBinding
+        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
+    AgcGfx1013ResourceTableBinding
+        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    AgcGfx1013FrameState frame;
+    AgcGfx1013BaselineDrawState draw;
+    uint32_t base_vertex_location;
+    uint32_t start_instance_location;
+} VkPs5PreparedBaselineDraw;
+
+static VkResult prepare_baseline_draw(
+    VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline, bool indexed,
+    uint32_t element_count, uint32_t instance_count,
+    uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
+    bool indirect_draw, VkPs5PreparedBaselineDraw *prepared)
+{
+    memset(prepared, 0, sizeof(*prepared));
+    prepared->base_vertex_location = UINT32_MAX;
+    prepared->start_instance_location = UINT32_MAX;
+    uint32_t primitive_table_count = 0u;
+    uint32_t pixel_table_count = 0u;
+    uint32_t user_data_count = 0u;
+    VkResult result = prepare_graphics_stage_user_data(
+        command, pipeline, 0u, true, indexed, first_element, vertex_offset,
+        first_instance, indirect_draw, &prepared->base_vertex_location,
+        &prepared->start_instance_location, prepared->primitive_tables,
+        &primitive_table_count, prepared->user_data, &user_data_count,
+        OPENAGC_PSBC_MAX_USER_SGPRS);
+    if (result != VK_SUCCESS)
+        return result;
+    for (uint32_t n = 0;
+         n < pipeline->stages[1].metadata.user_sgpr_count; ++n) {
+        if (pipeline->stages[1].metadata.user_sgprs[n].kind !=
+                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    uint32_t descriptor_table_count = 0u;
+    result = prepare_graphics_descriptor_tables(command, pipeline, 0u,
+        &prepared->primitive_tables[primitive_table_count],
+        &descriptor_table_count);
+    if (result != VK_SUCCESS)
+        return result;
+    primitive_table_count += descriptor_table_count;
+    result = prepare_graphics_descriptor_tables(command, pipeline, 1u,
+        prepared->pixel_tables, &pixel_table_count);
+    if (result != VK_SUCCESS)
+        return result;
+    if (pipeline->viewport.width > command->active_framebuffer->width ||
+        pipeline->viewport.height > command->active_framebuffer->height ||
+        pipeline->scissor.right > command->active_framebuffer->width ||
+        pipeline->scissor.bottom > command->active_framebuffer->height)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    prepared->frame = command->frame_state;
+    prepared->frame.viewport = pipeline->viewport;
+    prepared->frame.scissor = pipeline->scissor;
+    const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
+    const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
+    prepared->draw = (AgcGfx1013BaselineDrawState){
+        .shaders = {
+            .primitive = primitive->binding,
+            .pixel = pixel->binding,
+            .primitive_back_code_address = primitive->binding.code_address,
+            .primitive_type = pipeline->primitive_type,
+        },
+        .frame = &prepared->frame,
+        .depth_surface_state = pipeline->has_depth_stencil ?
+            &command->depth_surface_state : NULL,
+        .depth_stencil_state = pipeline->has_depth_stencil ?
+            &pipeline->depth_stencil : NULL,
+        .primitive_resource_tables = prepared->primitive_tables,
+        .num_primitive_resource_tables = primitive_table_count,
+        .pixel_resource_tables = prepared->pixel_tables,
+        .num_pixel_resource_tables = pixel_table_count,
+        .post_bind_sh_registers = prepared->user_data,
+        .num_post_bind_sh_registers = user_data_count,
+        .index_type = indexed && command->index_type == VK_INDEX_TYPE_UINT32 ?
+            kAgcIndexSize32 : kAgcIndexSize16,
+        .instance_count = indirect_draw ? 1u : instance_count,
+        .vertex_count = indirect_draw ? 1u : element_count,
+        .draw_modifier = 0x40000000u,
+    };
+    return VK_SUCCESS;
+}
+
 static void record_graphics_draw(
     VkPs5CommandBuffer *command, uint32_t element_count,
     uint32_t instance_count, uint32_t first_element, int32_t vertex_offset,
@@ -3623,81 +3727,14 @@ static void record_graphics_draw(
             instance_count, first_element, first_instance, indexed);
         return;
     }
-    AgcRegisterValue user_data[OPENAGC_PSBC_MAX_USER_SGPRS];
-    uint32_t user_data_count = 0;
-    AgcGfx1013ResourceTableBinding
-        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
-    uint32_t primitive_table_count = 0;
-    AgcGfx1013ResourceTableBinding
-        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
-    uint32_t pixel_table_count = 0;
-    VkResult user_data_result = prepare_graphics_stage_user_data(
-        command, pipeline, 0u, true, indexed, first_element, vertex_offset,
-        first_instance, primitive_tables, &primitive_table_count, user_data,
-        &user_data_count, OPENAGC_PSBC_MAX_USER_SGPRS);
-    if (user_data_result != VK_SUCCESS) {
-        command->record_error = user_data_result;
+    VkPs5PreparedBaselineDraw prepared;
+    VkResult prepare_result = prepare_baseline_draw(command, pipeline, indexed,
+        element_count, instance_count, first_element, vertex_offset,
+        first_instance, false, &prepared);
+    if (prepare_result != VK_SUCCESS) {
+        command->record_error = prepare_result;
         return;
     }
-    for (uint32_t n = 0;
-         n < pipeline->stages[1].metadata.user_sgpr_count; ++n) {
-        if (pipeline->stages[1].metadata.user_sgprs[n].kind !=
-                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET) {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-    }
-    uint32_t descriptor_table_count = 0;
-    VkResult descriptor_result = prepare_graphics_descriptor_tables(
-        command, pipeline, 0u, &primitive_tables[primitive_table_count],
-        &descriptor_table_count);
-    if (descriptor_result != VK_SUCCESS) {
-        command->record_error = descriptor_result;
-        return;
-    }
-    primitive_table_count += descriptor_table_count;
-    descriptor_result = prepare_graphics_descriptor_tables(
-        command, pipeline, 1u, pixel_tables, &pixel_table_count);
-    if (descriptor_result != VK_SUCCESS) {
-        command->record_error = descriptor_result;
-        return;
-    }
-    if (pipeline->viewport.width > command->active_framebuffer->width ||
-        pipeline->viewport.height > command->active_framebuffer->height ||
-        pipeline->scissor.right > command->active_framebuffer->width ||
-        pipeline->scissor.bottom > command->active_framebuffer->height) {
-        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-        return;
-    }
-    AgcGfx1013FrameState draw_frame = command->frame_state;
-    draw_frame.viewport = pipeline->viewport;
-    draw_frame.scissor = pipeline->scissor;
-    const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
-    const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
-    AgcGfx1013BaselineDrawState draw = {
-        .shaders = {
-            .primitive = primitive->binding,
-            .pixel = pixel->binding,
-            .primitive_back_code_address = primitive->binding.code_address,
-            .primitive_type = pipeline->primitive_type,
-        },
-        .frame = &draw_frame,
-        .depth_surface_state = pipeline->has_depth_stencil ?
-            &command->depth_surface_state : NULL,
-        .depth_stencil_state = pipeline->has_depth_stencil ?
-            &pipeline->depth_stencil : NULL,
-        .primitive_resource_tables = primitive_tables,
-        .num_primitive_resource_tables = primitive_table_count,
-        .pixel_resource_tables = pixel_tables,
-        .num_pixel_resource_tables = pixel_table_count,
-        .post_bind_sh_registers = user_data,
-        .num_post_bind_sh_registers = user_data_count,
-        .index_type = indexed && command->index_type == VK_INDEX_TYPE_UINT32 ?
-            kAgcIndexSize32 : kAgcIndexSize16,
-        .instance_count = instance_count,
-        .vertex_count = element_count,
-        .draw_modifier = 0x40000000u,
-    };
     int32_t result;
     if (indexed) {
         VkPs5Buffer *index = command->index_buffer;
@@ -3714,7 +3751,7 @@ static void record_graphics_draw(
             return;
         }
         const AgcGfx1013IndexedDrawState indexed_draw = {
-            .draw = draw,
+            .draw = prepared.draw,
             .index_buffer_address = vk_ps5_memory_gpu_address(index->memory,
                 index->memory_offset + command->index_offset),
             .index_buffer_count = (uint32_t)(available / element_size),
@@ -3724,7 +3761,8 @@ static void record_graphics_draw(
         };
         result = agcGfx1013DrawBaselineIndexed(&command->dcb, &indexed_draw);
     } else {
-        result = agcGfx1013DrawBaselineIndexAuto(&command->dcb, &draw);
+        result = agcGfx1013DrawBaselineIndexAuto(
+            &command->dcb, &prepared.draw);
     }
     if (result != AGC_OK)
         command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
@@ -3740,13 +3778,107 @@ vkCmdDrawIndexed(VkCommandBuffer c, uint32_t i, uint32_t n, uint32_t f,
                  int32_t v, uint32_t fi) {
     record_graphics_draw((VkPs5CommandBuffer *)c, i, n, f, v, fi, true);
 }
+
+static void record_graphics_indirect(
+    VkPs5CommandBuffer *command, VkPs5Buffer *arguments,
+    VkDeviceSize offset, uint32_t draw_count, uint32_t stride, bool indexed)
+{
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (draw_count == 0u)
+        return;
+    VkPs5Pipeline *pipeline = command->bound_graphics;
+    bool baseline = pipeline && pipeline->stage_count == 2u &&
+        (pipeline->stage_types[0] == OPENAGC_PSBC_STAGE_VERTEX ||
+         pipeline->stage_types[0] == OPENAGC_PSBC_STAGE_GEOMETRY) &&
+        pipeline->stage_types[1] == OPENAGC_PSBC_STAGE_FRAGMENT;
+    uint32_t argument_size = indexed ?
+        (uint32_t)sizeof(VkDrawIndexedIndirectCommand) :
+        (uint32_t)sizeof(VkDrawIndirectCommand);
+    if (!baseline || !command->active_render_pass || !arguments ||
+        !arguments->memory ||
+        !(arguments->usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) ||
+        (offset & 3u) != 0u ||
+        (draw_count > 1u &&
+         (stride < argument_size || (stride & 3u) != 0u))) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    VkDeviceSize last_offset = offset;
+    if (draw_count > 1u) {
+        uint64_t extra_count = (uint64_t)draw_count - 1u;
+        if (extra_count > (UINT64_MAX - last_offset) / stride) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        last_offset += extra_count * stride;
+    }
+    if (last_offset > arguments->size ||
+        argument_size > arguments->size - last_offset ||
+        arguments->memory_offset > UINT64_MAX - offset) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+
+    VkPs5PreparedBaselineDraw prepared;
+    VkResult prepare_result = prepare_baseline_draw(command, pipeline, indexed,
+        1u, 1u, 0u, 0, 0u, true, &prepared);
+    if (prepare_result != VK_SUCCESS) {
+        command->record_error = prepare_result;
+        return;
+    }
+    uint64_t argument_address = vk_ps5_memory_gpu_address(arguments->memory,
+        arguments->memory_offset + offset);
+    AgcGfx1013IndirectDrawState draw = {
+        .draw = prepared.draw,
+        .argument_buffer_address = argument_address & ~UINT64_C(7),
+        .argument_offset = (uint32_t)(argument_address & UINT64_C(7)),
+        .draw_count = draw_count,
+        .stride = stride,
+        .base_vertex_location = prepared.base_vertex_location == UINT32_MAX ?
+            0u : prepared.base_vertex_location,
+        .start_instance_location =
+            prepared.start_instance_location == UINT32_MAX ?
+                0u : prepared.start_instance_location,
+        .indexed = indexed ? 1u : 0u,
+    };
+    if (indexed) {
+        VkPs5Buffer *index = command->index_buffer;
+        uint32_t element_size = command->index_type == VK_INDEX_TYPE_UINT32 ?
+            4u : 2u;
+        if (!index || !index->memory || command->index_offset >= index->size ||
+            index->memory_offset > UINT64_MAX - command->index_offset) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        VkDeviceSize available = index->size - command->index_offset;
+        if (available / element_size == 0u ||
+            available / element_size > UINT32_MAX) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        draw.index_buffer_address = vk_ps5_memory_gpu_address(index->memory,
+            index->memory_offset + command->index_offset);
+        draw.index_buffer_count = (uint32_t)(available / element_size);
+    }
+    int32_t result = agcGfx1013DrawBaselineIndirect(&command->dcb, &draw);
+    if (result != AGC_OK)
+        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o, uint32_t n, uint32_t s) {
-    IGNORE(c); IGNORE(b); IGNORE(o); IGNORE(n); IGNORE(s);
+    record_graphics_indirect((VkPs5CommandBuffer *)c, (VkPs5Buffer *)b,
+        o, n, s, false);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndexedIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
-                         uint32_t n, uint32_t s) { IGNORE(c); IGNORE(b); IGNORE(o); IGNORE(n); IGNORE(s); }
+                         uint32_t n, uint32_t s) {
+    record_graphics_indirect((VkPs5CommandBuffer *)c, (VkPs5Buffer *)b,
+        o, n, s, true);
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBlitImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                VkImageLayout dl, uint32_t n, const VkImageBlit *r, VkFilter f) {
