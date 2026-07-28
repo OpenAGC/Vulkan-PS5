@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_icd.h>
 #include <vulkan/vk_layer.h>
+#include <agc_graphics.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -25,6 +26,9 @@ VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory);
 uint64_t vk_ps5_memory_gpu_address(VkDeviceMemory memory, VkDeviceSize offset);
 VkResult vk_ps5_queue_submit_dcb(
     VkQueue queue, const uint32_t *commands, uint32_t dword_count);
+VkResult vk_ps5_device_prepare_tessellation(
+    VkDevice device, const AgcGfx1013TessellationState **state,
+    uint64_t *ring_descriptor_address);
 uint32_t vk_ps5_command_buffer_dwords(
     VkCommandBuffer command_buffer, const uint32_t **commands);
 

@@ -6,7 +6,11 @@
 
 #include "vulkan_ps5_triangle_frag_spv.h"
 #include "vulkan_ps5_triangle_vert_spv.h"
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+#include "vulkan_ps5_tess_control_spv.h"
+#include "vulkan_ps5_tess_evaluation_spv.h"
+#define SAMPLE_LABEL "tessellation"
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
 #include "vulkan_ps5_geometry_spv.h"
 #define SAMPLE_LABEL "geometry"
 #else
@@ -50,7 +54,10 @@ int main(void)
     VkRenderPass render_pass;
     VkFramebuffer framebuffer;
     VkShaderModule vertex_shader;
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    VkShaderModule tess_control_shader;
+    VkShaderModule tess_evaluation_shader;
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     VkShaderModule geometry_shader;
 #endif
     VkShaderModule fragment_shader;
@@ -207,7 +214,18 @@ int main(void)
         .codeSize = sizeof(vulkan_ps5_triangle_frag_spv),
         .pCode = vulkan_ps5_triangle_frag_spv,
     };
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    const VkShaderModuleCreateInfo tess_control_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_tess_control_spv),
+        .pCode = vulkan_ps5_tess_control_spv,
+    };
+    const VkShaderModuleCreateInfo tess_evaluation_shader_info = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_tess_evaluation_spv),
+        .pCode = vulkan_ps5_tess_evaluation_spv,
+    };
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     const VkShaderModuleCreateInfo geometry_shader_info = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(vulkan_ps5_geometry_spv),
@@ -218,7 +236,13 @@ int main(void)
         device, &vertex_shader_info, NULL, &vertex_shader));
     VK_CHECK(vkCreateShaderModule(
         device, &fragment_shader_info, NULL, &fragment_shader));
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    VK_CHECK(vkCreateShaderModule(
+        device, &tess_control_shader_info, NULL, &tess_control_shader));
+    VK_CHECK(vkCreateShaderModule(
+        device, &tess_evaluation_shader_info, NULL,
+        &tess_evaluation_shader));
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     VK_CHECK(vkCreateShaderModule(
         device, &geometry_shader_info, NULL, &geometry_shader));
 #endif
@@ -234,7 +258,20 @@ int main(void)
             .module = vertex_shader,
             .pName = "main",
         },
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+            .module = tess_control_shader,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+            .module = tess_evaluation_shader,
+            .pName = "main",
+        },
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = VK_SHADER_STAGE_GEOMETRY_BIT,
@@ -254,8 +291,18 @@ int main(void)
     };
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+        .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+#else
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+#endif
     };
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    const VkPipelineTessellationStateCreateInfo tessellation_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        .patchControlPoints = 3,
+    };
+#endif
     const VkViewport viewport = {
         0, 0, TARGET_WIDTH, TARGET_HEIGHT, 0, 1,
     };
@@ -294,6 +341,9 @@ int main(void)
         .pStages = stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &input_assembly,
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+        .pTessellationState = &tessellation_state,
+#endif
         .pViewportState = &viewport_state,
         .pRasterizationState = &rasterization,
         .pMultisampleState = &multisample,
@@ -401,7 +451,11 @@ int main(void)
     image_ok = green_count == 0u && unexpected_count == 0u && center == 0u &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
 #else
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    image_ok = green_count >= 6000u && green_count <= 8500u &&
+        unexpected_count == 0u && center == GREEN_RGBA8 &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     image_ok = green_count >= 3500u && green_count <= 6000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
         pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
@@ -459,7 +513,10 @@ int main(void)
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
     vkDestroyShaderModule(device, fragment_shader, NULL);
-#if defined(VULKAN_PS5_GEOMETRY_SAMPLE)
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    vkDestroyShaderModule(device, tess_evaluation_shader, NULL);
+    vkDestroyShaderModule(device, tess_control_shader, NULL);
+#elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     vkDestroyShaderModule(device, geometry_shader, NULL);
 #endif
     vkDestroyShaderModule(device, vertex_shader, NULL);

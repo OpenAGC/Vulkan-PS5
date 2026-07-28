@@ -48,6 +48,12 @@ struct VkPs5Device {
     VkBool32 has_allocator;
     VkPs5PhysicalDevice *physical_device;
     VkPs5Queue queue;
+    AgcGpuMemory tess_offchip_memory;
+    AgcGpuMemory tess_factor_memory;
+    AgcGpuMemory tess_ring_table_memory;
+    AgcGfx1013TessellationState tessellation;
+    atomic_flag tessellation_lock;
+    VkBool32 tessellation_ready;
     atomic_uint memory_allocation_count;
 };
 
@@ -1060,6 +1066,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     atomic_init(&device->memory_allocation_count, 0);
     atomic_init(&device->queue.next_submission, 0);
     atomic_flag_clear(&device->queue.submit_lock);
+    atomic_flag_clear(&device->tessellation_lock);
     if (sce_agc_initialize() != AGC_OK ||
         sce_agc_initialize_internal_memory() != AGC_OK ||
         sceAgcDriverNotifyDefaultStates(0) != AGC_OK ||
@@ -1082,8 +1089,85 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
+    agcGpuMemoryFreeFlexible(&device->tess_ring_table_memory);
+    agcGpuMemoryFreeFlexible(&device->tess_factor_memory);
+    agcGpuMemoryFreeFlexible(&device->tess_offchip_memory);
     agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
     ps5_free(allocator, device);
+}
+
+VkResult vk_ps5_device_prepare_tessellation(
+    VkDevice device_handle, const AgcGfx1013TessellationState **state,
+    uint64_t *ring_descriptor_address)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !state || !ring_descriptor_address)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    while (atomic_flag_test_and_set_explicit(
+               &device->tessellation_lock, memory_order_acquire)) {}
+    VkResult result = VK_SUCCESS;
+    if (!device->tessellation_ready) {
+        if (agcGpuMemoryAllocateFlexible(&device->tess_offchip_memory,
+                AGC_GFX1013_TESS_OFFCHIP_RING_SIZE, 256u,
+                "vulkan_ps5_tess_offchip") != AGC_OK ||
+            agcGpuMemoryAllocateFlexible(&device->tess_factor_memory,
+                AGC_GFX1013_TESS_FACTOR_RING_SIZE, 256u,
+                "vulkan_ps5_tess_factor") != AGC_OK ||
+            agcGpuMemoryAllocateFlexible(&device->tess_ring_table_memory,
+                sizeof(AgcGfx1013TessellationRingTable), 256u,
+                "vulkan_ps5_tess_table") != AGC_OK) {
+            result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+        } else {
+            memset(device->tess_offchip_memory.cpu_address, 0,
+                AGC_GFX1013_TESS_OFFCHIP_RING_SIZE);
+            memset(device->tess_factor_memory.cpu_address, 0,
+                AGC_GFX1013_TESS_FACTOR_RING_SIZE);
+            device->tessellation = (AgcGfx1013TessellationState){
+                .offchip_ring_address =
+                    device->tess_offchip_memory.gpu_address,
+                .factor_ring_address =
+                    device->tess_factor_memory.gpu_address,
+                .offchip_ring_size = AGC_GFX1013_TESS_OFFCHIP_RING_SIZE,
+                .factor_ring_size = AGC_GFX1013_TESS_FACTOR_RING_SIZE,
+                .offchip_param = AGC_GFX1013_TESS_OFFCHIP_PARAM,
+                .max_tess_level = 0x42800000u,
+                .min_tess_level = 0u,
+                .esgs_ring_itemsize = 1u,
+                .distribution = 0xd8181e0cu,
+                .tf_param = 0x61u,
+            };
+            if (agcGfx1013BuildTessellationRingTable(
+                    device->tess_ring_table_memory.cpu_address,
+                    &device->tessellation) != AGC_OK ||
+                agcGpuMemoryFlush(&device->tess_offchip_memory, 0,
+                    AGC_GFX1013_TESS_OFFCHIP_RING_SIZE) != AGC_OK ||
+                agcGpuMemoryFlush(&device->tess_factor_memory, 0,
+                    AGC_GFX1013_TESS_FACTOR_RING_SIZE) != AGC_OK ||
+                agcGpuMemoryFlush(&device->tess_ring_table_memory, 0,
+                    sizeof(AgcGfx1013TessellationRingTable)) != AGC_OK ||
+                sceAgcDriverSetTFRing(
+                    (uintptr_t)device->tess_factor_memory.cpu_address,
+                    AGC_GFX1013_TESS_FACTOR_RING_SIZE) != AGC_OK) {
+                result = VK_ERROR_INITIALIZATION_FAILED;
+            } else {
+                device->tessellation_ready = VK_TRUE;
+            }
+        }
+        if (result != VK_SUCCESS) {
+            agcGpuMemoryFreeFlexible(&device->tess_ring_table_memory);
+            agcGpuMemoryFreeFlexible(&device->tess_factor_memory);
+            agcGpuMemoryFreeFlexible(&device->tess_offchip_memory);
+            memset(&device->tessellation, 0, sizeof(device->tessellation));
+        }
+    }
+    if (result == VK_SUCCESS) {
+        *state = &device->tessellation;
+        *ring_descriptor_address =
+            device->tess_ring_table_memory.gpu_address;
+    }
+    atomic_flag_clear_explicit(
+        &device->tessellation_lock, memory_order_release);
+    return result;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

@@ -236,10 +236,15 @@ int main(int argc, char **argv) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
         .patchControlPoints = 3,
     };
+    const VkPipelineInputAssemblyStateCreateInfo patch_input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+    };
     VkGraphicsPipelineCreateInfo tessellation_info = graphics_info;
     tessellation_info.stageCount = 4;
     tessellation_info.pStages = tessellation_stages;
     tessellation_info.pTessellationState = &tessellation_state;
+    tessellation_info.pInputAssemblyState = &patch_input_assembly;
     VkPipeline tessellation_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &tessellation_info,
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);

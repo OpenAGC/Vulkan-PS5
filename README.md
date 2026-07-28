@@ -64,6 +64,24 @@ record; its Prospero output is `vulkan_ps5_geometry_example.elf`. The driver
 continues to report `geometryShader = VK_FALSE` until the ELF passes twice on
 FW 5.50.
 
+`vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
+TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
+distinct mapped-memory coverage oracle exercises the shared factor/offchip
+rings, ring descriptor table, fused Wave32 LS+HS and TES+NGG records, and
+`DRAW_INDEX_AUTO`. Its Prospero ELF also cross-links with the required target
+runtimes; `tessellationShader` remains false until two FW 5.50 passes.
+
+Run the advanced stages one at a time. The default is one run so a new packet
+path is never repeated automatically. After each first pass, invoke that stage
+once more to collect the second independent qualification log:
+
+```sh
+PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh geometry
+PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh geometry
+PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh tessellation
+PS5_HOST=10.0.1.41 examples/run_fw550_advanced_stages.sh tessellation
+```
+
 `vulkan_ps5_indexed_textured_example` binds an interleaved position/UV vertex
 buffer, a UINT16 index buffer containing `{1,2,3}` after a decoy vertex, and a
 bilinear clamp sampler over a 2x2 RGBA8 image. Its readback oracle requires
@@ -163,8 +181,9 @@ compile SPIR-V at runtime with complete vertex, descriptor/pipeline-layout,
 push-constant, specialization-constant, entry-point, and render-pass color
 context. Geometry and tessellation stage fusion are also wired through pipeline
 creation, including independent specialization data for fused stages. Geometry
-draw recording now accepts the fused compiler record and handles its zero-sized
-push-constant pointer plus vertex-offset metadata, but both optional Vulkan
+and tessellation draws now accept the fused compiler records and metadata;
+tessellation uses device-owned OpenAGC rings registered through the FW driver
+and restores typed depth/stencil state after binding. Both optional Vulkan
 feature bits remain disabled until their standalone pipelines are repeatedly
 qualified on hardware. Compute dispatch and a no-input triangle draw now emit real
 gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences. Compute

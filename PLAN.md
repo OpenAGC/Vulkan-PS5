@@ -39,10 +39,9 @@
   only host-verified stencil PM4. The combined D32+S8 sample passed twice with
   22,118 `REPLACE 0x5a` writes exactly matching color coverage; the expanded
   `20260728T003956Z` full gate passed all 12 runs.
-  Geometry draw recording, host PM4 coverage, and a deterministic standalone
-  Prospero ELF are complete. Geometry/tessellation feature bits remain disabled
-  until the geometry ELF and the forthcoming tessellation ELF are each
-  repeatedly hardware-qualified.
+  Geometry and tessellation draw recording, host PM4 coverage, and deterministic
+  standalone Prospero ELFs are complete. Geometry/tessellation feature bits
+  remain disabled until both ELFs are repeatedly hardware-qualified.
 
 ## Summary
 

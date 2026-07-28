@@ -42,7 +42,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path)
 
 int main(int argc, char **argv)
 {
-    assert(argc == 5);
+    assert(argc == 7);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -324,6 +324,8 @@ int main(int argc, char **argv)
     VkShaderModule vertex = shader_module(device, argv[2]);
     VkShaderModule fragment = shader_module(device, argv[3]);
     VkShaderModule geometry = shader_module(device, argv[4]);
+    VkShaderModule tess_control = shader_module(device, argv[5]);
+    VkShaderModule tess_evaluation = shader_module(device, argv[6]);
     const VkPipelineLayoutCreateInfo graphics_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
@@ -613,6 +615,32 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &geometry_info, NULL,
                                      &geometry_pipeline) == VK_SUCCESS);
+    const VkPipelineShaderStageCreateInfo tessellation_stages[] = {
+        graphics_stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, tess_control, "main", NULL},
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, tess_evaluation,
+         "main", NULL},
+        graphics_stages[1],
+    };
+    const VkPipelineInputAssemblyStateCreateInfo patch_input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+    };
+    const VkPipelineTessellationStateCreateInfo tessellation_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        .patchControlPoints = 3,
+    };
+    VkGraphicsPipelineCreateInfo tessellation_info = graphics_info;
+    tessellation_info.stageCount = 4;
+    tessellation_info.pStages = tessellation_stages;
+    tessellation_info.pInputAssemblyState = &patch_input_assembly;
+    tessellation_info.pTessellationState = &tessellation_state;
+    VkPipeline tessellation_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &tessellation_info, NULL,
+                                     &tessellation_pipeline) == VK_SUCCESS);
 
     const VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -668,6 +696,11 @@ int main(int argc, char **argv)
     vkCmdBeginQuery(command, query_pool, 1, 0);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      tessellation_pipeline);
+    vkCmdDraw(command, 3, 1, 0, 0);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      geometry_pipeline);
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
     vkCmdEndQuery(command, query_pool, 1);
@@ -678,6 +711,7 @@ int main(int argc, char **argv)
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
     assert(count > 200);
     bool found_dispatch = false, found_draw = false, found_frame = false;
+    bool found_tess_draw = false, found_tess_context = false;
     bool found_color_target = false, found_color_target_1 = false;
     bool found_dual_export = false, found_depth_surface = false;
     bool found_depth_control = false, found_stencil_control = false;
@@ -698,6 +732,10 @@ int main(int argc, char **argv)
             assert(dwords[i + 2] == ((uint32_t)index_address & ~1u));
             assert(dwords[i + 3] == (uint32_t)(index_address >> 32));
             found_draw = true;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_DRAW_INDEX_AUTO) {
+            assert(i + 2 < count && dwords[i + 1] == 3u);
+            found_tess_draw = true;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_CONTEXT_CONTROL) {
             found_frame = true;
         } else if (((dwords[i] >> 8) & 0xffu) ==
@@ -728,6 +766,10 @@ int main(int argc, char **argv)
                        AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_DB_STENCIL_CONTROL) {
             found_stencil_control |= dwords[i + 2] == 0x00030030u;
+        } else if (((dwords[i] >> 8) & 0xffu) ==
+                       AGC_PM4_OP_SET_CONTEXT_REG && i + 2 < count &&
+                   dwords[i + 1] == AGC_REG_VGT_TF_PARAM) {
+            found_tess_context |= dwords[i + 2] == 0x61u;
         } else if (((dwords[i] >> 8) & 0xffu) == AGC_PM4_OP_EVENT_WRITE &&
                    i + 3 < count && dwords[i + 1] == 0x115u) {
             ++occlusion_snapshots;
@@ -739,7 +781,8 @@ int main(int argc, char **argv)
             found_query_availability = true;
         }
     }
-    assert(found_dispatch && found_draw && found_frame && found_color_target &&
+    assert(found_dispatch && found_draw && found_tess_draw &&
+           found_tess_context && found_frame && found_color_target &&
            found_color_target_1 && found_dual_export &&
            found_depth_surface && found_depth_control && found_stencil_control &&
            found_query_reset && occlusion_snapshots == 2 &&
@@ -784,6 +827,7 @@ int main(int argc, char **argv)
     vkDestroyFence(device, fence, NULL);
     vkDestroyQueryPool(device, query_pool, NULL);
     vkDestroyCommandPool(device, pool, NULL);
+    vkDestroyPipeline(device, tessellation_pipeline, NULL);
     vkDestroyPipeline(device, geometry_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
@@ -805,6 +849,8 @@ int main(int argc, char **argv)
     vkFreeMemory(device, texture_memory, NULL);
     vkDestroyShaderModule(device, fragment, NULL);
     vkDestroyShaderModule(device, geometry, NULL);
+    vkDestroyShaderModule(device, tess_evaluation, NULL);
+    vkDestroyShaderModule(device, tess_control, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyDescriptorPool(device, descriptor_pool, NULL);

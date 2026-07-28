@@ -130,7 +130,8 @@ if(VULKAN_PS5_BUILD_TESTS)
     add_test(NAME vulkan_ps5.pipeline COMMAND vulkan_ps5_pipeline_test
       ${PIPELINE_SHADER_OUTPUTS})
     set(COMMAND_SHADER_OUTPUTS)
-    foreach(shader command.comp command.vert command.frag command.geom)
+    foreach(shader command.comp command.vert command.frag command.geom
+                   command.tesc command.tese)
       set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
       add_custom_command(OUTPUT "${output}"
         COMMAND "${GLSLANG_VALIDATOR}" -V
@@ -198,6 +199,10 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_frag_spv.h")
   set(VULKAN_PS5_GEOMETRY_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_geometry_spv.h")
+  set(VULKAN_PS5_TESS_CONTROL_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_tess_control_spv.h")
+  set(VULKAN_PS5_TESS_EVALUATION_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_tess_evaluation_spv.h")
   add_custom_command(OUTPUT "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
       --vn vulkan_ps5_triangle_vert_spv
@@ -219,6 +224,22 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       -o "${VULKAN_PS5_GEOMETRY_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.geom"
     VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_TESS_CONTROL_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_tess_control_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/tessellation/tessellation.tesc"
+      -o "${VULKAN_PS5_TESS_CONTROL_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/tessellation/tessellation.tesc"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_TESS_EVALUATION_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_tess_evaluation_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/tessellation/tessellation.tese"
+      -o "${VULKAN_PS5_TESS_EVALUATION_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/tessellation/tessellation.tese"
+    VERBATIM)
   add_executable(vulkan_ps5_triangle_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -230,6 +251,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_GEOMETRY_HEADER}")
   target_compile_definitions(vulkan_ps5_geometry_example
     PRIVATE VULKAN_PS5_GEOMETRY_SAMPLE=1)
+  add_executable(vulkan_ps5_tessellation_example
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
+    "${VULKAN_PS5_TESS_CONTROL_HEADER}"
+    "${VULKAN_PS5_TESS_EVALUATION_HEADER}")
+  target_compile_definitions(vulkan_ps5_tessellation_example
+    PRIVATE VULKAN_PS5_TESSELLATION_SAMPLE=1)
   add_executable(vulkan_ps5_query_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -325,6 +354,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
+      vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example
       vulkan_ps5_mrt_example vulkan_ps5_query_example
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
@@ -335,6 +365,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_triangle_example
       vulkan_ps5_geometry_example
+      vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_mrt_example
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe

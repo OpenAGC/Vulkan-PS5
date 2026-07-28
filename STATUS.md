@@ -87,6 +87,16 @@ Implemented and host-verified:
   A standalone mapped-readback ELF shrinks the triangle in the geometry stage,
   giving it a distinct coverage oracle. Host tests and the Prospero cross-link
   pass; two FW 5.50 runs remain required before advertising `geometryShader`.
+- Tessellation pipelines require standard `PATCH_LIST` input and compile the
+  fused LS+HS stage in Wave32 alongside TES+NGG and PS. The device lazily owns
+  one 256-byte-aligned factor ring, offchip ring, and descriptor table, builds
+  and flushes them through OpenAGC, and registers the factor ring through the
+  FW driver before recording. Draws patch ring/layout/continuation addresses,
+  bind per-stage resource tables and user SGPRs, restore typed depth/stencil
+  state, and emit OpenAGC's tessellation `DRAW_INDEX_AUTO`. The host command
+  regression verifies both the draw and `VGT_TF_PARAM`; the standalone ELF has
+  a distinct TES-scaled readback oracle and cross-links for Prospero. Two FW
+  5.50 passes remain required before advertising `tessellationShader`.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

@@ -130,6 +130,8 @@ typedef struct VkPs5Pipeline {
     uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS];
     AgcGfx1013DepthStencilState depth_stencil;
     VkBool32 has_depth_stencil;
+    const AgcGfx1013TessellationState *tessellation;
+    uint64_t tess_ring_descriptor_address;
 } VkPs5Pipeline;
 
 typedef struct VkPs5QueryPool {
@@ -1644,8 +1646,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             !create->layout || !create->renderPass || !create->pVertexInputState ||
             !create->pInputAssemblyState)
             return VK_ERROR_INITIALIZATION_FAILED;
-        if (create->pInputAssemblyState->topology !=
-                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST ||
+        if ((create->pInputAssemblyState->topology !=
+                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST &&
+             create->pInputAssemblyState->topology !=
+                VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) ||
             create->pInputAssemblyState->primitiveRestartEnable)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if (!create->pViewportState ||
@@ -1717,6 +1721,11 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         }
         if (!vertex || !fragment) return VK_ERROR_FEATURE_NOT_PRESENT;
         if ((tess_control == NULL) != (tess_evaluation == NULL))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if ((tess_control && create->pInputAssemblyState->topology !=
+                VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) ||
+            (!tess_control && create->pInputAssemblyState->topology !=
+                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST))
             return VK_ERROR_FEATURE_NOT_PRESENT;
         if (tess_control && (!create->pTessellationState ||
             !create->pTessellationState->patchControlPoints))
@@ -1833,6 +1842,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         uint32_t compiled = 0;
         if (tess_control) {
             context.enable_ngg = false;
+            context.wave32 = true;
             result = compile_stage(tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
@@ -1893,7 +1903,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return result;
         }
         pipeline->bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        pipeline->primitive_type = 4u;
+        pipeline->primitive_type = tess_control ? 9u : 4u;
         pipeline->viewport.width = (uint32_t)viewport->width;
         pipeline->viewport.height = (uint32_t)viewport->height;
         pipeline->scissor.left = (uint32_t)scissor->offset.x;
@@ -1901,6 +1911,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->scissor.right = pipeline->scissor.left + scissor->extent.width;
         pipeline->scissor.bottom = pipeline->scissor.top + scissor->extent.height;
         result = finalize_pipeline(device, pAllocator, pipeline);
+        if (result == VK_SUCCESS && tess_control)
+            result = vk_ps5_device_prepare_tessellation(device,
+                &pipeline->tessellation,
+                &pipeline->tess_ring_descriptor_address);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
@@ -3158,6 +3172,156 @@ static VkResult prepare_vertex_table(
     return VK_SUCCESS;
 }
 
+static VkResult prepare_graphics_stage_user_data(
+    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
+    uint32_t stage_index, bool allow_vertex_table, bool indexed,
+    uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
+    AgcGfx1013ResourceTableBinding *resource_tables,
+    uint32_t *resource_table_count, AgcRegisterValue *user_data,
+    uint32_t *user_data_count, uint32_t user_data_capacity)
+{
+    const OpenAgcPsbcMetadata *metadata =
+        &pipeline->stages[stage_index].metadata;
+    for (uint32_t n = 0; n < metadata->user_sgpr_count; ++n) {
+        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
+        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
+            continue;
+        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_VERTEX_BUFFER_TABLE) {
+            if (!allow_vertex_table || *resource_table_count != 0u ||
+                sgpr->dword_count != 1u)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            VkResult result = prepare_vertex_table(command, pipeline,
+                &resource_tables[*resource_table_count]);
+            if (result != VK_SUCCESS)
+                return result;
+            ++*resource_table_count;
+            continue;
+        }
+        uint32_t value;
+        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
+            value = indexed ? (uint32_t)vertex_offset : first_element;
+        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
+            value = first_instance;
+        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_PUSH_CONSTANT_POINTER &&
+                 metadata->push_constant_size == 0u)
+            value = 0u;
+        else
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (sgpr->dword_count != 1u ||
+            *user_data_count == user_data_capacity)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        user_data[(*user_data_count)++] = (AgcRegisterValue){
+            sgpr->register_offset, value,
+        };
+    }
+    return VK_SUCCESS;
+}
+
+static void record_tessellation_draw(
+    VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline,
+    uint32_t element_count, uint32_t instance_count,
+    uint32_t first_element, uint32_t first_instance, bool indexed)
+{
+    if (indexed || !pipeline->tessellation ||
+        !pipeline->tess_ring_descriptor_address) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    AgcRegisterValue user_data[3u * OPENAGC_PSBC_MAX_USER_SGPRS];
+    uint32_t user_data_count = 0u;
+    AgcGfx1013ResourceTableBinding
+        hull_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
+    AgcGfx1013ResourceTableBinding
+        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    AgcGfx1013ResourceTableBinding
+        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
+    uint32_t hull_table_count = 0u;
+    uint32_t primitive_table_count = 0u;
+    uint32_t pixel_table_count = 0u;
+    VkResult result = prepare_graphics_stage_user_data(
+        command, pipeline, 0u, true, false, first_element, 0,
+        first_instance, hull_tables, &hull_table_count, user_data,
+        &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
+    if (result == VK_SUCCESS)
+        result = prepare_graphics_stage_user_data(
+            command, pipeline, 1u, false, false, first_element, 0,
+            first_instance, primitive_tables, &primitive_table_count,
+            user_data, &user_data_count,
+            3u * OPENAGC_PSBC_MAX_USER_SGPRS);
+    if (result == VK_SUCCESS)
+        result = prepare_graphics_stage_user_data(
+            command, pipeline, 2u, false, false, first_element, 0,
+            first_instance, pixel_tables, &pixel_table_count, user_data,
+            &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
+    uint32_t descriptor_count = 0u;
+    if (result == VK_SUCCESS)
+        result = prepare_graphics_descriptor_tables(command, pipeline, 0u,
+            &hull_tables[hull_table_count], &descriptor_count);
+    hull_table_count += descriptor_count;
+    descriptor_count = 0u;
+    if (result == VK_SUCCESS)
+        result = prepare_graphics_descriptor_tables(command, pipeline, 1u,
+            primitive_tables, &descriptor_count);
+    primitive_table_count = descriptor_count;
+    descriptor_count = 0u;
+    if (result == VK_SUCCESS)
+        result = prepare_graphics_descriptor_tables(command, pipeline, 2u,
+            pixel_tables, &descriptor_count);
+    pixel_table_count = descriptor_count;
+    if (result != VK_SUCCESS) {
+        command->record_error = result;
+        return;
+    }
+    if (pipeline->viewport.width > command->active_framebuffer->width ||
+        pipeline->viewport.height > command->active_framebuffer->height ||
+        pipeline->scissor.right > command->active_framebuffer->width ||
+        pipeline->scissor.bottom > command->active_framebuffer->height) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    AgcGfx1013FrameState draw_frame = command->frame_state;
+    draw_frame.viewport = pipeline->viewport;
+    draw_frame.scissor = pipeline->scissor;
+    const VkPs5RuntimeShader *hull = &pipeline->runtime[0];
+    const VkPs5RuntimeShader *primitive = &pipeline->runtime[1];
+    const VkPs5RuntimeShader *pixel = &pipeline->runtime[2];
+    const AgcGfx1013TessDrawState draw = {
+        .shaders = {
+            .hull = hull->binding,
+            .primitive = primitive->binding,
+            .pixel = pixel->binding,
+            .hull_back_code_address = hull->binding.code_address,
+            .primitive_back_code_address = primitive->binding.code_address,
+            .ring_descriptor_address =
+                pipeline->tess_ring_descriptor_address,
+            .tcs_offchip_layout = AGC_GFX1013_TESS_OFFCHIP_LAYOUT,
+            .primitive_type = pipeline->primitive_type,
+        },
+        .frame = &draw_frame,
+        .tessellation = pipeline->tessellation,
+        .depth_surface_state = pipeline->has_depth_stencil ?
+            &command->depth_surface_state : NULL,
+        .depth_stencil_state = pipeline->has_depth_stencil ?
+            &pipeline->depth_stencil : NULL,
+        .hull_resource_tables = hull_tables,
+        .num_hull_resource_tables = hull_table_count,
+        .primitive_resource_tables = primitive_tables,
+        .num_primitive_resource_tables = primitive_table_count,
+        .pixel_resource_tables = pixel_tables,
+        .num_pixel_resource_tables = pixel_table_count,
+        .post_bind_sh_registers = user_data,
+        .num_post_bind_sh_registers = user_data_count,
+        .instance_count = instance_count,
+        .vertex_count = element_count,
+        .draw_modifier = 0x40000000u,
+    };
+    int32_t draw_result = agcGfx1013DrawTessIndexAuto(
+        &command->dcb, &draw);
+    if (draw_result != AGC_OK)
+        command->record_error = draw_result == AGC_ERROR_BUFFER_TOO_SMALL ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+}
+
 static void record_graphics_draw(
     VkPs5CommandBuffer *command, uint32_t element_count,
     uint32_t instance_count, uint32_t first_element, int32_t vertex_offset,
@@ -3167,12 +3331,23 @@ static void record_graphics_draw(
         command->record_error != VK_SUCCESS)
         return;
     VkPs5Pipeline *pipeline = command->bound_graphics;
+    bool baseline = pipeline && pipeline->stage_count == 2u &&
+        (pipeline->stage_types[0] == OPENAGC_PSBC_STAGE_VERTEX ||
+         pipeline->stage_types[0] == OPENAGC_PSBC_STAGE_GEOMETRY) &&
+        pipeline->stage_types[1] == OPENAGC_PSBC_STAGE_FRAGMENT;
+    bool tessellation = pipeline && pipeline->stage_count == 3u &&
+        pipeline->stage_types[0] == OPENAGC_PSBC_STAGE_TESS_CONTROL &&
+        (pipeline->stage_types[1] == OPENAGC_PSBC_STAGE_TESS_EVALUATION ||
+         pipeline->stage_types[1] == OPENAGC_PSBC_STAGE_GEOMETRY) &&
+        pipeline->stage_types[2] == OPENAGC_PSBC_STAGE_FRAGMENT;
     if (!pipeline || !command->active_render_pass ||
-        pipeline->stage_count != 2 || !element_count || !instance_count ||
-        (pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_VERTEX &&
-         pipeline->stage_types[0] != OPENAGC_PSBC_STAGE_GEOMETRY) ||
-        pipeline->stage_types[1] != OPENAGC_PSBC_STAGE_FRAGMENT) {
+        (!baseline && !tessellation) || !element_count || !instance_count) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    if (tessellation) {
+        record_tessellation_draw(command, pipeline, element_count,
+            instance_count, first_element, first_instance, indexed);
         return;
     }
     AgcRegisterValue user_data[OPENAGC_PSBC_MAX_USER_SGPRS];
@@ -3183,45 +3358,13 @@ static void record_graphics_draw(
     AgcGfx1013ResourceTableBinding
         pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
     uint32_t pixel_table_count = 0;
-    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
-    for (uint32_t n = 0; n < metadata->user_sgpr_count; ++n) {
-        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_VERTEX_BUFFER_TABLE) {
-            if (primitive_table_count || sgpr->dword_count != 1u) {
-                command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-                return;
-            }
-            VkResult table_result = prepare_vertex_table(
-                command, pipeline, &primitive_tables[primitive_table_count]);
-            if (table_result != VK_SUCCESS) {
-                command->record_error = table_result;
-                return;
-            }
-            primitive_table_count++;
-            continue;
-        }
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
-            continue;
-        uint32_t value;
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
-            value = indexed ? (uint32_t)vertex_offset : first_element;
-        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
-            value = first_instance;
-        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_PUSH_CONSTANT_POINTER &&
-                 metadata->push_constant_size == 0u)
-            value = 0u;
-        else {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        if (sgpr->dword_count != 1 ||
-            user_data_count == OPENAGC_PSBC_MAX_USER_SGPRS) {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        user_data[user_data_count++] = (AgcRegisterValue){
-            sgpr->register_offset, value,
-        };
+    VkResult user_data_result = prepare_graphics_stage_user_data(
+        command, pipeline, 0u, true, indexed, first_element, vertex_offset,
+        first_instance, primitive_tables, &primitive_table_count, user_data,
+        &user_data_count, OPENAGC_PSBC_MAX_USER_SGPRS);
+    if (user_data_result != VK_SUCCESS) {
+        command->record_error = user_data_result;
+        return;
     }
     for (uint32_t n = 0;
          n < pipeline->stages[1].metadata.user_sgpr_count; ++n) {
