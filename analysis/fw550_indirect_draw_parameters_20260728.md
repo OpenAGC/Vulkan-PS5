@@ -108,7 +108,20 @@ one-draw Prospero candidate SHA-256 is
 `f2b139a1629141914462a8058ff1ebe5f21da40fd3c8eddf94d6960b6945feb8`.
 All 20 normal host tests and all runner safety tests pass, the full Prospero
 build passes, and the required `-lunwind`, `-lc++abi`, `-lc++`, and `-lm` link
-set is retained. One bounded lifecycle rerun is required before this gate is
-cleanly closed. Public `multiDrawIndirect`, `drawIndirectFirstInstance`, and
-`shaderDrawParameters` remain false until their complete multi-draw and shader
-semantics are hardware-qualified.
+set is retained.
+
+The one bounded lifecycle rerun passed on FW 5.500.008 as native-game PID 86:
+
+- `examples/qualification-logs/20260728T092357Z-indirect-parameters-run1.log`
+- `examples/qualification-logs/20260728T092357Z-indirect-parameters-run1-target.klog`
+
+It reproduced the exact `green=5736`, `firstVertex=1`, `firstInstance=1`,
+`draws=1` oracle and printed `system-exit app=0x4016`. The PID-scoped klog
+shows matching requester and target app IDs, `All processes exited`, and idle
+graphics queues with equal read/write pointers. It contains no PID-scoped fatal
+signal and no GPU reset. The runner accepted only the previously isolated
+raw-ELF VM warning `amount=0x4000`, and exact PID/name removal confirmed that
+PID 86 was absent. The one-draw BaseVertex/BaseInstance gate is therefore
+cleanly hardware-qualified. Public `multiDrawIndirect`,
+`drawIndirectFirstInstance`, and `shaderDrawParameters` remain false until
+their complete multi-draw and shader semantics are hardware-qualified.

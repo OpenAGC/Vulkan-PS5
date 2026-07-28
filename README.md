@@ -50,7 +50,12 @@ and did not reset the GPU. Its later SIGSEGV occurred only after PASS while
 returning through the raw-ELF exit path. Prospero samples now self-terminate
 through SystemService after Vulkan cleanup, and bounded runners strip embedded
 NUL bytes from klog captures before PID and lifecycle checks. Runner tests cover
-that binary-log case explicitly.
+that binary-log case explicitly. The rebuilt FW 5.500.008 candidate then passed
+the same exact one-draw oracle as PID 86, self-killed with matching app IDs,
+left idle graphics queues, and produced neither a fatal signal nor a GPU reset.
+Only the isolated raw-ELF `amount=0x4000` VM warning remained. Complete
+multi-draw/DrawID qualification is still required before promoting the related
+public Vulkan feature bits.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
 packets for every Vulkan copy region. Recording validates bound memory,

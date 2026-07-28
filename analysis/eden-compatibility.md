@@ -73,7 +73,7 @@ does not turn a failed requirement into support.
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
 | Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
-| Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; corrected one-draw BaseVertex/BaseInstance hardware readback passed without a GPU reset | Initiator hardware-qualified at one-draw scope; clean SystemService lifecycle rerun and complete multi/DrawID gate pending |
+| Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; corrected one-draw BaseVertex/BaseInstance readback passed with clean SystemService exit and no GPU reset | Hardware-qualified at one-draw parameter scope; complete multi/DrawID gate pending before public feature promotion |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
 
@@ -115,8 +115,9 @@ timeout.
    then faulted only after PASS while returning through the raw-ELF exit path.
    The rebuilt probe uses SystemService self-kill after Vulkan cleanup, and all
    bounded runners sanitize NUL bytes before parsing klog lifecycle evidence.
-   A clean lifecycle rerun and the complete multi-draw/DrawID gate remain before
-   the three related core bits can be promoted. The rejected packet experiments,
+   The clean lifecycle rerun passed with the exact oracle, matching self-kill,
+   idle queues, and no fatal signal or GPU reset. The complete multi-draw/DrawID
+   gate remains before the three related core bits can be promoted. The rejected packet experiments,
    GPU-reset evidence, root cause, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
 3. Expand qualified uncompressed and BC format support, with D24 fallback kept
