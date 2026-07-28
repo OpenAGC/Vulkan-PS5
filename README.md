@@ -73,6 +73,20 @@ test registers the relocated SDK as an additional `CMAKE_FIND_ROOT_PATH`.
 Applications using an SDK installed directly in the payload sysroot need no
 such override.
 
+After a fresh `ps5 up` signal, the retained consumer has a dedicated bounded
+hardware gate:
+
+```sh
+PS5_HOST=10.0.1.41 sh examples/run_fw550_package_consumer.sh
+```
+
+The runner performs exactly one deployment, requires
+`package-consumer: PASS result=0`, verifies self-requested app termination and
+exact-PID removal through ps5debug-NG, checks that websrv remains responsive,
+and rejects fatal or unexpected PID-scoped kernel messages. It permits at most
+the single `amount:0x4000` warning already proven to be the FW 5.50 raw-ELF
+baseline.
+
 ## Headless surface and swapchain sample
 
 `VK_EXT_headless_surface` is the standard PS5 VideoOut surface. The ICD

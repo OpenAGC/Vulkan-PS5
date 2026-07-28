@@ -486,9 +486,14 @@ Implemented and verified:
 - The normal Prospero driver/examples build remains clean after the package
   test was added. The retained installed-package ELF has SHA-256
   `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
+- `run_fw550_package_consumer.sh` reuses the proven bounded raw-ELF lifecycle
+  gate with a package-specific ELF and PASS oracle. Its simulation verifies
+  exact-PID handling and acceptance of only the proven single `0x4000`
+  baseline warning.
 
 Remaining Milestone 5 gate:
 
 - Execute the installed-package consumer once on FW 5.50 after a fresh
   `ps5 up` signal, require its `package-consumer: PASS result=0` marker and the
-  same bounded self-KillApp/process-removal safety checks used by the WSI gate.
+  bounded self-KillApp/process-removal safety checks now encoded by its
+  dedicated runner.

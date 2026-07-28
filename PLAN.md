@@ -231,7 +231,11 @@
   links. The retained installed-package ELF SHA-256 is
   `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
   The remaining closure gate is one bounded FW 5.50 execution of that
-  installed-package ELF after a fresh console-availability signal.
+  installed-package ELF after a fresh console-availability signal. Its
+  dedicated one-shot runner already passes a safety simulation and requires
+  the standard Vulkan PASS oracle, self-KillApp ordering, exact-PID removal,
+  post-run websrv availability, and no kernel warning beyond the proven single
+  raw-ELF `0x4000` baseline.
 
 ## Summary
 
