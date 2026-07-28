@@ -92,9 +92,7 @@ if ! capture_klog; then
     exit 1
 fi
 sed -n '1,200p' "$log"
-if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null || \
-   ! grep -E '^swapchain: system exit app=0x[0-9a-f]+ result=0x0$' \
-       "$log" >/dev/null; then
+if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null; then
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
         kill_stale_process "$failed_pid" || true
@@ -118,6 +116,26 @@ if grep -Eq \
     kill_stale_process "$target_pid" || true
     sed -n '1,240p' "$target_klog" >&2
     echo "swapchain emitted PASS but its scoped kernel log is not clean: $target_klog" >&2
+    exit 1
+fi
+kill_pair=$(sed -n \
+    's/.*KillApp() appId={0x\([0-9A-Fa-f][0-9A-Fa-f]*\)} is requested from 0x\([0-9A-Fa-f][0-9A-Fa-f]*\).*/\1 \2/p' \
+    "$target_klog" | tail -n 1)
+kill_line=$(grep -n 'KillApp() appId=' "$target_klog" | tail -n 1 | cut -d: -f1 || true)
+all_exited_line=$(grep -n '\[AppMgr\] All processes exited' "$target_klog" | \
+    tail -n 1 | cut -d: -f1 || true)
+if [ -z "$kill_pair" ] || [ -z "$kill_line" ] || \
+   [ -z "$all_exited_line" ]; then
+    kill_stale_process "$target_pid" || true
+    echo "swapchain did not complete the kernel app-exit lifecycle; klog: $target_klog" >&2
+    exit 1
+fi
+kill_app=${kill_pair%% *}
+requester_app=${kill_pair#* }
+if [ "$((0x$kill_app))" -ne "$((0x$requester_app))" ] || \
+   [ "$all_exited_line" -le "$kill_line" ]; then
+    kill_stale_process "$target_pid" || true
+    echo "swapchain kernel app-exit lifecycle is inconsistent; klog: $target_klog" >&2
     exit 1
 fi
 if ! uv run --project "$pyps4debug_dir" python \

@@ -18,8 +18,7 @@ for arg do
                 'swapchain: 1800/1800 frames' \
                 'swapchain: cleanup begin' \
                 'swapchain: swapchain destroyed' \
-                'swapchain: PASS 1800 frames' \
-                'swapchain: system exit app=0x16 result=0x0'
+                'swapchain: PASS 1800 frames'
             ;;
     esac
 done
@@ -29,13 +28,20 @@ cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
 printf '<321> EXEC /app0/eboot.bin [system], vm#1\n'
 case "${FAKE_KLOG_MODE:-clean}" in
-    clean) ;;
+    clean)
+        printf '%s\n' \
+            '[SysCore] KillApp() appId={0x00002016} is requested from 0x00002016' \
+            '[AppMgr] All processes exited'
+        ;;
     crash)
         printf '%s\n' \
+            '[SysCore] KillApp() appId={0x00002016} is requested from 0x00002016' \
+            '[AppMgr] All processes exited' \
             '# A user thread receives a fatal signal' \
             '# signal: 11 (SIGSEGV)' \
             '# proc ID: 321'
         ;;
+    no_lifecycle) ;;
     *) exit 2 ;;
 esac
 EOF
@@ -79,6 +85,16 @@ if run_runner crash "$test_root/crash.out" "$test_root/crash-logs"; then
     exit 1
 fi
 grep -F 'scoped kernel log is not clean' "$test_root/crash.out" >/dev/null
+grep -F -- '--pid 321' "$test_root/uv.log" >/dev/null
+
+: >"$test_root/uv.log"
+if run_runner no_lifecycle "$test_root/no-lifecycle.out" \
+    "$test_root/no-lifecycle-logs"; then
+    echo "missing kernel app-exit lifecycle unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'did not complete the kernel app-exit lifecycle' \
+    "$test_root/no-lifecycle.out" >/dev/null
 grep -F -- '--pid 321' "$test_root/uv.log" >/dev/null
 
 echo "swapchain runner safety gate: PASS"

@@ -154,7 +154,7 @@
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `835144f7024a2b08f9bff19c78973a9f64a1cc6f4683a5a00542fc350bbe59f5`.
+  `128c8b40e8820f50f3b72df840f75d9a911ab7cb7b8805239be0dc47e1e4ec10`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -178,13 +178,20 @@
   The helper is declared `_Noreturn`; the current Prospero disassembly ends
   `main` with its call plus `ud2`, and both helper branches loop on
   `sceKernelUsleep`, proving that the ELF cannot return to the raw loader.
+  The next bounded run (`20260728T062155Z-swapchain-run1.log`) completed all
+  1,800 frames and Vulkan cleanup. Klog recorded the self-requested `KillApp()`,
+  `All processes exited`, and shell focus restoration; the exact PID was absent
+  and websrv remained responsive. The remaining `0x4000` VM warning exactly
+  matched OpenAGC's standalone multi-submit trailer allocation. OpenAGC
+  `1c0fb8f` now places that 64-byte trailer in unused `SceGnmDdid` space.
   A separately built recovery payload refuses to act unless exactly one other
   `eboot.elf` exists. One new bounded run remains before this milestone is
   hardware qualified; the runner has no automatic retry and uses exact-PID
   ps5debug-NG cleanup only on a timeout/failure. The runner takes a bounded post-run
   klog snapshot, scopes it to the new eboot PID, rejects fatal signals, app
-  crashes, XO faults, or VM leaks, requires SystemService to accept the app
-  exit, and requires ps5debug-NG to prove process absence before reporting
+  crashes, XO faults, or VM leaks, requires a self-requested kernel `KillApp()`
+  followed by `All processes exited`, and requires ps5debug-NG to prove process
+  absence before reporting
   qualification PASS. Post-PASS safety failures also trigger exact-PID cleanup.
   Exhausted acquisition now waits against a monotonic deadline instead of
   returning early, while present releases the swapchain lock during the

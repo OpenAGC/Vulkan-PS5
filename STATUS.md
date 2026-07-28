@@ -398,7 +398,7 @@ Implemented:
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate
   SHA-256 is
-  `835144f7024a2b08f9bff19c78973a9f64a1cc6f4683a5a00542fc350bbe59f5`.
+  `128c8b40e8820f50f3b72df840f75d9a911ab7cb7b8805239be0dc47e1e4ec10`.
 
 Pending:
 
@@ -426,9 +426,17 @@ Pending:
   cleanup, and keeps the main thread alive until SystemService finishes. The
   helper is `_Noreturn`; disassembly verifies that `main` ends with its call
   followed by `ud2` and that both helper paths remain in sleep loops. A
-  recovery ELF refuses to act unless exactly one other `eboot.elf` exists. A
-  new bounded run is required; no automatic retry is permitted. The runner now
+  recovery ELF refuses to act unless exactly one other `eboot.elf` exists. The
+  next bounded run (`20260728T062155Z-swapchain-run1.log`) completed 1,800
+  frames and Vulkan cleanup. Klog recorded the self-requested `KillApp()`, `All
+  processes exited`, and shell focus restoration; the exact PID was absent and
+  websrv remained responsive. Its only failure was a `0x4000` VM resource
+  warning, exactly matching OpenAGC's standalone multi-submit trailer
+  allocation. OpenAGC `1c0fb8f` now carves the 64-byte trailer from unused
+  `SceGnmDdid` space instead of allocating another 16 KiB VM resource. A new
+  bounded run is required; no automatic retry is permitted. The runner now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
-  XO faults, and VM leaks, requires an accepted SystemService app exit, and
+  XO faults, and VM leaks, requires a self-requested kernel `KillApp()` followed
+  by `All processes exited`, and
   requires exact-PID process absence before PASS. Post-PASS failures also
   attempt cleanup of that exact PID.
