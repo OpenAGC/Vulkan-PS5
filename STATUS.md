@@ -465,7 +465,7 @@ Qualification history:
   balanced 1,800-frame swapchain run, this closes the Milestone 4 hardware
   gate.
 
-## Milestone 5: reusable installed SDK (host and Prospero package qualified)
+## Milestone 5: reusable installed SDK (FW 5.50 hardware qualified)
 
 Implemented and verified:
 
@@ -490,10 +490,13 @@ Implemented and verified:
   gate with a package-specific ELF and PASS oracle. Its simulation verifies
   exact-PID handling and acceptance of only the proven single `0x4000`
   baseline warning.
+- One bounded FW 5.500.008 execution after a fresh console-availability signal
+  passed without retry. PID 153 printed `package-consumer: PASS result=0`,
+  completed self-requested KillApp followed by `All processes exited`, was
+  absent in the exact-PID ps5debug-NG check, and left websrv responsive. The
+  scoped klog contained no fatal event or warning beyond the proven raw-ELF
+  `amount:0x4000` baseline. Evidence:
+  `20260728T070752Z-package-consumer.log` and
+  `20260728T070752Z-package-consumer-target.klog`.
 
-Remaining Milestone 5 gate:
-
-- Execute the installed-package consumer once on FW 5.50 after a fresh
-  `ps5 up` signal, require its `package-consumer: PASS result=0` marker and the
-  bounded self-KillApp/process-removal safety checks now encoded by its
-  dedicated runner.
+This closes Milestone 5 at the reusable static SDK/package scope.

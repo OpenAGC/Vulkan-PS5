@@ -4,7 +4,8 @@ Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
 current implementation includes the host-testable Milestone 1 ICD, the
 Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3 OpenAGC
 DCB path, and the hardware-qualified Milestone 4 headless-surface/swapchain
-path.
+path. Milestone 5 also qualifies the relocatable SDK package through a separate
+standard-Vulkan consumer on both host and FW 5.50.
 It exposes the
 complete Vulkan 1.0/1.1 core entrypoint surface, conservative gfx1013 physical
 device properties, two OpenAGC-backed PS5 GPU memory classes and
@@ -86,6 +87,13 @@ exact-PID removal through ps5debug-NG, checks that websrv remains responsive,
 and rejects fatal or unexpected PID-scoped kernel messages. It permits at most
 the single `amount:0x4000` warning already proven to be the FW 5.50 raw-ELF
 baseline.
+
+The retained FW 5.500.008 gate ran once on 2026-07-28. PID 153 printed the PASS
+oracle, completed self-KillApp and `All processes exited`, was absent from the
+ps5debug-NG process list, and left websrv responsive. Its scoped klog contained
+only the proven raw-ELF baseline warning. Evidence is retained in
+`examples/qualification-logs/20260728T070752Z-package-consumer.log` and
+`20260728T070752Z-package-consumer-target.klog`.
 
 ## Headless surface and swapchain sample
 

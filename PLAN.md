@@ -230,12 +230,17 @@
   `kernel`, `SceAgcDriver`, `SceVideoOut`, `unwind`, `c++abi`, `c++`, and `m`
   links. The retained installed-package ELF SHA-256 is
   `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
-  The remaining closure gate is one bounded FW 5.50 execution of that
-  installed-package ELF after a fresh console-availability signal. Its
-  dedicated one-shot runner already passes a safety simulation and requires
+  Its dedicated one-shot runner passes a safety simulation and requires
   the standard Vulkan PASS oracle, self-KillApp ordering, exact-PID removal,
   post-run websrv availability, and no kernel warning beyond the proven single
   raw-ELF `0x4000` baseline.
+  The retained FW 5.500.008 run executed once after a fresh availability
+  signal and passed: PID 153 printed `package-consumer: PASS result=0`, the
+  kernel recorded self-KillApp followed by `All processes exited`, ps5debug-NG
+  proved the exact PID absent, and websrv remained responsive. The scoped klog
+  contained only the proven raw-ELF warning. Evidence is retained at
+  `20260728T070752Z-package-consumer.log` and
+  `20260728T070752Z-package-consumer-target.klog`. This closes Milestone 5.
 
 ## Summary
 
