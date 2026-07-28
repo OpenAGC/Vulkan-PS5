@@ -153,7 +153,7 @@
   WSI-enabled VVL test pass without messages. The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `45b2dfadb83094cc3572fc3297f386b8c7d84a8d2648b5bcb350b4ba2d66567b`.
+  `6756d1fe0083411e8e5d1e97d7931d6f144f575009ecfd73dc5e76fe8afbe6d6`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -163,6 +163,11 @@
   survived, and no retry occurred. One new bounded run remains before this
   milestone is hardware qualified; the runner has no automatic retry and uses
   ps5debug-NG cleanup only on a timeout/failure.
+  Exhausted acquisition now waits against a monotonic deadline instead of
+  returning early, while present releases the swapchain lock during the
+  bounded VSYNC wait. A host regression holds all three images, presents one
+  from another thread after 10 ms, and proves a waiting acquire wakes with the
+  released image.
 
 ## Summary
 

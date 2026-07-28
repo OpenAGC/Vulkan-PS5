@@ -51,6 +51,11 @@ the eight-test ICD suite, and Validation Layers pass; its Prospero ELF links
 with `-lunwind -lc++abi -lc++ -lm`. Run exactly one bounded FW 5.50 gate after
 an explicit console-availability signal:
 
+Finite image-acquisition timeouts use a monotonic deadline. The WSI regression
+also exhausts all three images, releases one from a delayed presentation
+thread, and verifies that the waiting acquire wakes without holding the
+swapchain lock across the VSYNC wait.
+
 ```sh
 PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 ```

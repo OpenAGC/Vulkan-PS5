@@ -6,6 +6,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #define VK_PS5_SWAPCHAIN_IMAGE_COUNT 3u
 
@@ -42,6 +43,23 @@ static void lock_flag(atomic_flag *lock) {
 
 static void unlock_flag(atomic_flag *lock) {
     atomic_flag_clear_explicit(lock, memory_order_release);
+}
+
+static uint64_t monotonic_nanoseconds(void) {
+    struct timespec now = {0};
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
+    return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
+}
+
+static void wait_for_acquire_progress(uint64_t remaining_nanoseconds) {
+    const uint64_t poll_nanoseconds = 100000ull;
+    uint64_t delay = remaining_nanoseconds < poll_nanoseconds ?
+        remaining_nanoseconds : poll_nanoseconds;
+    const struct timespec sleep_time = {
+        .tv_sec = 0,
+        .tv_nsec = (long)delay,
+    };
+    nanosleep(&sleep_time, NULL);
 }
 
 static VkResult enumerate_surface_formats(uint32_t *count,
@@ -348,25 +366,36 @@ static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
                                    uint32_t *image_index) {
     if (!swapchain || !image_index || (!semaphore && !fence))
         return VK_ERROR_INITIALIZATION_FAILED;
-    lock_flag(&swapchain->lock);
-    if (swapchain->retired) {
-        unlock_flag(&swapchain->lock);
-        return VK_ERROR_OUT_OF_DATE_KHR;
-    }
-    for (uint32_t offset = 0; offset < VK_PS5_SWAPCHAIN_IMAGE_COUNT; ++offset) {
-        uint32_t index = (swapchain->next_image + offset) %
-            VK_PS5_SWAPCHAIN_IMAGE_COUNT;
-        if (!atomic_load(&swapchain->acquired[index])) {
-            atomic_store(&swapchain->acquired[index], true);
-            swapchain->next_image = (index + 1) % VK_PS5_SWAPCHAIN_IMAGE_COUNT;
-            *image_index = index;
-            VkResult result = vk_ps5_signal_acquire(semaphore, fence);
+    const uint64_t start = monotonic_nanoseconds();
+    if (start == 0) return VK_ERROR_DEVICE_LOST;
+    for (;;) {
+        lock_flag(&swapchain->lock);
+        if (swapchain->retired) {
             unlock_flag(&swapchain->lock);
-            return result;
+            return VK_ERROR_OUT_OF_DATE_KHR;
         }
+        for (uint32_t offset = 0; offset < VK_PS5_SWAPCHAIN_IMAGE_COUNT; ++offset) {
+            uint32_t index = (swapchain->next_image + offset) %
+                VK_PS5_SWAPCHAIN_IMAGE_COUNT;
+            if (!atomic_load(&swapchain->acquired[index])) {
+                atomic_store(&swapchain->acquired[index], true);
+                swapchain->next_image = (index + 1) % VK_PS5_SWAPCHAIN_IMAGE_COUNT;
+                *image_index = index;
+                VkResult result = vk_ps5_signal_acquire(semaphore, fence);
+                unlock_flag(&swapchain->lock);
+                return result;
+            }
+        }
+        unlock_flag(&swapchain->lock);
+
+        if (timeout == 0) return VK_NOT_READY;
+        uint64_t now = monotonic_nanoseconds();
+        if (now == 0) return VK_ERROR_DEVICE_LOST;
+        uint64_t elapsed = now >= start ? now - start : 0;
+        if (timeout != UINT64_MAX && elapsed >= timeout) return VK_TIMEOUT;
+        uint64_t remaining = timeout == UINT64_MAX ? 100000ull : timeout - elapsed;
+        wait_for_acquire_progress(remaining);
     }
-    unlock_flag(&swapchain->lock);
-    return timeout == 0 ? VK_NOT_READY : VK_TIMEOUT;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -411,16 +440,20 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
             item_result = VK_ERROR_INITIALIZATION_FAILED;
         } else {
             lock_flag(&swapchain->lock);
+            uint64_t frame_id = swapchain->frame_id++;
             if (swapchain->retired) {
                 item_result = VK_ERROR_OUT_OF_DATE_KHR;
             } else if (!atomic_load(&swapchain->acquired[index])) {
                 item_result = VK_ERROR_INITIALIZATION_FAILED;
-            } else if (agcVideoOutPresent(swapchain->video_out, index,
-                       swapchain->frame_id++, VK_PS5_PRESENT_TIMEOUT_US) != AGC_OK) {
-                item_result = VK_ERROR_SURFACE_LOST_KHR;
             } else {
-                atomic_store(&swapchain->acquired[index], false);
+                unlock_flag(&swapchain->lock);
+                if (agcVideoOutPresent(swapchain->video_out, index, frame_id,
+                        VK_PS5_PRESENT_TIMEOUT_US) != AGC_OK)
+                    item_result = VK_ERROR_SURFACE_LOST_KHR;
+                lock_flag(&swapchain->lock);
             }
+            if (item_result == VK_SUCCESS)
+                atomic_store(&swapchain->acquired[index], false);
             unlock_flag(&swapchain->lock);
         }
         if (pPresentInfo->pResults) pPresentInfo->pResults[i] = item_result;

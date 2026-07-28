@@ -384,15 +384,19 @@ Implemented:
   three Vulkan-owned linear images backed by direct write-combined memory.
 - Thread-safe acquire tracking, binary semaphore/fence handoff, FIFO present
   after the queue's synchronous EOP completion, bounded VideoOut waits, and
-  old-swapchain retirement/recreation.
+  old-swapchain retirement/recreation. Exhausted acquire calls wait against
+  their monotonic timeout, and present does not hold the swapchain lock while
+  waiting for VSYNC.
 - OpenAGC owns the FW 5.50 linear-registration patch, immediate byte-verified
   restoration, VideoOut registration, flip equeue, and deterministic teardown.
 - Direct host WSI tests cover enumeration, `VK_INCOMPLETE`, exhaustion,
   acquire/present synchronization, device groups, and recreation. All eight
   host tests and the WSI-enabled Validation Layers test pass with zero messages.
+  The WSI test also releases an image from a delayed presentation thread and
+  proves a blocked acquire wakes with that image.
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `45b2dfadb83094cc3572fc3297f386b8c7d84a8d2648b5bcb350b4ba2d66567b`.
+  `6756d1fe0083411e8e5d1e97d7931d6f144f575009ecfd73dc5e76fe8afbe6d6`.
 
 Pending:
 

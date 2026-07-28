@@ -1,7 +1,9 @@
 #include <vulkan/vulkan.h>
 
 #include <stdio.h>
+#include <pthread.h>
 #include <string.h>
+#include <time.h>
 
 #define CHECK(call) do { \
     VkResult check_result = (call); \
@@ -16,6 +18,30 @@ static int has_extension(const VkExtensionProperties *extensions,
     for (uint32_t i = 0; i < count; ++i)
         if (strcmp(extensions[i].extensionName, name) == 0) return 1;
     return 0;
+}
+
+typedef struct PresentThreadArgs {
+    VkQueue queue;
+    VkSwapchainKHR swapchain;
+    VkSemaphore semaphore;
+    uint32_t image_index;
+    VkResult result;
+} PresentThreadArgs;
+
+static void *delayed_present(void *opaque) {
+    PresentThreadArgs *args = opaque;
+    const struct timespec delay = {.tv_nsec = 10000000};
+    nanosleep(&delay, NULL);
+    const VkPresentInfoKHR present = {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &args->semaphore,
+        .swapchainCount = 1,
+        .pSwapchains = &args->swapchain,
+        .pImageIndices = &args->image_index,
+    };
+    args->result = vkQueuePresentKHR(args->queue, &present);
+    return NULL;
 }
 
 int main(void) {
@@ -174,12 +200,31 @@ int main(void) {
                               VK_NULL_HANDLE, &unavailable_index) != VK_TIMEOUT)
         return 1;
 
+    PresentThreadArgs thread_args = {
+        .queue = queue,
+        .swapchain = swapchain,
+        .semaphore = acquire_semaphores[0],
+        .image_index = indices[0],
+        .result = VK_ERROR_UNKNOWN,
+    };
+    pthread_t present_thread;
+    if (pthread_create(&present_thread, NULL, delayed_present, &thread_args) != 0)
+        return 1;
+    CHECK(vkAcquireNextImageKHR(device, swapchain, 1000000000ull,
+                                acquire_semaphores[3], VK_NULL_HANDLE,
+                                &unavailable_index));
+    if (pthread_join(present_thread, NULL) != 0 ||
+        thread_args.result != VK_SUCCESS || unavailable_index != indices[0])
+        return 1;
+
     for (uint32_t i = 0; i < 3; ++i) {
+        const VkSemaphore present_semaphore = i == 0 ?
+            acquire_semaphores[3] : acquire_semaphores[i];
         VkResult per_swapchain = VK_SUCCESS;
         const VkPresentInfoKHR present_info = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &acquire_semaphores[i],
+            .pWaitSemaphores = &present_semaphore,
             .swapchainCount = 1,
             .pSwapchains = &swapchain,
             .pImageIndices = &indices[i],
