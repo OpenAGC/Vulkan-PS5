@@ -60,7 +60,7 @@ non-indexed DrawID pipelines into single packets and is host-checked for stable
 BaseVertex/BaseInstance register locations, the exact DrawIndex `0,0,1,0,1`
 sequence, and indexed/non-indexed initiators. PM4 tests now walk packet
 boundaries, so address payloads cannot impersonate packet headers under
-sanitizers. Both normal and ASAN/UBSAN suites pass 20/20, and the bounded runner
+sanitizers. Both normal and ASAN/UBSAN suites pass 21/21, and the bounded runner
 requires the shared matching-self-kill lifecycle before accepting the gate.
 
 `vkCmdCopyBuffer` records application-neutral OpenAGC gfx1013 `DMA_DATA`
@@ -612,7 +612,11 @@ four blend constants, and up to eight independent attachment records translate
 to OpenAGC's typed gfx1013 blend state before baseline, geometry, indirect, and
 tessellation draws. Dual-source factors and logic operations remain rejected.
 The public `independentBlend` bit stays false pending deterministic hardware
-readback. Static depth compare/write and front/back stencil state are translated
+readback. The standalone `vulkan_ps5_independent_blend_probe` renders the same
+triangle to two attachments: target zero must remain opaque green with blending
+disabled, while target one must become exact half-intensity magenta
+`0x80800080` through constant-color/alpha factors. Its bounded runner requires
+the shared self-kill lifecycle. Static depth compare/write and front/back stencil state are translated
 to typed OpenAGC draw state. Begin/end render pass translate layouts to OpenAGC
 resource transitions, emit the qualified gfx1013 frame prologue, bind attachment
 addresses, and restore host-readable cache state after drawing. Depth/stencil

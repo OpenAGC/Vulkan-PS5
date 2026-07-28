@@ -165,6 +165,11 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/indirect_draw_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.indirect_draw_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.independent_blend_runner
+      COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/independent_blend_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.independent_blend_runner PROPERTIES
+      TIMEOUT 15)
     add_test(NAME vulkan_ps5.ps5debug_process_identity
       COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/ps5debug_kill_process_test.py")
     add_test(NAME vulkan_ps5.eden_vma_runner
@@ -415,6 +420,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/mrt/main.c
     "${VULKAN_PS5_MRT_VERTEX_HEADER}"
     "${VULKAN_PS5_MRT_FRAGMENT_HEADER}")
+  add_executable(vulkan_ps5_independent_blend_probe
+    examples/mrt/main.c
+    "${VULKAN_PS5_MRT_VERTEX_HEADER}"
+    "${VULKAN_PS5_MRT_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_independent_blend_probe PRIVATE
+    VULKAN_PS5_INDEPENDENT_BLEND_PROBE=1)
   set(VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indexed_textured_vert_spv.h")
   set(VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER
@@ -497,7 +508,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example
       vulkan_ps5_swapchain_example
-      vulkan_ps5_mrt_example vulkan_ps5_query_example
+      vulkan_ps5_mrt_example vulkan_ps5_independent_blend_probe
+      vulkan_ps5_query_example
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
       vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
@@ -511,6 +523,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_geometry_example
       vulkan_ps5_tessellation_example
       vulkan_ps5_depth_example vulkan_ps5_mrt_example
+      vulkan_ps5_independent_blend_probe
       vulkan_ps5_swapchain_example
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
@@ -526,6 +539,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endforeach()
   if(PROSPERO)
     target_link_libraries(vulkan_ps5_swapchain_example PRIVATE SceSystemService)
+    target_link_libraries(vulkan_ps5_independent_blend_probe PRIVATE
+      SceSystemService)
     target_link_libraries(vulkan_ps5_indexed_textured_example PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_mirror_clamp_probe PRIVATE

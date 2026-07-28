@@ -73,10 +73,16 @@ and constants into OpenAGC's typed gfx1013 blend state. Every baseline,
 geometry, indirect, and tessellation draw restores that state. The exact PM4
 regression uses one disabled full-mask target and one enabled GB-only target,
 requiring distinct control words, target mask `0x6f`, and all four constants.
-Both normal and ASAN/UBSAN suites pass 20/20 and the Prospero build passes.
-Public `independentBlend` remains false until a deterministic MRT readback gate
-is added and hardware-qualified; dual-source blend and logic operations remain
-separate unsupported features.
+Both normal and ASAN/UBSAN suites pass 21/21 and the Prospero build passes.
+The standalone MRT gate now requires target zero to retain opaque green while
+target one resolves to exact half-intensity magenta `0x80800080` through
+constant-color/alpha factors, followed by the shared SystemService lifecycle.
+Its runner covers clean, fatal, NUL-containing, PID-reuse, and exact-identity
+paths. Both host configurations pass 21/21; Prospero ELF SHA-256 is
+`91467f1d00bfa9e4493f48eb8a56b0168f699ebb80aa42484e9e7d183afcab6b`.
+Public `independentBlend` remains false until its one bounded hardware run
+passes; dual-source blend and logic operations remain separate unsupported
+features.
 
 ## Runtime compatibility
 

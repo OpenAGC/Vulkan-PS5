@@ -7,6 +7,15 @@
 #include "vulkan_ps5_mrt_frag_spv.h"
 #include "vulkan_ps5_mrt_vert_spv.h"
 
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+#include "../system_service_exit.h"
+#define SAMPLE_NAME "independent_blend"
+#define TARGET1_COLOR 0x80800080u
+#else
+#define SAMPLE_NAME "mrt"
+#define TARGET1_COLOR MAGENTA
+#endif
+
 #define WIDTH 256u
 #define HEIGHT 256u
 #define GREEN 0xff00ff00u
@@ -15,7 +24,7 @@
 #define VK_CHECK(call) do { \
     VkResult result_ = (call); \
     if (result_ != VK_SUCCESS) { \
-        printf("mrt: %s failed (%d)\n", #call, result_); \
+        printf(SAMPLE_NAME ": %s failed (%d)\n", #call, result_); \
         return 1; \
     } \
 } while (0)
@@ -95,7 +104,7 @@ int main(void)
     uint32_t physical_count = 1;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1) {
-        printf("mrt: expected one physical device\n");
+        printf(SAMPLE_NAME ": expected one physical device\n");
         return 1;
     }
     const float priority = 1.0f;
@@ -212,12 +221,29 @@ int main(void)
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
     const VkPipelineColorBlendAttachmentState blend_attachments[] = {
-        {.colorWriteMask = 0xfu}, {.colorWriteMask = 0xfu},
+        {.colorWriteMask = 0xfu},
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+        {
+            .blendEnable = VK_TRUE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_CONSTANT_COLOR,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_CONSTANT_ALPHA,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = 0xfu,
+        },
+#else
+        {.colorWriteMask = 0xfu},
+#endif
     };
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .attachmentCount = 2,
         .pAttachments = blend_attachments,
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+        .blendConstants = {0.5f, 0.5f, 0.5f, 0.5f},
+#endif
     };
     const VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -279,7 +305,7 @@ int main(void)
     VK_CHECK(vkWaitForFences(device, 1, &fence, VK_TRUE, 5000000000ull));
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 2, ranges));
 
-    const uint32_t expected[] = {GREEN, MAGENTA};
+    const uint32_t expected[] = {GREEN, TARGET1_COLOR};
     uint32_t counts[2] = {0, 0};
     uint32_t unexpected[2] = {0, 0};
     int status = 0;
@@ -296,10 +322,16 @@ int main(void)
             status = 1;
     }
     if (status)
-        printf("mrt: mismatch target0=%u/%u target1=%u/%u\n",
+        printf(SAMPLE_NAME ": mismatch target0=%u/%u target1=%u/%u\n",
                counts[0], unexpected[0], counts[1], unexpected[1]);
-    else
+    else {
+#if defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+        printf(SAMPLE_NAME ": PASS target0=%u target1=%u color1=%08x\n",
+               counts[0], counts[1], expected[1]);
+#else
         printf("mrt: PASS target0=%u target1=%u\n", counts[0], counts[1]);
+#endif
+    }
 
     vkDestroyFence(device, fence, NULL);
     vkDestroyCommandPool(device, pool, NULL);
@@ -317,5 +349,9 @@ int main(void)
     }
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+#if defined(OPENAGC_PROSPERO) && \
+    defined(VULKAN_PS5_INDEPENDENT_BLEND_PROBE)
+    vulkan_ps5_system_service_exit(SAMPLE_NAME);
+#endif
     return status;
 }

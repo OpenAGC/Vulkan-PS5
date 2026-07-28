@@ -286,7 +286,11 @@ Implemented and host-verified:
   every baseline, geometry, indirect, or tessellation draw. The command test
   requires distinct disabled/enabled MRT targets, exact control words, target
   mask `0x6f`, and exact float constants in normal and ASAN/UBSAN builds.
-  `independentBlend` remains false until a deterministic hardware gate passes.
+  A standalone bounded probe requires opaque green on the disabled target and
+  exact half-intensity magenta `0x80800080` on the constant-factor target, then
+  exits through SystemService. Both host suites pass 21/21, its Prospero ELF
+  SHA-256 is `91467f1d00bfa9e4493f48eb8a56b0168f699ebb80aa42484e9e7d183afcab6b`,
+  and `independentBlend` remains false until its one hardware gate passes.
   Begin/end
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
   enables every active slot, and fragment export context carries the real MRT
