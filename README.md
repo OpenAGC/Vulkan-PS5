@@ -50,7 +50,7 @@ acquire/submit/present frames with binary semaphores and a fence. Its host run,
 the nine-test ICD suite, runner safety simulation, and Validation Layers pass;
 its Prospero ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`.
 The current candidate SHA-256 is
-`128c8b40e8820f50f3b72df840f75d9a911ab7cb7b8805239be0dc47e1e4ec10`.
+`8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
 Run exactly one bounded FW 5.50 gate after an explicit console-availability
 signal:
 
@@ -101,6 +101,12 @@ no process and websrv remained responsive. The sole failure was a `0x4000` VM
 resource warning, exactly matching OpenAGC's standalone multi-submit trailer
 allocation. OpenAGC `1c0fb8f` now carves the 64-byte trailer from unused
 `SceGnmDdid` space instead of allocating another 16 KiB VM resource.
+The follow-up (`20260728T063200Z-swapchain-run1.log`) again completed 1,800
+frames, Vulkan cleanup, the full kernel app-exit lifecycle, exact-PID absence,
+and the bounded websrv response, but reproduced the same warning. This falsified
+the trailer hypothesis. OpenAGC had restored the temporarily writable
+execute-only VideoOut text range as read/execute; `0c22e06` now restores its
+exact original execute-only protection so the kernel can coalesce the mapping.
 `vulkan_ps5_process_cleanup.elf` retains the proven recovery path and refuses
 to act unless exactly one other `eboot.elf` exists. One new bounded hardware
 run is required.

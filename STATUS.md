@@ -398,7 +398,7 @@ Implemented:
 - `vulkan_ps5_swapchain_example` completes 1,800 host frames and its Prospero
   ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate
   SHA-256 is
-  `128c8b40e8820f50f3b72df840f75d9a911ab7cb7b8805239be0dc47e1e4ec10`.
+  `8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
 
 Pending:
 
@@ -433,7 +433,12 @@ Pending:
   websrv remained responsive. Its only failure was a `0x4000` VM resource
   warning, exactly matching OpenAGC's standalone multi-submit trailer
   allocation. OpenAGC `1c0fb8f` now carves the 64-byte trailer from unused
-  `SceGnmDdid` space instead of allocating another 16 KiB VM resource. A new
+  `SceGnmDdid` space instead of allocating another 16 KiB VM resource. The
+  follow-up (`20260728T063200Z-swapchain-run1.log`) reproduced the warning
+  after another otherwise clean 1,800-frame lifecycle, falsifying the trailer
+  hypothesis. OpenAGC `0c22e06` now restores the temporarily writable VideoOut
+  text range to its original execute-only protection instead of read/execute,
+  allowing the kernel to coalesce the mapping. A new
   bounded run is required; no automatic retry is permitted. The runner now
   takes a post-run PID-scoped klog snapshot, rejects fatal signals, app crashes,
   XO faults, and VM leaks, requires a self-requested kernel `KillApp()` followed

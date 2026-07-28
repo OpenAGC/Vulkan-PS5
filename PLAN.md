@@ -154,7 +154,7 @@
   The standalone sample completes
   1,800 host frames and its Prospero ELF links with
   `-lSceSystemService -lunwind -lc++abi -lc++ -lm`; candidate SHA-256 is
-  `128c8b40e8820f50f3b72df840f75d9a911ab7cb7b8805239be0dc47e1e4ec10`.
+  `8ed7a83e95d6944fab7763576e8c99aa96f0666f4f963a0058f3aa5a20650c0a`.
   The first bounded FW 5.50 run exited before buffer registration. The kernel
   log identified `SYSTEM_XO_VIOLATION` at
   `libSceVideoOut.sprx+0x7e61`: OpenAGC read the expected instruction bytes
@@ -184,6 +184,11 @@
   and websrv remained responsive. The remaining `0x4000` VM warning exactly
   matched OpenAGC's standalone multi-submit trailer allocation. OpenAGC
   `1c0fb8f` now places that 64-byte trailer in unused `SceGnmDdid` space.
+  The follow-up (`20260728T063200Z-swapchain-run1.log`) reproduced the warning
+  after another otherwise clean 1,800-frame lifecycle, falsifying the trailer
+  hypothesis. OpenAGC `0c22e06` now restores the VideoOut text range to its
+  exact original execute-only protection instead of read/execute, allowing the
+  kernel to coalesce the temporary writable mapping.
   A separately built recovery payload refuses to act unless exactly one other
   `eboot.elf` exists. One new bounded run remains before this milestone is
   hardware qualified; the runner has no automatic retry and uses exact-PID
