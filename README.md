@@ -128,10 +128,11 @@ revision and artifact evidence.
 The 2026-07-27 UTC `20260727T231245Z` run qualified depth and MRT twice, but its
 first query submission hung the GPU. Packet-level recovery then qualified the
 query lifecycle, corrected reset, idle begin/end, and live counting in stages.
-The final `20260728T003630Z` gate passed all six workloads twice: query returned
-18,432 samples matching 18,432 mapped pixels, depth produced identical
-`43418/12288/9830` raw-word counts, and MRT produced 18,432 pixels in both
-targets. The full investigation and retained-log map are recorded in
+The final expanded `20260728T003956Z` gate passed all six workloads twice:
+query returned 18,432 samples matching 18,432 mapped pixels, combined D32+S8
+produced identical `54145/12288/9830` raw-depth counts and 22,118 stencil writes
+matching color coverage, and MRT produced 18,432 pixels in both targets. The
+full investigation and retained-log map are recorded in
 `analysis/fw550_depth_mrt_query_qualification_20260727.md`.
 
 Set `VULKAN_PS5_PROSPERO_BUILD`, `VULKAN_PS5_FW550_RUNS`, or

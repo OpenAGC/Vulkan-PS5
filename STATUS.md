@@ -106,11 +106,12 @@ Implemented and host-verified:
   typed DB surface and control after shader binding. The command regression
   uses a combined D32+S8 image and verifies transitions, separate plane
   addresses, `LESS` depth writes, and front/back `REPLACE 0x5a` stencil PM4.
-- A standalone D32 sample draws overlapping near/far and independent far
-  triangles, then validates green/red color decisions plus raw clear/near/far
-  depth words. It host-builds, cross-links with the required target runtimes,
-  and is included in the repeated FW 5.50 runner. Two FW `0x05500008` runs now
-  pass identical color and raw-depth oracles.
+- A standalone combined D32+S8 sample draws overlapping near/far and independent
+  far triangles, validates green/red decisions and raw clear/near/far depth
+  words, and replaces stencil with `0x5a` for every depth-passing fragment. It
+  cross-links with the required target runtimes and is included in the repeated
+  FW 5.50 runner. Two FW runs reported exactly 22,118 stencil writes, equal to
+  `green=12288 + red=9830`, with identical near/far depth decisions.
 - Inline render passes and graphics pipelines accept one to eight color
   attachments with matching full-component, blend-disabled state. Begin/end
   transitions cover every attachment, OpenAGC binds CB0-CB7, the target mask
@@ -191,8 +192,8 @@ FW 5.50 compute/triangle hardware gate:
 - `examples/run_fw550_m3.sh` remains the authoritative regression gate: it runs
   compute, triangle, indexed-textured, depth, MRT, and query twice through
   foreground websrv, rejects a missing PASS oracle, and retains per-run output
-  without committing runtime logs. The `20260728T003630Z` gate passed all 12
-  runs with exact deterministic oracles.
+  without committing runtime logs. The expanded `20260728T003956Z` gate passed
+  all 12 runs with exact deterministic depth, stencil, MRT, and query oracles.
 - Query qualification now uses explicit `lifecycle`, `reset`, and `full` probe
   stages. The lifecycle stage emits no query PM4 and passed FW `0x05500008` on
   2026-07-28 with the qualified triangle oracle (`green=18432`). The reset-only

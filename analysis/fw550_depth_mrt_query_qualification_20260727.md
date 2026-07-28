@@ -104,3 +104,22 @@ The Prospero ELF SHA-256 values were:
 - query: `3e51d1bbed291f493df81f58eba18b65ab2e06e149d2c2021361d35ca5734e34`
 
 The PS5 remained responsive after the staged probes and all 12 final runs.
+
+## Combined depth/stencil completion gate (2026-07-28 UTC)
+
+Completion audit identified that the preceding hardware runs exercised D32
+while S8 was proven only by host packet inspection. Vulkan-PS5 revision
+`2d69154` changed the deterministic depth workload to combined D32+S8 and made
+every depth-passing fragment execute `REPLACE 0x5a` on both stencil faces.
+
+The expanded `20260728T003956Z-*.log` gate again passed all six workloads twice.
+Both depth/stencil runs returned:
+
+`depth: PASS green=12288 red=9830 raw=54145/12288/9830 stencil=22118`
+
+The 22,118 S8 writes exactly equal the 12,288 green plus 9,830 red final pixels,
+while the unchanged near/far counts prove depth/stencil interaction. The depth
+ELF SHA-256 was
+`04519d30ac082d8dc526f6723ce6adf1e8407faedfccfbeec52543f0c0f0146d`.
+MRT and query retained their exact 18,432-pixel/sample oracles, and the console
+remained reachable after all 12 runs.
