@@ -126,6 +126,17 @@ LS-to-HS LDS dataflow is retained, but the remaining failure is downstream in
 HS offchip storage, tessellation ring state, or TES consumption; feature
 advertisement remains disabled.
 
+The next materially distinct qualification candidate adds a standard Vulkan
+storage buffer to TCS. Each hull invocation writes an independent execution
+marker and the VS position it read from LDS. After the existing bounded fence
+wait, the sample invalidates and checks that mapped buffer before reporting the
+image oracle. This separates LS-to-HS execution/LDS failures from downstream
+HS-offchip/TES failures without exposing a private driver API. Host pipeline
+creation, command recording, all seven ICD tests, and the Prospero link pass;
+the candidate ELF has SHA-256
+`1fc24f7fc3f12a930d2fd1815f84941ef9d6aa062820a20a68eba3f31594bbfc`.
+It has not been launched on hardware yet.
+
 Run the advanced stages one at a time. The default is one run so a new packet
 path is never repeated automatically. After each first pass, invoke that stage
 once more to collect the second independent qualification log. Console

@@ -156,6 +156,14 @@ Implemented and host-verified:
   zeroed target (`20260728T030535Z-tessellation-run1.log`); websrv remained
   responsive and no retry was attempted. The remaining fault is downstream of
   the corrected HS input path.
+  The next candidate uses an ordinary TCS storage buffer as a deterministic
+  data-flow probe: three independent invocation markers prove HS execution,
+  while three copied positions prove hardware LS-to-HS LDS reads. The mapped
+  oracle is checked only after the bounded submission fence and cache
+  invalidation. Host pipeline creation and command recording pass, all seven
+  ICD tests pass in both verification builds, and the Prospero ELF links with
+  the required runtime libraries. No hardware run has been attempted for this
+  candidate.
 - `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, and `vkCmdDrawIndexed` now
   retain ordinary Vulkan binding state, encode each pipeline binding into a
   per-draw GPU-visible gfx1013 vertex table, patch the compiler-selected table

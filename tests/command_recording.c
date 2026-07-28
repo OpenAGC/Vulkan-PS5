@@ -790,6 +790,8 @@ int main(int argc, char **argv)
                               0x210a2108u));
     assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
                                 0x210a2108u) >= 2u);
+    assert(count_register_value(dwords, count, AGC_PM4_OP_SET_SH_REG,
+                                OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(1)) == 0u);
     bool found_dispatch = false, found_draw = false, found_frame = false;
     bool found_tess_draw = false, found_tess_context = false;
     bool found_tess_ring_size = false, found_tess_offchip = false;

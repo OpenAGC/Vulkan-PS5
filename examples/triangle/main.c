@@ -21,6 +21,14 @@
 #define TARGET_HEIGHT 256u
 #define GREEN_RGBA8 0xff00ff00u
 
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+typedef struct TessellationHullProbe {
+    uint32_t position[3][4];
+    uint32_t executed[3];
+    uint32_t padding;
+} TessellationHullProbe;
+#endif
+
 #define VK_CHECK(expression) do { \
     VkResult check_result = (expression); \
     if (check_result != VK_SUCCESS) { \
@@ -57,6 +65,12 @@ int main(void)
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     VkShaderModule tess_control_shader;
     VkShaderModule tess_evaluation_shader;
+    VkBuffer hull_probe_buffer;
+    VkDeviceMemory hull_probe_memory;
+    VkDescriptorSetLayout hull_probe_set_layout;
+    VkDescriptorPool hull_probe_descriptor_pool;
+    VkDescriptorSet hull_probe_descriptor_set;
+    void *hull_probe_mapped;
 #elif defined(VULKAN_PS5_GEOMETRY_SAMPLE)
     VkShaderModule geometry_shader;
 #endif
@@ -159,6 +173,91 @@ int main(void)
     };
     VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &mapped_range));
 
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    const VkBufferCreateInfo hull_probe_buffer_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(TessellationHullProbe),
+        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    VK_CHECK(vkCreateBuffer(device, &hull_probe_buffer_info, NULL,
+        &hull_probe_buffer));
+    VkMemoryRequirements hull_probe_requirements;
+    vkGetBufferMemoryRequirements(device, hull_probe_buffer,
+        &hull_probe_requirements);
+    uint32_t hull_probe_memory_type = find_host_visible_memory_type(
+        physical, hull_probe_requirements.memoryTypeBits);
+    if (hull_probe_memory_type == UINT32_MAX) {
+        printf("tessellation: no host-visible hull-probe memory type\n");
+        return 1;
+    }
+    const VkMemoryAllocateInfo hull_probe_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = hull_probe_requirements.size,
+        .memoryTypeIndex = hull_probe_memory_type,
+    };
+    VK_CHECK(vkAllocateMemory(device, &hull_probe_memory_info, NULL,
+        &hull_probe_memory));
+    VK_CHECK(vkBindBufferMemory(device, hull_probe_buffer,
+        hull_probe_memory, 0));
+    VK_CHECK(vkMapMemory(device, hull_probe_memory, 0,
+        hull_probe_requirements.size, 0, &hull_probe_mapped));
+    memset(hull_probe_mapped, 0xcd, (size_t)hull_probe_requirements.size);
+    const VkMappedMemoryRange hull_probe_range = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = hull_probe_memory,
+        .offset = 0,
+        .size = hull_probe_requirements.size,
+    };
+    VK_CHECK(vkFlushMappedMemoryRanges(device, 1, &hull_probe_range));
+    const VkDescriptorSetLayoutBinding hull_probe_binding = {
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo hull_probe_set_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &hull_probe_binding,
+    };
+    VK_CHECK(vkCreateDescriptorSetLayout(device, &hull_probe_set_layout_info,
+        NULL, &hull_probe_set_layout));
+    const VkDescriptorPoolSize hull_probe_pool_size = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+    };
+    const VkDescriptorPoolCreateInfo hull_probe_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = 1,
+        .poolSizeCount = 1,
+        .pPoolSizes = &hull_probe_pool_size,
+    };
+    VK_CHECK(vkCreateDescriptorPool(device, &hull_probe_pool_info, NULL,
+        &hull_probe_descriptor_pool));
+    const VkDescriptorSetAllocateInfo hull_probe_set_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = hull_probe_descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &hull_probe_set_layout,
+    };
+    VK_CHECK(vkAllocateDescriptorSets(device, &hull_probe_set_allocate_info,
+        &hull_probe_descriptor_set));
+    const VkDescriptorBufferInfo hull_probe_descriptor_buffer = {
+        .buffer = hull_probe_buffer,
+        .offset = 0,
+        .range = sizeof(TessellationHullProbe),
+    };
+    const VkWriteDescriptorSet hull_probe_descriptor_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = hull_probe_descriptor_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &hull_probe_descriptor_buffer,
+    };
+    vkUpdateDescriptorSets(device, 1, &hull_probe_descriptor_write, 0, NULL);
+#endif
+
     const VkImageViewCreateInfo view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
@@ -248,6 +347,10 @@ int main(void)
 #endif
     const VkPipelineLayoutCreateInfo pipeline_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+        .setLayoutCount = 1,
+        .pSetLayouts = &hull_probe_set_layout,
+#endif
     };
     VK_CHECK(vkCreatePipelineLayout(
         device, &pipeline_layout_info, NULL, &pipeline_layout));
@@ -389,6 +492,10 @@ int main(void)
 #endif
 #if !defined(VULKAN_PS5_QUERY_IDLE_ONLY)
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline_layout, 0, 1, &hull_probe_descriptor_set, 0, NULL);
+#endif
     vkCmdDraw(command, 3, 1, 0, 0);
 #endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
@@ -422,6 +529,9 @@ int main(void)
     printf("query: stage fence\n");
 #endif
     VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &mapped_range));
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    VK_CHECK(vkInvalidateMappedMemoryRanges(device, 1, &hull_probe_range));
+#endif
 
     const uint32_t *pixels = mapped;
     uint32_t green_count = 0;
@@ -435,6 +545,30 @@ int main(void)
     int status = 0;
     uint32_t center = pixels[(TARGET_HEIGHT / 2u) * TARGET_WIDTH +
         TARGET_WIDTH / 2u];
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    const TessellationHullProbe expected_hull_probe = {
+        .position = {
+            {0xbf400000u, 0xbf400000u, 0u, 0x3f800000u},
+            {0x3f400000u, 0xbf400000u, 0u, 0x3f800000u},
+            {0u, 0x3f400000u, 0u, 0x3f800000u},
+        },
+        .executed = {0x48530000u, 0x48530001u, 0x48530002u},
+        .padding = 0xcdcdcdcdu,
+    };
+    const TessellationHullProbe *hull_probe = hull_probe_mapped;
+    int hull_probe_ok = memcmp(hull_probe, &expected_hull_probe,
+        sizeof(*hull_probe)) == 0;
+    printf("tessellation: hull probe %s executed=%08x,%08x,%08x\n",
+        hull_probe_ok ? "PASS" : "FAIL",
+        hull_probe->executed[0], hull_probe->executed[1],
+        hull_probe->executed[2]);
+    for (uint32_t probe_vertex = 0; probe_vertex < 3u; ++probe_vertex)
+        printf("tessellation: hull position%u=%08x,%08x,%08x,%08x\n",
+            probe_vertex, hull_probe->position[probe_vertex][0],
+            hull_probe->position[probe_vertex][1],
+            hull_probe->position[probe_vertex][2],
+            hull_probe->position[probe_vertex][3]);
+#endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
@@ -466,6 +600,9 @@ int main(void)
 #endif
 #endif
     if (!image_ok
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+        || !hull_probe_ok
+#endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
@@ -512,6 +649,13 @@ int main(void)
     vkDestroyCommandPool(device, command_pool, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+#if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
+    vkDestroyDescriptorPool(device, hull_probe_descriptor_pool, NULL);
+    vkDestroyDescriptorSetLayout(device, hull_probe_set_layout, NULL);
+    vkUnmapMemory(device, hull_probe_memory);
+    vkDestroyBuffer(device, hull_probe_buffer, NULL);
+    vkFreeMemory(device, hull_probe_memory, NULL);
+#endif
     vkDestroyShaderModule(device, fragment_shader, NULL);
 #if defined(VULKAN_PS5_TESSELLATION_SAMPLE)
     vkDestroyShaderModule(device, tess_evaluation_shader, NULL);

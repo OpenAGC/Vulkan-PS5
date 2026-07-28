@@ -65,7 +65,12 @@
   loads: offchip ring configuration, HS stores, and TES consumption. Graphics
   uniform/storage-buffer descriptor encoding is now shared with compute and
   host-tested through a TCS binding, enabling a standard Vulkan hull-output
-  readback oracle for the next materially distinct hardware candidate.
+  readback oracle for the next materially distinct hardware candidate. That
+  oracle is now implemented: independent execution words localize a missing HS
+  launch, copied VS positions localize a broken LDS path, and a passing buffer
+  alongside a black image isolates the remaining offchip/TES path. The host
+  and Prospero builds pass; one bounded FW 5.50 run awaits a fresh console
+  availability signal.
 
 ## Summary
 
