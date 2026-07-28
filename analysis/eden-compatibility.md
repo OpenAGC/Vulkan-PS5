@@ -37,13 +37,16 @@ advertised. openagc-psbc API v8 passes input rate and divisor state into RADV's
 gfx1013 lowering, and Vulkan pipeline creation consumes
 `VkPipelineVertexInputDivisorStateCreateInfoEXT` with divisor-one defaults and
 nonzero-divisor validation. Compiler and pipeline regressions pass on host and
-both components build for Prospero. A deterministic hardware readback probe,
-followed by extension properties/features and enumeration, is still required.
+both components build for Prospero. Legacy EXT and promoted properties report
+the compiler's `UINT32_MAX` nonzero range; Features2 returns divisor and
+zero-divisor support false, and device creation rejects either unsupported
+request. A deterministic hardware readback probe followed by feature promotion
+and extension enumeration is still required.
 The probe and one-shot runner are now prepared: four overlapping instances
 must resolve to an exact-white triangle only when divisor two is honored. Its
-runner safety regression and the full 14-test host suite pass. Prospero
+runner safety regression and both full 23-test host suites pass. Prospero
 candidate SHA-256 is
-`445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`;
+`7105fbd6960cf97ac12e7e66bed5a34d71310a715aaea615bd8210d3aaea8c49`;
 one fresh-console FW 5.50 run remains before public promotion.
 
 The automated probe currently reports:
@@ -117,7 +120,7 @@ configurations. The bounded probe distinguishes clamping from clipping by
 requiring a negative-Z green triangle at exact D32 zero, plus a normal red
 control triangle at exact 0.25, and uses the shared matching-self-kill runner.
 The Prospero ELF links `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-`03bc6e70d592cac2b9c1d9dfb1cddcb56924649ba639c2de114984f1b42eb1da`.
+`659590336c8030c7ae118210931ac8e0ee4dac3d455c888e53d22a09cd2751b9`.
 The first bounded FW 5.50 run produced the expected color and stencil coverage,
 completed SystemService exit, and left no stale process, but revealed that the
 legacy OpenAGC viewport still applied a 0.5/0.5 depth remap after Vulkan clip

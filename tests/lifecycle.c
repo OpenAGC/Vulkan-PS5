@@ -37,9 +37,22 @@ int main(void) {
     VkPhysicalDeviceSubgroupProperties subgroup = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
     };
+    VkPhysicalDeviceVertexAttributeDivisorProperties divisor_properties = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES,
+        .pNext = &subgroup,
+        .maxVertexAttribDivisor = 0,
+        .supportsNonZeroFirstInstance = VK_TRUE,
+    };
+    VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT divisor_properties_ext = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT,
+        .pNext = &divisor_properties,
+        .maxVertexAttribDivisor = 0,
+    };
     VkPhysicalDeviceMaintenance3Properties maintenance = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES,
-        .pNext = &subgroup,
+        .pNext = &divisor_properties_ext,
     };
     VkPhysicalDeviceFloatControlsProperties float_controls = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES,
@@ -71,6 +84,9 @@ int main(void) {
            VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE);
     assert(float_controls.shaderSignedZeroInfNanPreserveFloat32 == VK_FALSE);
     assert(maintenance.maxMemoryAllocationSize == 12ull * 1024 * 1024 * 1024);
+    assert(divisor_properties_ext.maxVertexAttribDivisor == UINT32_MAX);
+    assert(divisor_properties.maxVertexAttribDivisor == UINT32_MAX);
+    assert(divisor_properties.supportsNonZeroFirstInstance == VK_FALSE);
     assert(subgroup.subgroupSize == 32);
 
     uint32_t extension_count = 0;
@@ -101,9 +117,16 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
         .shaderDrawParameters = VK_TRUE,
     };
+    VkPhysicalDeviceVertexAttributeDivisorFeatures divisor_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
+        .pNext = &features11,
+        .vertexAttributeInstanceRateDivisor = VK_TRUE,
+        .vertexAttributeInstanceRateZeroDivisor = VK_TRUE,
+    };
     VkPhysicalDeviceHostQueryResetFeatures host_query_reset = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
-        .pNext = &features11,
+        .pNext = &divisor_features,
     };
     VkPhysicalDeviceFeatures2 features2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
@@ -111,6 +134,8 @@ int main(void) {
     };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
+    assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_FALSE);
+    assert(divisor_features.vertexAttributeInstanceRateZeroDivisor == VK_FALSE);
     assert(features11.shaderDrawParameters == VK_FALSE);
     assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.occlusionQueryPrecise == VK_TRUE);
@@ -198,6 +223,21 @@ int main(void) {
     unsupported_device_info.pNext = NULL;
     unsupported_device_info.pEnabledFeatures = &unsupported_features;
     VkDevice unsupported_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
+                          &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_device == VK_NULL_HANDLE);
+    VkPhysicalDeviceVertexAttributeDivisorFeatures unsupported_divisor = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES,
+        .vertexAttributeInstanceRateDivisor = VK_TRUE,
+    };
+    unsupported_device_info.pNext = &unsupported_divisor;
+    unsupported_device_info.pEnabledFeatures = NULL;
+    assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
+                          &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_device == VK_NULL_HANDLE);
+    unsupported_divisor.vertexAttributeInstanceRateDivisor = VK_FALSE;
+    unsupported_divisor.vertexAttributeInstanceRateZeroDivisor = VK_TRUE;
     assert(vkCreateDevice(physical, &unsupported_device_info, NULL,
                           &unsupported_device) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(unsupported_device == VK_NULL_HANDLE);

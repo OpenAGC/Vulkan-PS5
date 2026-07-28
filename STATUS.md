@@ -325,7 +325,7 @@ Implemented and host-verified:
   zero and a normal red control at exact 0.25, followed by the shared
   matching-self-kill lifecycle. The Prospero ELF links
   `-lunwind -lc++abi -lc++ -lm` and has SHA-256
-  `03bc6e70d592cac2b9c1d9dfb1cddcb56924649ba639c2de114984f1b42eb1da`.
+  `659590336c8030c7ae118210931ac8e0ee4dac3d455c888e53d22a09cd2751b9`.
   The first bounded FW 5.50 run safely rendered the expected color coverage,
   wrote the matching stencil coverage, exited through SystemService, and left
   no stale process, but exposed OpenAGC's legacy 0.5/0.5 viewport remap after
@@ -599,18 +599,21 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   divisor one; duplicate, missing, vertex-rate, and zero-divisor entries are
   rejected rather than silently miscompiled. The compiler regression verifies
   the start-instance SGPR, and the Vulkan pipeline regression compiles divisor
-  two and rejects zero. The full 13-test host suite, openagc-psbc host tests,
-  and both Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains
-  unadvertised until deterministic hardware readback qualifies it.
+  two and rejects zero. Legacy EXT and promoted property queries report
+  `UINT32_MAX` for the nonzero compiler range; Features2 explicitly returns
+  both divisor feature bits false, and device creation rejects either bit.
+  Both 23/23 normal and ASAN/UBSAN suites, openagc-psbc host tests, and both
+  Prospero builds pass. `VK_EXT_vertex_attribute_divisor` remains unadvertised
+  until deterministic hardware readback qualifies it.
 - The bounded vertex-divisor hardware candidate is ready. It draws four
   overlapping instances from red/white/green/blue instance data: divisor two
   must leave an exact-white single-color triangle, while divisor one leaves
   blue and vertex-rate handling produces multiple colors. The runner permits
   one launch, scopes fatal klog checks and cleanup to the exact PID, proves
   post-return absence and websrv availability, and accepts only the established
-  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 14 host
+  single raw-ELF `0x4000` warning. Its clean/crash safety test and all 23 host
   tests pass; the Prospero candidate SHA-256 is
-  `445ef566deba600cede29ef1d08bd19fbe6d0a14974fcb074d7afcdee8fcd4bf`.
+  `7105fbd6960cf97ac12e7e66bed5a34d71310a715aaea615bd8210d3aaea8c49`.
 - Eden's actual VMA allocation model is now covered by a configurable,
   test-only consumer. It supplies only dynamic instance/device proc lookup,
   enables external synchronization, selects Eden's preferred large-block size,

@@ -773,6 +773,17 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             maintenance->maxMemoryAllocationSize = capabilities.memory_profiles[1].size;
             break;
         }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT:
+            ((VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT *)next)
+                ->maxVertexAttribDivisor = UINT32_MAX;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES: {
+            VkPhysicalDeviceVertexAttributeDivisorProperties *divisor =
+                (VkPhysicalDeviceVertexAttributeDivisorProperties *)next;
+            divisor->maxVertexAttribDivisor = UINT32_MAX;
+            divisor->supportsNonZeroFirstInstance = VK_FALSE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES: {
             VkPhysicalDeviceDriverProperties *driver =
                 (VkPhysicalDeviceDriverProperties *)next;
@@ -877,6 +888,13 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceHostQueryResetFeatures *)next)->hostQueryReset =
                 VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
+            VkPhysicalDeviceVertexAttributeDivisorFeatures *divisor =
+                (VkPhysicalDeviceVertexAttributeDivisorFeatures *)next;
+            divisor->vertexAttributeInstanceRateDivisor = VK_FALSE;
+            divisor->vertexAttributeInstanceRateZeroDivisor = VK_FALSE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
             VkPhysicalDeviceVulkan11Features *f = (VkPhysicalDeviceVulkan11Features *)next;
             f->storageBuffer16BitAccess = VK_FALSE;
@@ -1062,6 +1080,14 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                     ->shaderDrawParameters)
                 return VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
+            const VkPhysicalDeviceVertexAttributeDivisorFeatures *f =
+                (const VkPhysicalDeviceVertexAttributeDivisorFeatures *)next;
+            if (f->vertexAttributeInstanceRateDivisor ||
+                f->vertexAttributeInstanceRateZeroDivisor)
+                return VK_TRUE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
             const VkPhysicalDeviceVulkan11Features *f =
                 (const VkPhysicalDeviceVulkan11Features *)next;

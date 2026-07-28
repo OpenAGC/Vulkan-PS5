@@ -17,7 +17,10 @@ exact gfx1013 address mode passes that hardware gate.
 The runtime compiler and graphics-pipeline path also accept instance-rate
 vertex bindings with nonzero `VK_EXT_vertex_attribute_divisor` divisors, while
 the extension remains hidden pending one run of the prepared deterministic
-hardware readback gate.
+hardware readback gate. The legacy EXT and promoted property chains report the
+nonzero compiler range, Features2 explicitly keeps divisor and zero-divisor
+support false, and device creation rejects either unsupported request until
+that gate qualifies public promotion.
 Sampler creation also carries validated 1x-16x anisotropy into gfx1013's
 anisotropic point/linear modes and maximum-ratio field. The public
 `samplerAnisotropy` bit remains false until a deterministic hardware readback
