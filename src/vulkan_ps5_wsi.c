@@ -228,12 +228,17 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
 
     VkPs5Surface *surface = surface_from_handle(pCreateInfo->surface);
     VkPs5Swapchain *old_swapchain = swapchain_from_handle(pCreateInfo->oldSwapchain);
-    VkBool32 old_retired = VK_FALSE;
     lock_flag(&surface->lock);
     if (surface->active_swapchain &&
         surface->active_swapchain != (uintptr_t)old_swapchain) {
         unlock_flag(&surface->lock);
         return VK_ERROR_NATIVE_WINDOW_IN_USE_KHR;
+    }
+    if (old_swapchain) {
+        lock_flag(&old_swapchain->lock);
+        old_swapchain->retired = VK_TRUE;
+        unlock_flag(&old_swapchain->lock);
+        surface->active_swapchain = 0;
     }
 
     VkPs5Swapchain *swapchain = vk_ps5_device_alloc(device, pAllocator,
@@ -296,12 +301,6 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
         if (result != VK_SUCCESS) goto fail;
     }
 
-    if (old_swapchain) {
-        agcVideoOutClose(old_swapchain->video_out);
-        old_swapchain->video_out = NULL;
-        old_swapchain->retired = VK_TRUE;
-        old_retired = VK_TRUE;
-    }
     const AgcVideoOutCreateInfo video_info = {
         .width = 1920,
         .height = 1080,
@@ -321,8 +320,6 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
     return VK_SUCCESS;
 
 fail:
-    if (old_retired)
-        surface->active_swapchain = 0;
     destroy_swapchain_storage(swapchain, pAllocator);
     vk_ps5_device_free(device, pAllocator, swapchain);
     unlock_flag(&surface->lock);
@@ -441,9 +438,7 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
         } else {
             lock_flag(&swapchain->lock);
             uint64_t frame_id = swapchain->frame_id++;
-            if (swapchain->retired) {
-                item_result = VK_ERROR_OUT_OF_DATE_KHR;
-            } else if (!atomic_load(&swapchain->acquired[index])) {
+            if (!atomic_load(&swapchain->acquired[index])) {
                 item_result = VK_ERROR_INITIALIZATION_FAILED;
             } else {
                 unlock_flag(&swapchain->lock);

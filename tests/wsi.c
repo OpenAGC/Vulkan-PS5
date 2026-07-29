@@ -242,13 +242,27 @@ int main(void) {
         group_capabilities.modes != VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR)
         return 1;
 
+    uint32_t retired_swapchain_index = 0;
+    CHECK(vkAcquireNextImageKHR(device, swapchain, 0, acquire_semaphores[0],
+                                VK_NULL_HANDLE, &retired_swapchain_index));
+
     swapchain_info.oldSwapchain = swapchain;
     VkSwapchainKHR replacement = VK_NULL_HANDLE;
     CHECK(vkCreateSwapchainKHR(device, &swapchain_info, NULL, &replacement));
-    if (vkAcquireNextImageKHR(device, swapchain, 0, acquire_semaphores[0],
+    if (vkAcquireNextImageKHR(device, swapchain, 0, acquire_semaphores[1],
                               VK_NULL_HANDLE, &unavailable_index) !=
         VK_ERROR_OUT_OF_DATE_KHR)
         return 1;
+
+    const VkPresentInfoKHR retired_present = {
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &acquire_semaphores[0],
+        .swapchainCount = 1,
+        .pSwapchains = &swapchain,
+        .pImageIndices = &retired_swapchain_index,
+    };
+    CHECK(vkQueuePresentKHR(queue, &retired_present));
 
     uint32_t replacement_index = 0;
     CHECK(vkAcquireNextImageKHR(device, replacement, 0, acquire_semaphores[0],
