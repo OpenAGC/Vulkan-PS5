@@ -1,5 +1,46 @@
 # Implementation Status
 
+## Current architecture status (2026-07-30)
+
+The current ICD is a mature direct consumer of OpenAGC's low-level gfx1013
+builders, memory helpers, capabilities, submission, synchronization, VideoOut,
+and `openagc-psbc` compiler metadata. Its host, loader/VVL, sanitizer,
+relocatable-package, and bounded FW 5.50 evidence below remains the regression
+baseline.
+
+The target ownership model has changed, but the migration has not yet been
+implemented: after OpenAGC stabilizes its native device/resource/pipeline API,
+Vulkan-PS5 will translate Vulkan semantics to native `AgcDevice`, `AgcQueue`,
+resource, shader, pipeline, command-buffer, fence, transition, capture, and
+presentation objects. Existing direct paths remain active until an equivalent
+native vertical slice passes the same gates.
+
+Migration status:
+
+- **Baseline freeze:** planned. Record the advertised feature/extension/limit/
+  queue/format matrix and inventory every direct hardware-facing call.
+- **Device and resource migration:** blocked on stable OpenAGC native device,
+  runtime-info, heap, buffer, image, view, and sampler contracts.
+- **Pipeline migration:** blocked on native shader/pipeline objects consuming
+  versioned `openagc-psbc` reflection and rejecting incompatible exports,
+  attachments, blending, descriptors, samples, wave modes, and stage linkage.
+- **Command and synchronization migration:** blocked on native command-buffer,
+  transition, multi-submit, wait/signal, bounded-fence, and deferred-retirement
+  contracts.
+- **WSI migration:** blocked on OpenAGC-owned scanout resources and native
+  presentation lifecycle. Firmware patches and VideoOut hardware policy must
+  not remain duplicated in the ICD.
+- **Endpoint qualification:** pending after migration. Existing FW 5.50 passes
+  do not qualify the native path or FW 11.60; selected standard Vulkan
+  applications must use one firmware-neutral build on both endpoints.
+
+The completed Eden profile and all hardware-qualified Vulkan features remain
+supported by the current implementation. Migration must not silently drop an
+advertised feature. Conversely, a native OpenAGC capability is not advertised
+through Vulkan until Vulkan semantics, validation, and exact-firmware gates
+also pass. `PLAN.md` is authoritative for migration order; the dated sections
+below are the implementation and qualification ledger.
+
 ## Milestone 6: multiple viewports (2026-07-29)
 
 `multiViewport` is advertised and accepted through legacy and Features2

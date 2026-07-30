@@ -1,11 +1,62 @@
 # Vulkan-PS5
 
 Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
-current implementation includes the host-testable Milestone 1 ICD, the
-Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3 OpenAGC
-DCB path, and the hardware-qualified Milestone 4 headless-surface/swapchain
-path. Milestone 5 also qualifies the relocatable SDK package through a separate
-standard-Vulkan consumer on both host and FW 5.50.
+current implementation directly consumes OpenAGC's proven low-level gfx1013
+builders, memory helpers, submission path, capabilities, VideoOut lifecycle,
+and `openagc-psbc` compiler metadata. It includes the host-testable Milestone 1
+ICD, the Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3
+OpenAGC DCB path, and the hardware-qualified Milestone 4 headless-surface/
+swapchain path. Milestone 5 also qualifies the relocatable SDK package through
+a separate standard-Vulkan consumer on both host and FW 5.50.
+
+## Architecture Direction
+
+The existing direct integration is the hardware-qualified baseline, not the
+final ownership model. After OpenAGC's native device/resource/pipeline runtime
+is stable, Vulkan-PS5 will become a constrained translation layer above it.
+This migration must preserve the ordinary Vulkan API and current qualification
+evidence while removing duplicate hardware policy from the ICD.
+
+The target ownership boundary is:
+
+- OpenAGC owns exact firmware-profile selection, device/queue lifecycle,
+  buffer and image allocation, shader objects, validated graphics/compute
+  pipelines, command storage, resource states and cache transitions, fences,
+  submission, deferred retirement, diagnostics, capture records, and VideoOut.
+- `openagc-psbc` owns SPIR-V compilation and versioned reflection for
+  descriptors, push constants, vertex inputs, user SGPRs, color exports, wave
+  mode, tessellation, geometry/NGG, and stage linkage.
+- Vulkan-PS5 owns Vulkan object semantics, feature/extension negotiation,
+  `pNext` handling, descriptor/update rules, render-pass or dynamic-rendering
+  translation, Vulkan memory requirements, synchronization semantics, WSI, and
+  conservative capability advertisement.
+
+Vulkan-PS5 must not retain a second PM4 emitter, firmware table, GPU heap
+allocator, shader-reflection ABI, resource-state/cache model, queue/fence
+backend, or VideoOut patch policy after the corresponding native OpenAGC slice
+is available. Temporary direct paths remain permitted only while migrating a
+feature and must stay covered by the existing host and hardware regressions.
+
+Migration proceeds by complete vertical slices rather than a flag-day rewrite:
+
+1. Freeze the current ICD feature/format/extension matrix and deterministic
+   host/FW 5.50 evidence as the comparison baseline.
+2. Map instance/device/queue capability discovery to `AgcDevice`, `AgcQueue`,
+   and `agcGetRuntimeInfo` without exposing firmware branches to applications.
+3. Move buffers, images, views, samplers, shaders, pipelines, command buffers,
+   transitions, submission, and synchronization to native objects in that
+   dependency order.
+4. Move WSI onto OpenAGC-owned scanout resources and presentation lifecycle.
+5. Re-run loader/VVL, sanitizer, package-relocation, deterministic readback,
+   and bounded hardware gates after every migrated slice.
+6. Qualify selected standard Vulkan applications through one firmware-neutral
+   build on both FW 5.50 and FW 11.60. Existing FW 5.50 passes do not by
+   themselves qualify the native-runtime migration or FW 11.60.
+
+`PLAN.md` is authoritative for this migration. `STATUS.md` records what the
+current ICD has actually implemented and qualified; a planned native mapping
+must not be advertised until its host and exact-firmware gates pass.
+
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
 had 30 hard gaps; the live ICD profile now reports

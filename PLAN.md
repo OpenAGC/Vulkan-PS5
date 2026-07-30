@@ -1,6 +1,170 @@
 # General-Purpose Vulkan-PS5 ICD
 
-## Progress
+## Authoritative Architecture and Migration Plan
+
+Vulkan-PS5 remains a general-purpose Vulkan implementation for PS5 homebrew,
+but its long-term hardware boundary is OpenAGC's native runtime rather than a
+collection of direct low-level helpers. The current ICD and its FW 5.50 gates
+are the qualified baseline. Do not discard or silently bypass them while the
+native runtime is still under construction.
+
+The dependency order is fixed:
+
+1. OpenAGC first stabilizes firmware-neutral `AgcDevice`, `AgcQueue`, resource,
+   shader, pipeline, command-buffer, fence, allocator, transition, validation,
+   capture, and presentation contracts.
+2. `openagc-psbc` supplies versioned compiler reflection consumed by those
+   shader and pipeline objects.
+3. Vulkan-PS5 translates Vulkan semantics to the stable native objects.
+4. The ICD removes each superseded direct PM4, firmware, allocation,
+   reflection, transition, synchronization, or VideoOut path only after the
+   replacement passes equivalent host and hardware gates.
+
+The public Vulkan surface stays standard. No OpenAGC handles, firmware keys,
+cache-control words, Sony structures, or application-specific conventions may
+leak through Vulkan entry points.
+
+### Ownership boundary
+
+OpenAGC owns:
+
+- Runtime firmware/profile selection and capability qualification.
+- Device/queue initialization and teardown.
+- GPU heaps, suballocation, resource layouts, residency, staging, and deferred
+  destruction.
+- Shader records and validated native graphics/compute pipeline state.
+- Command storage, PM4 emission, resource-state/cache transitions, submission,
+  fences, waits/signals, timeout diagnostics, and capture records.
+- Scanout-capable resources, VideoOut patch policy, acquire/present lifecycle,
+  and exact-firmware safety gates.
+
+`openagc-psbc` owns SPIR-V compilation and compiler-backed reflection for
+descriptor tables, push constants, vertex inputs, builtins/user SGPRs, color
+exports, wave size, scratch/LDS, tessellation, geometry/NGG, and stage linkage.
+
+Vulkan-PS5 owns:
+
+- Vulkan instance/device/object behavior, dispatch, `pNext`, allocation
+  callbacks, and legal unsupported results.
+- Feature, extension, limit, queue, format, and memory-property advertisement
+  derived from native capabilities and Vulkan requirements.
+- Vulkan memory requirements/binding rules, descriptors, render passes or
+  dynamic rendering, pipeline layouts/caches, query semantics, and command-
+  buffer state validation.
+- Translation of Vulkan access masks, stages, image layouts, and queue-family
+  ownership into supported native transitions.
+- Vulkan fences, semaphores, submission ordering, swapchains, and WSI semantics
+  implemented through native synchronization and presentation objects.
+
+### Migration milestone 0: freeze and audit the baseline
+
+1. Record the current advertised Vulkan version, features, extensions, limits,
+   queues, memory types, formats, and WSI modes as a machine-readable baseline.
+2. Inventory every direct OpenAGC low-level call and classify it as lifecycle,
+   memory/resource, shader/reflection, pipeline, command/PM4, transition,
+   synchronization, query, or presentation ownership.
+3. Identify duplicated firmware checks, address/layout calculations, command
+   allocation, cache policy, fence labels, and cleanup paths.
+4. Preserve normal, ASAN/UBSAN, loader/VVL, package-relocation, Prospero-build,
+   and bounded FW 5.50 results before replacing a path.
+
+Exit criteria: every hardware-facing call has a migration owner and a named
+regression gate; no currently advertised capability is silently dropped.
+
+### Migration milestone 1: device, capabilities, and resource memory
+
+1. Create one `AgcDevice` per Vulkan device and map queues to `AgcQueue`.
+2. Derive physical-device properties and format/feature qualification from
+   `agcGetRuntimeInfo`; never branch on a firmware number in the ICD.
+3. Map Vulkan allocations to OpenAGC heaps/suballocations while preserving
+   Vulkan memory-type, alignment, mapping, flush/invalidate, aliasing, and
+   memory-requirement rules.
+4. Replace buffer/image/view/sampler backing with `AgcBuffer`, `AgcImage`,
+   `AgcImageView`, and `AgcSampler` without changing Vulkan handle semantics.
+5. Retain dedicated allocations where Vulkan or scanout constraints require
+   them and defer resource retirement until the owning submission completes.
+
+Exit criteria: lifecycle, VMA-pattern, resource, map/flush/invalidate, alias,
+allocation-failure, and leak/high-water tests pass with no ICD-owned GPU heap
+or duplicated image-layout calculator.
+
+### Migration milestone 2: shader reflection and pipelines
+
+1. Translate Vulkan shader modules, specialization, vertex input, descriptor
+   layouts, push constants, render-target/depth formats, blend/raster/depth,
+   multisampling, and stage linkage into native pipeline descriptors.
+2. Use the versioned `openagc-psbc`/OpenAGC reflection contract. Remove ICD-
+   private guesses for user SGPRs, export formats, wave mode, descriptor-table
+   registers, tessellation/offchip layouts, or fused stages.
+3. Map pipeline-cache entries to stable shader/pipeline hashes and versioned
+   native compatibility information.
+4. Propagate precise pipeline-creation diagnostics while returning the Vulkan
+   result required for invalid or unsupported combinations.
+
+Exit criteria: graphics and compute pipeline tests cover positive and negative
+shader/attachment, integer-blend, descriptor, sample-count, wave, and stage-
+linkage cases; rejected pipelines emit no commands.
+
+### Migration milestone 3: commands, transitions, and synchronization
+
+1. Back Vulkan command pools/buffers with native command allocators and
+   `AgcCommandBuffer` state while retaining Vulkan reset and simultaneous-use
+   rules.
+2. Translate draw, indirect draw, dispatch, copy, clear, resolve, query, and
+   dynamic-state commands to native operations. Do not retain a parallel PM4
+   path after a complete native equivalent is qualified.
+3. Translate Vulkan barriers and image layouts to typed native resource usages
+   and subresource ranges. Reject a mapping that lacks a qualified native
+   transition instead of inventing raw cache bits in the ICD.
+4. Map queue submissions, multiple command buffers, fences, semaphores, and
+   waits/signals to native synchronization with explicit finite host deadlines.
+5. Add timeline semaphores or additional queue families only after the native
+   counter and ownership contracts are complete and hardware-qualified.
+
+Exit criteria: deterministic compute, graphics, indirect, transfer, depth,
+MSAA, query, and compute-to-graphics workloads pass normal/sanitizer/VVL tests
+and bounded endpoint gates without ICD-owned PM4 or fence-label code.
+
+### Migration milestone 4: WSI, validation, and capture
+
+1. Map swapchain images and presentation to OpenAGC-owned scanout resources,
+   transitions, fences, bounded flip waits, and teardown.
+2. Keep Vulkan surface/swapchain semantics and application-facing image state
+   in the ICD while all firmware patch and VideoOut hardware policy stays in
+   OpenAGC.
+3. Route native validation messages through Vulkan debug callbacks with stable
+   object labels and Vulkan-command context.
+4. Include Vulkan object and command identifiers in OpenAGC captures without
+   embedding raw process pointers or treating a capture as automatically safe
+   to replay.
+
+Exit criteria: swapchain acquire/submit/present, exhaustion, recreation,
+resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
+11.60 with no duplicated VideoOut patch or event-queue implementation.
+
+### Migration milestone 5: feature profile and downstream qualification
+
+1. Re-run every currently advertised feature and extension through the native
+   path. Preserve fail-closed behavior for unqualified formats or operations.
+2. Add focused CTS/deqp coverage for the advertised subset and keep the
+   conformance version non-conformant until the required suite supports a
+   stronger claim.
+3. Run the installed-package consumer, focused standard Vulkan samples, and a
+   game-like workload through one firmware-neutral build on FW 5.50 and FW
+   11.60.
+4. Treat Eden and other engines as application-neutral compatibility clients,
+   never as sources of private driver behavior.
+
+Exit criteria: the migrated ICD contains no second hardware backend, its
+advertised matrix is backed by native OpenAGC qualification, and selected
+unmodified Vulkan homebrew applications pass deterministic endpoint and long-
+running lifecycle oracles.
+
+## Existing Implementation and Qualification Ledger
+
+The entries below record completed direct-integration work and hardware
+evidence. They are regression requirements, not the authoritative order for
+the native-runtime migration.
 
 - Milestone 6 `multiViewport` closure is complete. The ICD exposes 16
   viewports, accepts static and dynamic viewport/scissor arrays, and emits
@@ -372,10 +536,17 @@
 ## Summary
 
 - Build Vulkan-PS5 as a reusable Vulkan 1.1 implementation for arbitrary PS5 homebrew, libraries, engines, and ports.
-- Use OpenAGC as the hardware abstraction for `/dev/gc`, gfx1013 PM4, descriptors, submission, synchronization, and VideoOut. Do not duplicate those low-level facilities inside the ICD.
-- Convert `openagc-psbc` into a runtime SPIR-V compiler library usable by every Vulkan application.
+- Migrate from the existing direct low-level integration to OpenAGC's native
+  device/resource/pipeline runtime as each complete vertical slice becomes
+  available. Do not preserve duplicate PM4, firmware, allocator, transition,
+  synchronization, reflection, or VideoOut backends inside the ICD.
+- Consume `openagc-psbc` through its versioned compiler/reflection contract and
+  native OpenAGC pipeline objects; retain the direct compiler API for tooling
+  and migration tests.
 - Keep the implementation application-neutral and standards-based. Eden is a demanding compatibility workload and development guide, not a special backend or architectural dependency.
-- Target FW 5.50 first, with FW 3.20 added after the primary path is stable.
+- Preserve FW 5.50 as the current hardware-evidence baseline, then qualify the
+  same firmware-neutral native-runtime artifacts on FW 11.60. Other exact
+  profiles retain OpenAGC's evidence labels and fail-closed capability policy.
 
 ## Public Architecture and Interfaces
 
@@ -393,9 +564,16 @@
 ### OpenAGC and shader compiler
 
 - Add a reusable `libopenagc_psbc.a` API for host and Prospero. It accepts SPIR-V stages, entry points, specialization constants, vertex input, descriptor/pipeline layouts, and push constants; it returns AGC shader records, executable code, register state, resource-table mappings, and user-SGPR metadata.
-- Compile shaders during pipeline creation because vertex layouts, tessellation, and geometry/NGG fusion require complete pipeline context.
-- Extend OpenAGC with application-neutral helpers for raster state, topology, line state, depth bias, blend constants, stencil masks/references, queries, generalized transitions, copies, blits, resolves, clears, mip/layer layouts, and missing gfx1013 formats.
-- Keep kernel ioctls, PM4 encodings, firmware profiles, and GPU register details behind OpenAGC APIs.
+- Compile shaders during pipeline creation because vertex layouts,
+  tessellation, color exports, multisampling, and geometry/NGG fusion require
+  complete pipeline context. Feed that result into native `AgcShader` and
+  graphics/compute pipeline objects rather than reinterpreting metadata in the
+  ICD.
+- Map Vulkan buffers, images, views, samplers, pipelines, command buffers,
+  transitions, queues, fences, and presentation to their native OpenAGC
+  owners as those APIs stabilize.
+- Keep kernel ioctls, PM4 encodings, firmware profiles, GPU registers, heap
+  policy, cache-control selection, and VideoOut patching behind OpenAGC APIs.
 
 ## Vulkan-PS5 Implementation
 
@@ -409,11 +587,18 @@
 
 ### Resources, commands, and synchronization
 
-- Use GPU-visible flexible memory for normal Vulkan allocations and direct write-combined memory for scanout. Support mapping, coherent flush/invalidate semantics, alignment, VMA block suballocation, allocation limits, and deterministic cleanup.
-- Represent buffers and images with OpenAGC descriptors and complete mip, layer, aspect, and layout metadata.
-- Record Vulkan commands into OpenAGC DCBs. Use DMA for buffer transfers, OpenAGC transitions for barriers, and internal compute/graphics shaders for image operations without a direct packet path.
+- Map Vulkan memory types and requirements to OpenAGC heaps and resources.
+  Preserve Vulkan mapping, flush/invalidate, aliasing, VMA suballocation,
+  allocation-limit, dedicated-allocation, and deterministic-cleanup semantics.
+- Represent buffers, images, views, and samplers with native OpenAGC objects
+  plus Vulkan-owned mip, layer, aspect, binding, and layout state.
+- Record Vulkan commands into native OpenAGC command buffers. Use native copy,
+  draw, dispatch, query, transition, and synchronization operations; internal
+  compute/graphics shaders remain valid implementation techniques when owned
+  through native pipelines.
 - Implement render passes, dynamic rendering-equivalent internal behavior, MRT, depth/stencil, clears, resolves, indirect draws, geometry, tessellation, compute, occlusion/timestamp queries, and pipeline statistics where supported.
-- Implement binary fences and semaphores with GPU-visible labels and `RELEASE_MEM` EOP writes. Serialize queues with monotonic submission values and make host waits bounded and thread-safe.
+- Implement Vulkan fences and semaphores through native OpenAGC fences,
+  waits/signals, and submission values. Keep host waits bounded and thread-safe.
 - Keep timeline semaphores, sparse resources, transform feedback, descriptor indexing, and advanced optional extensions disabled until their complete semantics are implemented.
 
 ### Extensions and WSI
@@ -430,10 +615,18 @@
   - Required Vulkan 1.1 maintenance/property dependencies
 - Treat a headless surface as the standard PS5 VideoOut surface, allowing any Vulkan application to create a swapchain without a platform-specific Vulkan header.
 - Back swapchains with VideoOut-compatible triple-buffered direct memory. Guarantee FIFO presentation and advertise other modes only after hardware validation.
-- Isolate the FW 5.50 credential setup, VideoOut registration patch, equeue handling, buffer registration, flip, patch restoration, and teardown inside the WSI platform module.
-- Present only after the submission's GPU completion value is reached, using OpenAGC's EOP/flip facilities.
+- Keep FW-specific credential setup, VideoOut registration patches, event
+  queues, buffer registration, flip policy, patch restoration, and hardware
+  teardown inside OpenAGC. The WSI module owns only Vulkan surface/swapchain
+  semantics and translation.
+- Present only after the native submission completion requirement is reached,
+  using OpenAGC-owned scanout and presentation objects.
 
-## Compatibility and Delivery Milestones
+## Completed Baseline and Compatibility Milestones
+
+These milestones describe the existing direct-integration baseline. The
+native-runtime migration milestones at the top of this file govern future
+ordering.
 
 1. Host ICD lifecycle, loader dispatch, physical-device properties, memory, and VVL-clean object tests.
 2. Runtime SPIR-V library for VS/PS/CS/GS/tessellation, descriptors, specialization constants, and push constants.
