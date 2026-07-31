@@ -129,7 +129,7 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
     assert(extension_count == 21);
-VkExtensionProperties extensions[20];
+    VkExtensionProperties extensions[21];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
