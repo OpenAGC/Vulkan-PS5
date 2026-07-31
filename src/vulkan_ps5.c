@@ -1,11 +1,8 @@
 #include "vulkan_ps5_internal.h"
 
 #include "agc_capabilities.h"
-#include "agc_cb.h"
 #include "agc_error.h"
 #include "agc_graphics.h"
-#include "agc_memory.h"
-#include "agcdriver.h"
 #include "openagc/runtime.h"
 
 #include <stdint.h>
@@ -39,8 +36,6 @@ struct VkPs5Instance {
 struct VkPs5Queue {
     VK_LOADER_DATA loader_data;
     VkPs5Device *device;
-    AgcGpuMemory submit_memory;
-    atomic_uint_fast32_t next_submission;
     atomic_flag submit_lock;
     AgcFence present_ready_fence;
 };
@@ -54,16 +49,7 @@ struct VkPs5Device {
     AgcQueue native_graphics_queue;
     AgcQueue native_compute_queue;
     VkPs5Queue queue;
-    AgcGpuMemory tess_offchip_memory;
-    AgcGpuMemory tess_factor_memory;
-    AgcGpuMemory tess_ring_table_memory;
-    AgcGfx1013TessellationState tessellation;
-    atomic_flag tessellation_lock;
-    VkBool32 tessellation_ready;
     VkBool32 robust_buffer_access;
-    AgcGpuMemory border_color_memory;
-    atomic_flag border_color_lock;
-    uint64_t border_color_slots;
     atomic_uint memory_allocation_count;
 };
 
@@ -210,77 +196,6 @@ VkResult vk_ps5_set_device_loader_data(VkDevice device_handle, void *object) {
 VkDevice vk_ps5_queue_device(VkQueue queue_handle) {
     VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
     return queue ? (VkDevice)queue->device : VK_NULL_HANDLE;
-}
-
-VkResult vk_ps5_queue_submit_dcb(
-    VkQueue queue_handle, const uint32_t *commands, uint32_t dword_count) {
-    VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
-    if (!queue || (!commands && dword_count) ||
-        dword_count > VK_PS5_DCB_SIZE / sizeof(uint32_t) - 8u)
-        return VK_ERROR_INITIALIZATION_FAILED;
-
-    while (atomic_flag_test_and_set_explicit(
-        &queue->submit_lock, memory_order_acquire)) {}
-    VkResult result = VK_SUCCESS;
-    uint32_t value = (uint32_t)atomic_fetch_add_explicit(
-        &queue->next_submission, 1u, memory_order_relaxed) + 1u;
-    volatile uint32_t *label = (volatile uint32_t *)
-        ((uint8_t *)queue->submit_memory.cpu_address + VK_PS5_DCB_SIZE);
-    *label = 0u;
-
-    SceAgcCb cb;
-    agcCbInit(&cb, queue->submit_memory.cpu_address, VK_PS5_DCB_SIZE);
-    uint32_t *destination = agcCbAllocDwords(&cb, dword_count);
-    if (dword_count && !destination) {
-        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        goto done;
-    }
-    if (dword_count) memcpy(destination, commands,
-                           (size_t)dword_count * sizeof(uint32_t));
-    const AgcGfx1013EopFenceState fence = {
-        .address = queue->submit_memory.gpu_address + VK_PS5_DCB_SIZE,
-        .value = value,
-    };
-    if (agcGfx1013SignalEopFence(&cb, &fence) != AGC_OK) {
-        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        goto done;
-    }
-    uint32_t used_dwords = agcCbUsedDwords(&cb);
-    if (agcGpuMemoryFlush(&queue->submit_memory, 0,
-            VK_PS5_DCB_SIZE + sizeof(uint32_t)) != AGC_OK) {
-        result = VK_ERROR_DEVICE_LOST;
-        goto done;
-    }
-    const AgcCommandBufferSubmit submit = {
-        .command_address = (uintptr_t)queue->submit_memory.gpu_address,
-        .dword_count = used_dwords,
-    };
-    if (sceAgcDriverSubmitDcb(&submit) != AGC_OK) {
-        result = VK_ERROR_DEVICE_LOST;
-        goto done;
-    }
-#if defined(OPENAGC_GENERIC)
-    *label = value;
-#endif
-    if (agcGpuMemoryWait32(&queue->submit_memory, VK_PS5_DCB_SIZE,
-            value, 5000000u) != AGC_OK) {
-        result = VK_ERROR_DEVICE_LOST;
-    } else {
-        AgcFenceDesc fence_desc = AGC_FENCE_DESC_INIT;
-        AgcFence completed = NULL;
-        fence_desc.signaled = 1u;
-        if (agcCreateFence(queue->device->native_device,
-                &fence_desc, &completed) != AGC_OK) {
-            result = VK_ERROR_OUT_OF_HOST_MEMORY;
-        } else {
-            (void)agcDestroyFence(queue->present_ready_fence);
-            queue->present_ready_fence = completed;
-        }
-    }
-
-done:
-    atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
-    return result;
 }
 
 VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
@@ -1568,10 +1483,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
-    atomic_init(&device->queue.next_submission, 0);
     atomic_flag_clear(&device->queue.submit_lock);
-    atomic_flag_clear(&device->tessellation_lock);
-    atomic_flag_clear(&device->border_color_lock);
     AgcDeviceDesc native_device_desc = AGC_DEVICE_DESC_INIT;
     AgcQueueDesc native_queue_desc = AGC_QUEUE_DESC_INIT;
     native_device_desc.required_capability_bits = AGC_RUNTIME_CAP_BASELINE;
@@ -1598,11 +1510,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         native_result = agcCreateFence(device->native_device,
             &present_fence_desc, &device->queue.present_ready_fence);
     }
-    if (native_result != AGC_OK ||
-        agcGpuMemoryAllocateFlexible(&device->queue.submit_memory,
-            VK_PS5_DCB_SIZE + sizeof(uint32_t), 256u,
-            "vulkan_ps5_queue") != AGC_OK) {
-        agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
+    if (native_result != AGC_OK) {
         if (device->queue.present_ready_fence)
             (void)agcDestroyFence(device->queue.present_ready_fence);
         if (device->native_compute_queue)
@@ -1626,149 +1534,11 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
-    agcGpuMemoryFreeFlexible(&device->tess_ring_table_memory);
-    agcGpuMemoryFreeFlexible(&device->border_color_memory);
-    agcGpuMemoryFreeFlexible(&device->tess_factor_memory);
-    agcGpuMemoryFreeFlexible(&device->tess_offchip_memory);
-    agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
     (void)agcDestroyFence(device->queue.present_ready_fence);
     (void)agcDestroyQueue(device->native_compute_queue);
     (void)agcDestroyQueue(device->native_graphics_queue);
     (void)agcDestroyDevice(device->native_device);
     ps5_free(allocator, device);
-}
-
-#define VK_PS5_CUSTOM_BORDER_COLOR_COUNT 64u
-
-VkResult vk_ps5_device_allocate_border_color(
-    VkDevice device_handle, const VkClearColorValue *color, uint32_t *index)
-{
-    VkPs5Device *device = (VkPs5Device *)device_handle;
-    if (!device || !color || !index)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    while (atomic_flag_test_and_set_explicit(
-               &device->border_color_lock, memory_order_acquire)) {}
-    VkResult result = VK_SUCCESS;
-    if (!device->border_color_memory.cpu_address &&
-        agcGpuMemoryAllocateFlexible(&device->border_color_memory,
-            VK_PS5_CUSTOM_BORDER_COLOR_COUNT * sizeof(VkClearColorValue),
-            256u, "vulkan_ps5_border_colors") != AGC_OK)
-        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    uint32_t slot = 0u;
-    if (result == VK_SUCCESS) {
-        while (slot < VK_PS5_CUSTOM_BORDER_COLOR_COUNT &&
-               (device->border_color_slots & (UINT64_C(1) << slot)))
-            ++slot;
-        if (slot == VK_PS5_CUSTOM_BORDER_COLOR_COUNT) {
-            result = VK_ERROR_TOO_MANY_OBJECTS;
-        } else {
-            device->border_color_slots |= UINT64_C(1) << slot;
-            memcpy((uint8_t *)device->border_color_memory.cpu_address +
-                    slot * sizeof(*color), color, sizeof(*color));
-            if (agcGpuMemoryFlush(&device->border_color_memory,
-                    slot * sizeof(*color), sizeof(*color)) != AGC_OK) {
-                device->border_color_slots &= ~(UINT64_C(1) << slot);
-                result = VK_ERROR_DEVICE_LOST;
-            } else {
-                *index = slot;
-            }
-        }
-    }
-    atomic_flag_clear_explicit(&device->border_color_lock,
-        memory_order_release);
-    return result;
-}
-
-void vk_ps5_device_free_border_color(VkDevice device_handle, uint32_t index)
-{
-    VkPs5Device *device = (VkPs5Device *)device_handle;
-    if (!device || index >= VK_PS5_CUSTOM_BORDER_COLOR_COUNT)
-        return;
-    while (atomic_flag_test_and_set_explicit(
-               &device->border_color_lock, memory_order_acquire)) {}
-    device->border_color_slots &= ~(UINT64_C(1) << index);
-    atomic_flag_clear_explicit(&device->border_color_lock,
-        memory_order_release);
-}
-
-uint64_t vk_ps5_device_border_color_table(VkDevice device_handle)
-{
-    VkPs5Device *device = (VkPs5Device *)device_handle;
-    return device ? device->border_color_memory.gpu_address : 0u;
-}
-
-VkResult vk_ps5_device_prepare_tessellation(
-    VkDevice device_handle, const AgcGfx1013TessellationState **state,
-    uint64_t *ring_descriptor_address)
-{
-    VkPs5Device *device = (VkPs5Device *)device_handle;
-    if (!device || !state || !ring_descriptor_address)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    while (atomic_flag_test_and_set_explicit(
-               &device->tessellation_lock, memory_order_acquire)) {}
-    VkResult result = VK_SUCCESS;
-    if (!device->tessellation_ready) {
-        if (agcGpuMemoryAllocateFlexible(&device->tess_offchip_memory,
-                AGC_GFX1013_TESS_OFFCHIP_RING_SIZE, 256u,
-                "vulkan_ps5_tess_offchip") != AGC_OK ||
-            agcGpuMemoryAllocateFlexible(&device->tess_factor_memory,
-                AGC_GFX1013_TESS_FACTOR_RING_SIZE, 256u,
-                "vulkan_ps5_tess_factor") != AGC_OK ||
-            agcGpuMemoryAllocateFlexible(&device->tess_ring_table_memory,
-                sizeof(AgcGfx1013TessellationRingTable), 256u,
-                "vulkan_ps5_tess_table") != AGC_OK) {
-            result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        } else {
-            memset(device->tess_offchip_memory.cpu_address, 0,
-                AGC_GFX1013_TESS_OFFCHIP_RING_SIZE);
-            memset(device->tess_factor_memory.cpu_address, 0,
-                AGC_GFX1013_TESS_FACTOR_RING_SIZE);
-            device->tessellation = (AgcGfx1013TessellationState){
-                .offchip_ring_address =
-                    device->tess_offchip_memory.gpu_address,
-                .factor_ring_address =
-                    device->tess_factor_memory.gpu_address,
-                .offchip_ring_size = AGC_GFX1013_TESS_OFFCHIP_RING_SIZE,
-                .factor_ring_size = AGC_GFX1013_TESS_FACTOR_RING_SIZE,
-                .offchip_param = AGC_GFX1013_TESS_OFFCHIP_PARAM,
-                .max_tess_level = 0x42800000u,
-                .min_tess_level = 0u,
-                .esgs_ring_itemsize = 1u,
-                .distribution = 0xd8181e0cu,
-                .tf_param = 0x61u,
-            };
-            if (agcGfx1013BuildTessellationRingTable(
-                    device->tess_ring_table_memory.cpu_address,
-                    &device->tessellation) != AGC_OK ||
-                agcGpuMemoryFlush(&device->tess_offchip_memory, 0,
-                    AGC_GFX1013_TESS_OFFCHIP_RING_SIZE) != AGC_OK ||
-                agcGpuMemoryFlush(&device->tess_factor_memory, 0,
-                    AGC_GFX1013_TESS_FACTOR_RING_SIZE) != AGC_OK ||
-                agcGpuMemoryFlush(&device->tess_ring_table_memory, 0,
-                    sizeof(AgcGfx1013TessellationRingTable)) != AGC_OK ||
-                sceAgcDriverSetTFRing(
-                    (uintptr_t)device->tess_factor_memory.cpu_address,
-                    AGC_GFX1013_TESS_FACTOR_RING_SIZE) != AGC_OK) {
-                result = VK_ERROR_INITIALIZATION_FAILED;
-            } else {
-                device->tessellation_ready = VK_TRUE;
-            }
-        }
-        if (result != VK_SUCCESS) {
-            agcGpuMemoryFreeFlexible(&device->tess_ring_table_memory);
-            agcGpuMemoryFreeFlexible(&device->tess_factor_memory);
-            agcGpuMemoryFreeFlexible(&device->tess_offchip_memory);
-            memset(&device->tessellation, 0, sizeof(device->tessellation));
-        }
-    }
-    if (result == VK_SUCCESS) {
-        *state = &device->tessellation;
-        *ring_descriptor_address =
-            device->tess_ring_table_memory.gpu_address;
-    }
-    atomic_flag_clear_explicit(
-        &device->tessellation_lock, memory_order_release);
-    return result;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

@@ -22,8 +22,9 @@ def main() -> int:
     root = pathlib.Path(sys.argv[1]).resolve()
     inventory_path = root / "analysis" / "native_runtime_calls.tsv"
     with inventory_path.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.DictReader(stream, delimiter="\t"))
-    if not rows or set(rows[0]) != {
+        reader = csv.DictReader(stream, delimiter="\t")
+        rows = list(reader)
+    if set(reader.fieldnames or ()) != {
         "symbol", "category", "native_owner", "regression_gate"
     }:
         raise SystemExit("native migration inventory has an invalid schema")

@@ -2,24 +2,21 @@
 
 ## Current architecture status (2026-07-31)
 
-The current ICD is a mature direct consumer of OpenAGC's low-level gfx1013
-builders, memory helpers, capabilities, submission, synchronization, VideoOut,
-and `openagc-psbc` compiler metadata. Its host, loader/VVL, sanitizer,
-relocatable-package, and bounded FW 5.50 evidence below remains the regression
-baseline.
+The current ICD is a host-qualified native-runtime consumer of OpenAGC and
+`openagc-psbc`. Its earlier direct-backend host, loader/VVL, sanitizer,
+relocatable-package, and bounded FW 5.50 evidence remains the regression
+baseline, but does not qualify the new zero-direct-call candidate.
 
-The target ownership model is being migrated in vertical slices. Device and
-queue lifecycle now use native `AgcDevice` and `AgcQueue`; resource, shader,
-pipeline, command-buffer, fence, transition, and capture paths remain direct
-until an equivalent native slice passes the same gates. Presentation now uses
-native `AgcPresentChain` ownership.
+The target ownership model is host-complete: device, queue, memory, resource,
+shader, pipeline, command-buffer, transition, fence, submission, and
+presentation paths use public native objects. Capture remains a separate
+qualification concern.
 
 Migration status:
 
-- **Baseline freeze:** complete. `analysis/native_runtime_calls.tsv` owns all
-  26 remaining direct hardware-facing calls by migration category, native
-  replacement, and named regression gate. `vulkan_ps5.native_migration_audit` fails when a
-  new call is unowned or an inventory entry becomes stale. The advertised
+- **Native ownership boundary:** host-complete. The checked TSV has zero rows.
+  `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
+  or an inventory entry becomes stale. The advertised
   feature/extension/limit/queue/format snapshot is frozen and its strict
   pinned-Mesa report has zero gaps.
 - **Device and resource migration:** the resource slice is active. OpenAGC
@@ -30,12 +27,10 @@ Migration status:
   native graphics/compute queues. The Vulkan lifecycle gate creates two devices
   concurrently, destroys one, and proves the survivor remains usable.
   `VkDeviceMemory` allocation/mapping/cache operations now use `AgcMemory`,
-  and bound `VkBuffer` objects own placed `AgcBuffer` handles while the legacy
-  command encoder temporarily queries the allocation address. Images now use
+  and bound `VkBuffer` objects own placed `AgcBuffer` handles. Images now use
   native layout queries and placed `AgcImage`; compatible views are created as
   typed/swizzled `AgcImageView` objects, and every sampler owns a normalized
-  `AgcSampler`. Direct descriptor-table assembly remains until command-buffer
-  migration consumes these native handles.
+  `AgcSampler`. Native descriptor writes consume those handles directly.
 - **Pipeline migration:** active. Every compiled Vulkan stage now owns an
   `AgcShader`; compute pipelines own `AgcComputePipeline`, and the qualified
   point/line/triangle, geometry, and tessellation graphics forms own
@@ -48,8 +43,7 @@ Migration status:
   binding in an addressable set. Native ownership now includes polygon modes,
   culling, rasterizer discard, strip/fan primitive restart, depth clamp,
   static/dynamic depth bias and line width, logic operations, and pipeline
-  switching. The legacy executable bindings remain until native
-  command-buffer migration consumes these handles.
+  switching. Native command recording consumes these handles directly.
 - **Command and synchronization migration:** active. Every Vulkan command
   buffer now owns paired graphics/compute `AgcCommandBuffer` streams because
   Vulkan queue family 0 exposes both workloads while the native objects are
@@ -69,20 +63,17 @@ Migration status:
   natively. Direct, indexed, indirect, tessellation, geometry, and compute
   dispatch recording now require the native path and fail closed when typed
   state is missing. Pipeline switches invalidate and rebind native descriptor
-  and vertex state correctly. A complete native graphics stream now submits
-  through `agcQueueSubmit` with a finite native fence wait. Unsupported command mixtures
-  still use the legacy mirror until descriptor/resource ownership is complete,
-  so the duplicate encoder has not yet been deleted. Image-region and
+  and vertex state correctly. Every executable graphics stream submits through
+  `agcQueueSubmit` with a finite native fence wait. Unsupported command
+  mixtures fail closed; the duplicate encoder and fallback submission path are
+  deleted. Image-region and
   buffer/image color transfers now record through OpenAGC API 41; unsupported
-  clear, blit, depth/stencil transfer, and resolve forms fail closed. If a command
-  buffer contains any native-only copy, query, or indirect command, a later
-  legacy fallback—or a native-only command after fallback—now fails command-
-  buffer finalization instead of silently omitting work. Indirect draw,
+  clear, blit, depth/stencil transfer, and resolve forms fail closed. Indirect draw,
   indexed draw, and dispatch now use typed native argument buffers; the
   superseded Vulkan-side multi-draw encoder has been removed.
 - **WSI migration:** host-complete. Swapchain images are dedicated native
-  scanout resources retained by `AgcPresentChain`; native and legacy queue
-  completions publish an `AgcFence` consumed by bounded presentation, and
+  scanout resources retained by `AgcPresentChain`; native queue completions
+  publish an `AgcFence` consumed by bounded presentation, and
   acquire exhaustion uses condition-variable wakeup instead of CPU polling.
   The three raw `agcVideoOut*` calls are absent. Linked candidate
   `0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`
@@ -244,9 +235,17 @@ all exercised graphics forms—including geometry and tessellation—record only
 typed native commands. Command tests now validate native draw/dispatch counts
 instead of treating Vulkan's duplicate PM4 stream as the oracle, and cover
 pipeline-switch descriptor/vertex rebinding plus explicit tessellation storage
-state. The checked direct-call inventory is **26**. Remaining work is direct
-descriptor-table/image-layout ownership followed by deletion of the legacy
-cursor, frame encoder, raw allocator, and submit/fence path.
+state. This historical checkpoint reduced the direct-call inventory to 26.
+The completed host slice then moved descriptor and image-layout ownership,
+tessellation resources, command storage, and submission behind public native
+APIs; deleted the legacy cursor, frame encoder, raw allocator, and fallback;
+and reduced the mechanically checked inventory to **zero**. Normal and
+sanitizer host suites pass 46/46, and the Prospero target set builds cleanly.
+The focused zero-call candidate passed the FW 5.500.008 custom-border oracle
+with `covered=18432 blue=18432 swizzle=BR`, clean self-exit, and only the
+established `amount=0x4000` warning; evidence is
+`examples/qualification-logs/20260731T155934Z-custom-border-color-run1.log`.
+The broader FW 5.50 candidate sequence remains pending.
 
 The first FW 5.500.008 native-only custom-border attempt failed safely at
 submission and exposed that OpenAGC encoded the sampler index without owning

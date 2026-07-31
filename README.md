@@ -1,9 +1,9 @@
 # Vulkan-PS5
 
 Vulkan-PS5 is an application-neutral Vulkan ICD for PlayStation 5 homebrew. The
-current implementation directly consumes OpenAGC's proven low-level gfx1013
-builders, memory helpers, submission path, capabilities, VideoOut lifecycle,
-and `openagc-psbc` compiler metadata. It includes the host-testable Milestone 1
+current implementation translates through OpenAGC's public native device,
+resource, shader, pipeline, command, synchronization, and presentation APIs
+plus `openagc-psbc` compiler metadata. It includes the host-testable Milestone 1
 ICD, the Milestone 2 runtime-pipeline path, the hardware-qualified Milestone 3
 OpenAGC DCB path, and the hardware-qualified Milestone 4 headless-surface/
 swapchain path. Milestone 5 also qualifies the relocatable SDK package through
@@ -11,11 +11,9 @@ a separate standard-Vulkan consumer on both host and FW 5.50.
 
 ## Architecture Direction
 
-The existing direct integration is the hardware-qualified baseline, not the
-final ownership model. Vulkan-PS5 is actively becoming a constrained
-translation layer above OpenAGC's native device/resource/pipeline runtime.
-This migration must preserve the ordinary Vulkan API and current qualification
-evidence while removing duplicate hardware policy from the ICD.
+Vulkan-PS5 is a constrained translation layer above OpenAGC's native runtime.
+The former direct integration remains historical hardware evidence, while the
+zero-direct-call candidate must earn its own FW 5.50 qualification.
 
 The target ownership boundary is:
 
@@ -53,18 +51,15 @@ Migration proceeds by complete vertical slices rather than a flag-day rewrite:
    build on both FW 5.50 and FW 11.60. Existing FW 5.50 passes do not by
    themselves qualify the native-runtime migration or FW 11.60.
 
-Migration milestone 0 is complete and its checked inventory in
-`analysis/native_runtime_calls.tsv` assigns all 26 remaining direct hardware
-calls to a native owner and regression gate. The first milestone-1 slice is
-also active: every `VkDevice` owns an OpenAGC `AgcDevice` plus native graphics
+The direct-call migration is host-complete. The checked inventory in
+`analysis/native_runtime_calls.tsv` has zero rows, and its CTest gate rejects
+any reintroduced low-level call. Every `VkDevice` owns an OpenAGC `AgcDevice` plus native graphics
 and compute queues. OpenAGC API 26 explicitly supports concurrent logical
 devices over the selected process backend, and the Vulkan lifecycle regression
 creates two devices concurrently. OpenAGC API 28 now backs `VkDeviceMemory`
 and bound `VkBuffer` objects with explicit `AgcMemory` and placed `AgcBuffer`
 handles, uses native image layouts and placed `AgcImage`, and gives compatible
-views and all samplers native `AgcImageView`/`AgcSampler` backing. Direct
-descriptor-table assembly, command recording, and submission remain on their
-audited paths until those native vertical slices preserve the same behavior.
+views and all samplers native `AgcImageView`/`AgcSampler` backing.
 OpenAGC API 33/PSBC API 18 additionally give every compiled stage a native
 shader, every compute pipeline a native pipeline, and compatible point, line,
 triangle list/strip/fan, geometry—including adjacency—and tessellation
@@ -78,9 +73,9 @@ graphics-plus-compute stream. Pipeline binds, supported typed buffer/image
 barriers, and explicitly transitioned buffer copies are mirrored through
 native APIs. Compute dispatch plus direct, indexed, geometry, and tessellation
 draws now require the typed native path; pipeline changes rebind native
-descriptor and vertex state. The remaining migration boundary is direct
-descriptor/tessellation-resource ownership followed by deletion of the legacy
-encoder and submission path.
+descriptor and vertex state. Descriptor encoding, tessellation resources,
+image layout, command storage, submission, and finite waits are OpenAGC-owned;
+the legacy encoder and submission fallback have been deleted.
 
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping

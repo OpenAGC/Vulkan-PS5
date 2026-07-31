@@ -58,12 +58,10 @@ Vulkan-PS5 owns:
 
 ### Migration milestone 0: freeze and audit the baseline
 
-Current progress: `analysis/native_runtime_calls.tsv` is the mechanically
-checked ownership inventory for all 26 remaining direct hardware-facing calls
-currently present in `src/`. The `vulkan_ps5.native_migration_audit` CTest gate requires
-each call to retain a migration category, native owner, and regression gate.
-The advertised capability/format snapshot and remaining duplicated-policy
-audit are still pending.
+Current progress: the mechanically checked direct-call inventory has zero
+rows. The `vulkan_ps5.native_migration_audit` CTest gate rejects any
+reintroduced low-level call. Historical category and sequencing evidence is
+preserved in `analysis/native_migration_audit_20260731.md`.
 
 Typed native indirect recording and occlusion-query storage/recording/results
 are complete. The latter is FW 5.500.008-qualified with an exact
@@ -116,15 +114,15 @@ or duplicated image-layout calculator.
 
 ### Migration milestone 2: shader reflection and pipelines
 
-In progress: OpenAGC API 36/PSBC API 18 now back all Vulkan shader stages,
+Host-complete: OpenAGC API 36/PSBC API 18 now back all Vulkan shader stages,
 all compute pipelines, and the advertised point, line, triangle, geometry,
 and tessellation graphics forms with native objects. Native fixed state covers
 polygon modes, culling, rasterizer discard, strip/fan primitive restart,
 depth clamp, static/dynamic depth bias and line width, logic operations, and
 pipeline switching. The compiler emits only descriptor sets
 addressable by each stage while preserving every binding within those sets,
-and explicitly marks alpha-to-one epilogs. Command encoding still consumes
-the retained legacy binding until Milestone 3.
+and explicitly marks alpha-to-one epilogs. Native command encoding consumes
+these objects directly.
 
 1. Translate Vulkan shader modules, specialization, vertex input, descriptor
    layouts, push constants, render-target/depth formats, blend/raster/depth,
@@ -143,7 +141,7 @@ linkage cases; rejected pipelines emit no commands.
 
 ### Migration milestone 3: commands, transitions, and synchronization
 
-In progress: each Vulkan command buffer owns paired queue-typed native command
+Host-complete: each Vulkan command buffer owns paired queue-typed native command
 buffers, but the graphics DCB is now the single ordered Vulkan stream and may
 carry compute work. Their lifecycle is synchronized with Vulkan allocation,
 begin/end rollback, reset, pool reset, free, and teardown. Compatible pipeline
@@ -172,11 +170,11 @@ strides. Clear, blit, depth/stencil-transfer, and resolve forms fail closed
 instead of silently succeeding. Typed native buffer update and fill remain
 complete in API 39. WSI uses dedicated native scanout images, `AgcPresentChain`,
 and the ordered queue's retained completion fence; this removes the three raw
-VideoOut symbols and reduces the audit to 34. Shader code allocation/fusion
-and native-only direct draw/dispatch recording then reduce it to 26. Next move
-descriptor tables and remaining tessellation resources behind native
-ownership, then delete legacy submission/fence handling and the other
-superseded encoders.
+VideoOut symbols and reduced the audit to 34. Shader code allocation/fusion
+and native-only direct draw/dispatch recording reduced it to 26. Descriptor
+tables, image layouts, custom border tables, tessellation resources, command
+storage, submission, and finite fence waits now belong to OpenAGC; deletion of
+the superseded Vulkan encoder and fallback path reduces the audit to zero.
 
 1. Back Vulkan command pools/buffers with native command allocators and
    `AgcCommandBuffer` state while retaining Vulkan reset and simultaneous-use

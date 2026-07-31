@@ -110,9 +110,6 @@ typedef struct VkPs5Image {
     VkDeviceSize alignment;
     VkDeviceSize depth_plane_offset;
     VkDeviceSize stencil_plane_offset;
-    AgcGfx1013ColorSurfaceLayout color_layout;
-    AgcGfx1013DepthSurfaceLayout depth_layout;
-    AgcGfx1013DepthSurfaceFormat depth_format;
     VkBool32 is_msaa_color_surface;
     VkBool32 is_depth_surface;
     VkDeviceSize size;
@@ -192,6 +189,8 @@ static bool native_image_is_depth(VkFormat format) {
 static VkResult initialize_native_image_layout(VkDevice device,
                                                 VkPs5Image *image) {
     AgcFormat format;
+    AgcImageSubresourceLayout subresource =
+        AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
     if (!native_image_format(image->format, &format))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     image->native_desc = (AgcImageDesc)AGC_IMAGE_DESC_INIT;
@@ -211,11 +210,33 @@ static VkResult initialize_native_image_layout(VkDevice device,
     image->native_layout = (AgcImageLayout)AGC_IMAGE_LAYOUT_INIT;
     int32_t result = agcGetImageLayout(vk_ps5_native_device(device),
         &image->native_desc, &image->native_layout);
+    if (result == AGC_OK)
+        result = agcGetImageSubresourceLayout(vk_ps5_native_device(device),
+            &image->native_desc, 0u, 0u, 0u, &subresource);
     if (result != AGC_OK)
         return result == AGC_ERROR_OUT_OF_MEMORY ?
             VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_FORMAT_NOT_SUPPORTED;
     image->size = image->native_layout.allocation_size;
     image->alignment = image->native_layout.alignment;
+    image->row_pitch = subresource.row_pitch;
+    image->depth_pitch = subresource.slice_pitch;
+    image->array_pitch = subresource.size;
+    if (native_image_is_depth(image->format) &&
+        image->format != VK_FORMAT_S8_UINT)
+        image->depth_plane_offset = subresource.offset;
+    if (image->format == VK_FORMAT_S8_UINT)
+        image->stencil_plane_offset = subresource.offset;
+    if (image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+        image->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+        subresource = (AgcImageSubresourceLayout)
+            AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
+        result = agcGetImageSubresourceLayout(vk_ps5_native_device(device),
+            &image->native_desc, 0u, 0u, 1u, &subresource);
+        if (result != AGC_OK)
+            return result == AGC_ERROR_OUT_OF_MEMORY ?
+                VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_FORMAT_NOT_SUPPORTED;
+        image->stencil_plane_offset = subresource.offset;
+    }
     return VK_SUCCESS;
 }
 
@@ -308,9 +329,6 @@ static VkResult ensure_native_image_view(VkPs5ImageView *view) {
 typedef struct VkPs5BufferView { VkBuffer buffer; VkFormat format; } VkPs5BufferView;
 typedef struct VkPs5Opaque { uint32_t kind; } VkPs5Opaque;
 typedef struct VkPs5Sampler {
-    AgcSamplerDescriptor descriptor;
-    VkBool32 custom_border_color;
-    uint32_t custom_border_color_index;
     uint32_t custom_border_color_value[4];
     AgcSampler native_sampler;
 } VkPs5Sampler;
@@ -418,10 +436,6 @@ typedef struct VkPs5Pipeline {
     VkFormat dynamic_color_formats[AGC_GFX1013_MAX_COLOR_TARGETS];
     VkFormat dynamic_depth_format;
     VkFormat dynamic_stencil_format;
-    const AgcGfx1013TessellationState *tessellation;
-    uint64_t tess_ring_descriptor_address;
-    uint32_t tcs_offchip_layout;
-    uint32_t tes_offchip_layout;
 } VkPs5Pipeline;
 
 VkBool32 vk_ps5_pipeline_has_native_shaders(VkPipeline pipeline_handle)
@@ -479,11 +493,8 @@ struct VkPs5DescriptorSet {
     VkPs5DescriptorSet *next;
     VkPs5DescriptorSetLayout *layout;
     uint32_t descriptor_count;
-    AgcGpuMemory table_memory;
     VkPs5DescriptorValue values[];
 };
-
-#define VK_PS5_DESCRIPTOR_TABLE_SIZE 0x4000u
 
 typedef struct VkPs5CommandPool {
     VkDevice device;
@@ -530,8 +541,6 @@ typedef struct VkPs5CommandBuffer {
     VkPs5RenderPass dynamic_render_pass;
     VkPs5Framebuffer dynamic_framebuffer;
     uint32_t active_subpass;
-    AgcGfx1013FrameState frame_state;
-    AgcGfx1013DepthSurfaceState depth_surface_state;
     float dynamic_line_width;
     VkBool32 dynamic_line_width_set;
     AgcGfx1013DepthBiasState dynamic_depth_bias;
@@ -548,11 +557,6 @@ typedef struct VkPs5CommandBuffer {
     VkIndexType index_type;
     VkPs5Buffer *vertex_buffers[VK_PS5_MAX_VERTEX_BINDINGS];
     VkDeviceSize vertex_offsets[VK_PS5_MAX_VERTEX_BINDINGS];
-    AgcGpuMemory vertex_table_memory;
-    size_t vertex_table_offset;
-    uint32_t last_indirect_descriptor_table;
-    size_t last_indirect_descriptor_table_offset;
-    uint32_t last_indirect_descriptor_register;
     VkPs5NativeBufferState
         native_buffer_states[VK_PS5_MAX_NATIVE_RESOURCE_STATES];
     uint32_t native_buffer_state_count;
@@ -573,9 +577,6 @@ typedef struct VkPs5CommandBuffer {
     uint32_t native_draw_count;
     VkBool32 native_stream_complete;
     VkBool32 requires_native_stream;
-    uint32_t *dcb_storage;
-    size_t dcb_size;
-    SceAgcCb dcb;
     struct VkPs5CommandBuffer *next;
 } VkPs5CommandBuffer;
 
@@ -655,41 +656,6 @@ VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer)
     const VkPs5CommandBuffer *command =
         (const VkPs5CommandBuffer *)command_buffer;
     return command ? command->record_error : VK_ERROR_INITIALIZATION_FAILED;
-}
-
-uint32_t vk_ps5_command_buffer_dwords(
-    VkCommandBuffer command_buffer, const uint32_t **commands) {
-    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
-    if (!command || !commands) return 0;
-    *commands = command->dcb_storage;
-    return agcCbUsedDwords(&command->dcb);
-}
-
-uint32_t vk_ps5_command_buffer_indirect_descriptor_table(
-    VkCommandBuffer command_buffer) {
-    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
-    return command ? command->last_indirect_descriptor_table : 0u;
-}
-
-uint32_t vk_ps5_command_buffer_indirect_descriptor_entry(
-    VkCommandBuffer command_buffer, uint32_t set) {
-    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
-    if (!command || !command->last_indirect_descriptor_table ||
-        set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS)
-        return 0u;
-    size_t offset = command->last_indirect_descriptor_table_offset;
-    if (offset > VK_PS5_VERTEX_TABLE_SIZE - sizeof(uint32_t) ||
-        set > (VK_PS5_VERTEX_TABLE_SIZE - offset) / sizeof(uint32_t) - 1u)
-        return 0u;
-    const uint32_t *entries = (const uint32_t *)(
-        (const uint8_t *)command->vertex_table_memory.cpu_address + offset);
-    return entries[set];
-}
-
-uint32_t vk_ps5_command_buffer_indirect_descriptor_register(
-    VkCommandBuffer command_buffer) {
-    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
-    return command ? command->last_indirect_descriptor_register : 0u;
 }
 
 static void *alloc_object(VkDevice device, const VkAllocationCallbacks *allocator,
@@ -779,18 +745,16 @@ vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
                 (VkPs5CommandBuffer *)pSubmits[i].pCommandBuffers[j];
             command->state = VK_PS5_COMMAND_PENDING;
             VkResult result;
-            if (command->native_stream_complete) {
-                AgcCommandBuffer native_command =
-                    command->native_graphics_command_buffer;
-                result = vk_ps5_queue_submit_native(
-                    queue, 1u, &native_command);
-                if (result == VK_SUCCESS)
-                    native_commit_resource_states(command);
-            } else {
-                result = vk_ps5_queue_submit_dcb(
-                    queue, command->dcb_storage,
-                    agcCbUsedDwords(&command->dcb));
+            if (!command->native_stream_complete) {
+                command->state = VK_PS5_COMMAND_EXECUTABLE;
+                return VK_ERROR_FEATURE_NOT_PRESENT;
             }
+            AgcCommandBuffer native_command =
+                command->native_graphics_command_buffer;
+            result = vk_ps5_queue_submit_native(
+                queue, 1u, &native_command);
+            if (result == VK_SUCCESS)
+                native_commit_resource_states(command);
             command->state = VK_PS5_COMMAND_EXECUTABLE;
             if (result != VK_SUCCESS) return result;
         }
@@ -1676,24 +1640,7 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
             vk_ps5_device_free(device, pAllocator, image);
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
-        const AgcGfx1013ColorSurfaceLayoutInput input = {
-            .width = pCreateInfo->extent.width,
-            .height = pCreateInfo->extent.height,
-            .layer_count = 1u,
-            .mip_level_count = 1u,
-            .sample_count = 4u,
-            .format = target_format,
-            .swizzle_mode = AGC_GFX1013_SWIZZLE_64KB_R_X,
-        };
-        if (agcGfx1013GetColorSurfaceLayout(
-                &input, &image->color_layout) != AGC_OK) {
-            vk_ps5_device_free(device, pAllocator, image);
-            return VK_ERROR_FORMAT_NOT_SUPPORTED;
-        }
         image->is_msaa_color_surface = VK_TRUE;
-        image->alignment = image->color_layout.alignment;
-        image->array_pitch = image->color_layout.slice_size;
-        image->size = image->color_layout.allocation_size;
         VkResult native_result = initialize_native_image_layout(device, image);
         if (native_result != VK_SUCCESS) {
             vk_ps5_device_free(device, pAllocator, image);
@@ -1708,49 +1655,7 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
             vk_ps5_device_free(device, pAllocator, image);
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
-        const bool has_depth = pCreateInfo->format != VK_FORMAT_S8_UINT;
-        const bool has_stencil = pCreateInfo->format == VK_FORMAT_S8_UINT ||
-            pCreateInfo->format == VK_FORMAT_D16_UNORM_S8_UINT ||
-            pCreateInfo->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
-        const AgcGfx1013DepthSurfaceLayoutInput input = {
-            .width = pCreateInfo->extent.width,
-            .height = pCreateInfo->extent.height,
-            .layer_count = pCreateInfo->arrayLayers,
-            .mip_level_count = pCreateInfo->mipLevels,
-            .sample_count = 1u,
-            .format = depth_format,
-            .depth_swizzle_mode = has_depth ?
-                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
-            .stencil_swizzle_mode = has_stencil ?
-                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
-        };
-        if (agcGfx1013GetDepthSurfaceLayout(
-                &input, &image->depth_layout) != AGC_OK) {
-            vk_ps5_device_free(device, pAllocator, image);
-            return VK_ERROR_FORMAT_NOT_SUPPORTED;
-        }
         image->is_depth_surface = VK_TRUE;
-        image->depth_format = depth_format;
-        image->alignment = AGC_GFX1013_64KB_SURFACE_ALIGNMENT;
-        VkDeviceSize size = image->depth_layout.depth.allocation_size;
-        if (has_stencil) {
-            VkDeviceSize stencil_alignment =
-                image->depth_layout.stencil.alignment;
-            if (!stencil_alignment || size > UINT64_MAX - stencil_alignment + 1u) {
-                vk_ps5_device_free(device, pAllocator, image);
-                return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-            }
-            image->stencil_plane_offset =
-                (size + stencil_alignment - 1u) & ~(stencil_alignment - 1u);
-            if (image->depth_layout.stencil.allocation_size >
-                    UINT64_MAX - image->stencil_plane_offset) {
-                vk_ps5_device_free(device, pAllocator, image);
-                return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-            }
-            size = image->stencil_plane_offset +
-                image->depth_layout.stencil.allocation_size;
-        }
-        image->size = size;
         VkResult native_result = initialize_native_image_layout(device, image);
         if (native_result != VK_SUCCESS) {
             vk_ps5_device_free(device, pAllocator, image);
@@ -1926,8 +1831,6 @@ vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
             command->native_compute_command_buffer);
         (void)agcDestroyCommandBuffer(
             command->native_graphics_command_buffer);
-        agcGpuMemoryFreeFlexible(&command->vertex_table_memory);
-        vk_ps5_device_free(device, NULL, command->dcb_storage);
         vk_ps5_device_free(device, NULL, command);
     }
     vk_ps5_device_free(device, pAllocator, pool);
@@ -1958,10 +1861,6 @@ vkResetCommandPool(VkDevice device, VkCommandPool commandPool,
         command->active_query_pool = NULL;
         command->index_buffer = NULL;
         memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
-        command->vertex_table_offset = 0u;
-        command->last_indirect_descriptor_table = 0u;
-        command->last_indirect_descriptor_table_offset = 0u;
-        command->last_indirect_descriptor_register = 0u;
 command->native_buffer_state_count = 0u;
 command->native_image_state_count = 0u;
 command->native_descriptor_bind_count = 0u;
@@ -1980,7 +1879,6 @@ command->native_dispatch_count = 0u;
 command->native_draw_count = 0u;
 command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
-        agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     }
     return VK_SUCCESS;
 }
@@ -2038,37 +1936,8 @@ vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo *pAl
             return native_result == AGC_ERROR_OUT_OF_MEMORY ?
                 VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
         }
-        command->dcb_size = VK_PS5_DCB_SIZE;
-        command->dcb_storage = vk_ps5_device_alloc(
-            device, NULL, command->dcb_size, 256,
-            VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-        if (!command->dcb_storage) {
-            (void)agcDestroyCommandBuffer(
-                command->native_compute_command_buffer);
-            (void)agcDestroyCommandBuffer(
-                command->native_graphics_command_buffer);
-            vk_ps5_device_free(device, NULL, command);
-            vkFreeCommandBuffers(device, pAllocateInfo->commandPool, i, pCommandBuffers);
-            return VK_ERROR_OUT_OF_HOST_MEMORY;
-        }
-        agcCbInit(&command->dcb, command->dcb_storage, command->dcb_size);
-        if (agcGpuMemoryAllocateFlexible(&command->vertex_table_memory,
-                VK_PS5_VERTEX_TABLE_SIZE, 256u,
-                "vulkan_ps5_vertex_tables") != AGC_OK) {
-            vk_ps5_device_free(device, NULL, command->dcb_storage);
-            (void)agcDestroyCommandBuffer(
-                command->native_compute_command_buffer);
-            (void)agcDestroyCommandBuffer(
-                command->native_graphics_command_buffer);
-            vk_ps5_device_free(device, NULL, command);
-            vkFreeCommandBuffers(device, pAllocateInfo->commandPool, i,
-                                 pCommandBuffers);
-            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        }
         VkResult result = vk_ps5_set_device_loader_data(device, command);
         if (result != VK_SUCCESS) {
-            agcGpuMemoryFreeFlexible(&command->vertex_table_memory);
-            vk_ps5_device_free(device, NULL, command->dcb_storage);
             (void)agcDestroyCommandBuffer(
                 command->native_compute_command_buffer);
             (void)agcDestroyCommandBuffer(
@@ -2100,8 +1969,6 @@ vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
                 command->native_compute_command_buffer);
             (void)agcDestroyCommandBuffer(
                 command->native_graphics_command_buffer);
-            agcGpuMemoryFreeFlexible(&command->vertex_table_memory);
-            vk_ps5_device_free(device, NULL, command->dcb_storage);
             vk_ps5_device_free(device, NULL, command);
         }
     }
@@ -2145,10 +2012,6 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
-    command->vertex_table_offset = 0u;
-    command->last_indirect_descriptor_table = 0u;
-    command->last_indirect_descriptor_table_offset = 0u;
-    command->last_indirect_descriptor_register = 0u;
 command->native_buffer_state_count = 0u;
 command->native_image_state_count = 0u;
 command->native_descriptor_bind_count = 0u;
@@ -2169,7 +2032,6 @@ command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
-    agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
 
@@ -2240,10 +2102,6 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
-    command->vertex_table_offset = 0u;
-    command->last_indirect_descriptor_table = 0u;
-    command->last_indirect_descriptor_table_offset = 0u;
-    command->last_indirect_descriptor_register = 0u;
 command->native_buffer_state_count = 0u;
 command->native_image_state_count = 0u;
 command->native_descriptor_bind_count = 0u;
@@ -2264,7 +2122,6 @@ command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
-    agcCbReset(&command->dcb, command->dcb_storage, command->dcb_size);
     return VK_SUCCESS;
 }
 
@@ -2978,41 +2835,6 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
     return psbc_result(compile_result);
 }
 
-static VkResult build_tessellation_layouts(VkPs5Pipeline *pipeline)
-{
-    const OpenAgcPsbcMetadata *control = &pipeline->stages[0].metadata;
-    const OpenAgcPsbcMetadata *evaluation = &pipeline->stages[1].metadata;
-
-    if (!control->tessellation_patch_count ||
-        control->tessellation_patch_count !=
-            evaluation->tessellation_patch_count ||
-        !control->tessellation_input_control_points ||
-        !control->tessellation_output_control_points ||
-        !control->tessellation_lds_size ||
-        control->tessellation_lds_size > 65536u ||
-        control->tessellation_output_control_points !=
-            evaluation->tessellation_output_control_points)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    const AgcGfx1013TessellationLayoutState state = {
-        .patch_count = control->tessellation_patch_count,
-        .input_control_points =
-            control->tessellation_input_control_points,
-        .output_control_points =
-            control->tessellation_output_control_points,
-        .vertex_output_count =
-            control->tessellation_vertex_output_count,
-        .control_output_count =
-            control->tessellation_control_output_count,
-        .primitive_mode = evaluation->tessellation_primitive_mode,
-        .tes_reads_tess_factors =
-            evaluation->tessellation_reads_factors,
-    };
-    return agcGfx1013BuildTessellationOffchipLayouts(
-               &state, &pipeline->tcs_offchip_layout,
-               &pipeline->tes_offchip_layout) == AGC_OK ?
-        VK_SUCCESS : VK_ERROR_INITIALIZATION_FAILED;
-}
-
 static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocator,
                           VkPs5Pipeline *pipeline) {
     if (!pipeline) return;
@@ -3663,12 +3485,6 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     pipeline->stages[stage_index].metadata.
                         pixel_shader_sample_count;
         }
-        if (tess_control)
-            result = build_tessellation_layouts(pipeline);
-        if (result != VK_SUCCESS) {
-            free_pipeline(device, pAllocator, pipeline);
-            return result;
-        }
         pipeline->bind_point = VK_PIPELINE_BIND_POINT_GRAPHICS;
         {
             static const uint8_t primitive_types[
@@ -3678,10 +3494,6 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             pipeline->primitive_type = primitive_types[translated_topology];
         }
         result = finalize_pipeline(device, pAllocator, pipeline);
-        if (result == VK_SUCCESS && tess_control)
-            result = vk_ps5_device_prepare_tessellation(device,
-                &pipeline->tessellation,
-                &pipeline->tess_ring_descriptor_address);
         if (result != VK_SUCCESS) {
             free_pipeline(device, pAllocator, pipeline);
             return result;
@@ -3985,22 +3797,6 @@ name(VkDevice device, HandleType object, const VkAllocationCallbacks *pAllocator
     if (object) vk_ps5_device_free(device, pAllocator, (void *)object); \
 }
 
-static bool sampler_clamp(VkSamplerAddressMode mode, AgcClampMode *clamp)
-{
-    switch (mode) {
-    case VK_SAMPLER_ADDRESS_MODE_REPEAT: *clamp = kAgcClampRepeat; return true;
-    case VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
-        *clamp = kAgcClampMirror; return true;
-    case VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
-        *clamp = kAgcClampClamp; return true;
-    case VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
-        *clamp = kAgcClampBorder; return true;
-    case VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
-        *clamp = kAgcClampMirrorOnce; return true;
-    default: return false;
-    }
-}
-
 static AgcAddressMode native_sampler_address(VkSamplerAddressMode mode)
 {
     switch (mode) {
@@ -4047,7 +3843,6 @@ static VkResult create_native_sampler(VkDevice device,
     case VK_BORDER_COLOR_FLOAT_CUSTOM_EXT:
     case VK_BORDER_COLOR_INT_CUSTOM_EXT:
         desc.border_color = AGC_SAMPLER_BORDER_CUSTOM;
-        desc.custom_border_color_index = sampler->custom_border_color_index;
         memcpy(desc.custom_border_color, sampler->custom_border_color_value,
             sizeof(desc.custom_border_color));
         break;
@@ -4089,100 +3884,39 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         (!(pCreateInfo->maxAnisotropy >= 1.0f) ||
          pCreateInfo->maxAnisotropy > 16.0f))
         return VK_ERROR_FEATURE_NOT_PRESENT;
-    AgcClampMode u, v, w;
-    if (!sampler_clamp(pCreateInfo->addressModeU, &u) ||
-        !sampler_clamp(pCreateInfo->addressModeV, &v) ||
-        !sampler_clamp(pCreateInfo->addressModeW, &w))
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    AgcFilterMode min_filter = pCreateInfo->minFilter == VK_FILTER_NEAREST ?
-        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoPoint :
-                                        kAgcFilterPoint) :
-        pCreateInfo->minFilter == VK_FILTER_LINEAR ?
-        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoLinear :
-                                        kAgcFilterBilinear) :
-        (AgcFilterMode)-1;
-    AgcFilterMode mag_filter = pCreateInfo->magFilter == VK_FILTER_NEAREST ?
-        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoPoint :
-                                        kAgcFilterPoint) :
-        pCreateInfo->magFilter == VK_FILTER_LINEAR ?
-        (pCreateInfo->anisotropyEnable ? kAgcFilterAnisoLinear :
-                                        kAgcFilterBilinear) :
-        (AgcFilterMode)-1;
-    if ((int)min_filter < 0 || (int)mag_filter < 0)
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    AgcMipFilterMode mip_filter = pCreateInfo->maxLod == 0.0f ?
-        kAgcMipFilterNone :
-        pCreateInfo->mipmapMode == VK_SAMPLER_MIPMAP_MODE_NEAREST ?
-        kAgcMipFilterPoint : pCreateInfo->mipmapMode ==
-            VK_SAMPLER_MIPMAP_MODE_LINEAR ? kAgcMipFilterLinear :
-            (AgcMipFilterMode)-1;
-    if ((int)mip_filter < 0)
+    if ((pCreateInfo->minFilter != VK_FILTER_NEAREST &&
+         pCreateInfo->minFilter != VK_FILTER_LINEAR) ||
+        (pCreateInfo->magFilter != VK_FILTER_NEAREST &&
+         pCreateInfo->magFilter != VK_FILTER_LINEAR) ||
+        (pCreateInfo->mipmapMode != VK_SAMPLER_MIPMAP_MODE_NEAREST &&
+         pCreateInfo->mipmapMode != VK_SAMPLER_MIPMAP_MODE_LINEAR))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     VkPs5Sampler *sampler = alloc_object(device, pAllocator, sizeof(*sampler),
                                          _Alignof(VkPs5Sampler));
     if (!sampler) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    agcSamplerDescriptorInit(&sampler->descriptor);
-    agcSamplerDescriptorSetClampMode(&sampler->descriptor, u, v, w);
-    agcSamplerDescriptorSetFilterMode(&sampler->descriptor, min_filter,
-                                      mag_filter, mip_filter);
-    if (pCreateInfo->anisotropyEnable)
-        agcSamplerDescriptorSetMaxAnisotropy(
-            &sampler->descriptor, (uint32_t)pCreateInfo->maxAnisotropy);
-    agcSamplerDescriptorSetLod(&sampler->descriptor, pCreateInfo->minLod,
-                               pCreateInfo->maxLod, pCreateInfo->mipLodBias);
-    if (pCreateInfo->compareEnable)
-        agcSamplerDescriptorSetCompareFunc(&sampler->descriptor,
-                                            pCreateInfo->compareOp);
-    AgcBorderColor border;
     switch (pCreateInfo->borderColor) {
     case VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK:
     case VK_BORDER_COLOR_INT_TRANSPARENT_BLACK:
-        border = kAgcBorderTransparentBlack; break;
     case VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK:
     case VK_BORDER_COLOR_INT_OPAQUE_BLACK:
-        border = kAgcBorderOpaqueBlack; break;
     case VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE:
     case VK_BORDER_COLOR_INT_OPAQUE_WHITE:
-        border = kAgcBorderWhite; break;
+        break;
     case VK_BORDER_COLOR_FLOAT_CUSTOM_EXT:
     case VK_BORDER_COLOR_INT_CUSTOM_EXT: {
         if (!custom_border || custom_border->pNext) {
             vk_ps5_device_free(device, pAllocator, sampler);
             return VK_ERROR_INITIALIZATION_FAILED;
         }
-        VkResult result = vk_ps5_device_allocate_border_color(device,
-            &custom_border->customBorderColor,
-            &sampler->custom_border_color_index);
-        if (result != VK_SUCCESS) {
-            vk_ps5_device_free(device, pAllocator, sampler);
-            return result;
-        }
-        sampler->custom_border_color = VK_TRUE;
         memcpy(sampler->custom_border_color_value,
             custom_border->customBorderColor.uint32,
             sizeof(sampler->custom_border_color_value));
-        if (agcSamplerDescriptorSetCustomBorderColor(&sampler->descriptor,
-                sampler->custom_border_color_index) != AGC_OK) {
-            vk_ps5_device_free_border_color(device,
-                sampler->custom_border_color_index);
-            vk_ps5_device_free(device, pAllocator, sampler);
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
-        result = create_native_sampler(device, pCreateInfo, sampler);
-        if (result != VK_SUCCESS) {
-            vk_ps5_device_free_border_color(device,
-                sampler->custom_border_color_index);
-            vk_ps5_device_free(device, pAllocator, sampler);
-            return result;
-        }
-        *pSampler = (VkSampler)sampler;
-        return VK_SUCCESS;
+        break;
     }
     default:
         vk_ps5_device_free(device, pAllocator, sampler);
         return VK_ERROR_FEATURE_NOT_PRESENT;
     }
-    agcSamplerDescriptorSetBorderColor(&sampler->descriptor, border);
     VkResult native_result = create_native_sampler(device, pCreateInfo, sampler);
     if (native_result != VK_SUCCESS) {
         vk_ps5_device_free(device, pAllocator, sampler);
@@ -4199,9 +3933,6 @@ vkDestroySampler(VkDevice device, VkSampler sampler,
     VkPs5Sampler *object = (VkPs5Sampler *)sampler;
     if (object && object->native_sampler)
         (void)agcDestroySampler(object->native_sampler);
-    if (object && object->custom_border_color)
-        vk_ps5_device_free_border_color(device,
-            object->custom_border_color_index);
     if (object) vk_ps5_device_free(device, pAllocator, object);
 }
 static const VkDescriptorSetLayoutBinding *descriptor_layout_binding(
@@ -4664,7 +4395,6 @@ static void clear_descriptor_pool(VkPs5DescriptorPool *pool) {
     VkPs5DescriptorSet *set = pool->sets;
     while (set) {
         VkPs5DescriptorSet *next = set->next;
-        agcGpuMemoryFreeFlexible(&set->table_memory);
         vk_ps5_device_free(pool->device, NULL, set);
         set = next;
     }
@@ -4725,7 +4455,6 @@ vkAllocateDescriptorSets(VkDevice device,
             while (pool->sets != old_head) {
                 VkPs5DescriptorSet *rollback = pool->sets;
                 pool->sets = rollback->next;
-                agcGpuMemoryFreeFlexible(&rollback->table_memory);
                 vk_ps5_device_free(device, NULL, rollback);
             }
             pool->allocated_sets = old_count;
@@ -4735,21 +4464,6 @@ vkAllocateDescriptorSets(VkDevice device,
         }
         set->layout = layout;
         set->descriptor_count = descriptor_count;
-        if (agcGpuMemoryAllocateFlexible(&set->table_memory,
-                VK_PS5_DESCRIPTOR_TABLE_SIZE, 16u,
-                "vulkan_ps5_descriptor_table") != AGC_OK) {
-            vk_ps5_device_free(device, NULL, set);
-            while (pool->sets != old_head) {
-                VkPs5DescriptorSet *rollback = pool->sets;
-                pool->sets = rollback->next;
-                agcGpuMemoryFreeFlexible(&rollback->table_memory);
-                vk_ps5_device_free(device, NULL, rollback);
-            }
-            pool->allocated_sets = old_count;
-            for (uint32_t j = 0; j < pAllocateInfo->descriptorSetCount; ++j)
-                pDescriptorSets[j] = VK_NULL_HANDLE;
-            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        }
         set->pool = pool;
         set->next = pool->sets;
         pool->sets = set;
@@ -4762,7 +4476,6 @@ invalid_layout:
     while (pool->sets != old_head) {
         VkPs5DescriptorSet *rollback = pool->sets;
         pool->sets = rollback->next;
-        agcGpuMemoryFreeFlexible(&rollback->table_memory);
         vk_ps5_device_free(device, NULL, rollback);
     }
     pool->allocated_sets = old_count;
@@ -4785,7 +4498,6 @@ vkFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool,
         VkPs5DescriptorSet *set = *link;
         *link = set->next;
         pool->allocated_sets--;
-        agcGpuMemoryFreeFlexible(&set->table_memory);
         vk_ps5_device_free(device, NULL, set);
     }
     return VK_SUCCESS;
@@ -6055,44 +5767,6 @@ static VkPs5DescriptorValue *descriptor_value(
     return NULL;
 }
 
-static uint64_t descriptor_table_gpu_address(const VkPs5DescriptorSet *set)
-{
-#if defined(OPENAGC_GENERIC)
-    return ((uint64_t)AGC_GFX1013_ADDRESS32_HIGH << 32u) |
-        (uint32_t)set->table_memory.gpu_address;
-#else
-    return set->table_memory.gpu_address;
-#endif
-}
-
-static VkResult encode_buffer_descriptor(
-    const VkPs5DescriptorValue *value, void *destination)
-{
-    if (!value || !value->buffer.buffer)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
-    if (!buffer->memory || value->buffer.offset >= buffer->size)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    VkDeviceSize available = buffer->size - value->buffer.offset;
-    VkDeviceSize range = value->buffer.range == VK_WHOLE_SIZE ?
-        available : value->buffer.range;
-    if (!range || range > available || range > UINT32_MAX)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    if (buffer->memory_offset > UINT64_MAX - value->buffer.offset)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
-        buffer->memory_offset + value->buffer.offset);
-    AgcGfx1013BufferDescriptor descriptor;
-    if (agcGfx1013RawBufferDescriptorEncode(&descriptor, address,
-            (uint32_t)range) != AGC_OK)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    memcpy(destination, &descriptor, sizeof(descriptor));
-    return VK_SUCCESS;
-}
-
-static VkResult encode_image_descriptor(
-    const VkPs5DescriptorValue *value, bool storage, void *destination);
-
 static VkResult prepare_native_compute_descriptors(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     bool *ready)
@@ -6183,234 +5857,6 @@ static VkResult prepare_native_compute_descriptors(
         command->native_descriptor_bind_count++;
     }
     *ready = true;
-    return VK_SUCCESS;
-}
-
-static VkResult image_descriptor_state(
-    const VkDescriptorImageInfo *info, bool storage,
-    AgcGfx1013Image2DState *state)
-{
-    VkPs5ImageView *view = info ? (VkPs5ImageView *)info->imageView : NULL;
-    VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
-    VkResult native_result = ensure_native_image_view(view);
-    if (native_result != VK_SUCCESS)
-        return native_result;
-    if (!view || !image || !image->memory ||
-        !(image->usage & (storage ? VK_IMAGE_USAGE_STORAGE_BIT :
-            VK_IMAGE_USAGE_SAMPLED_BIT)) ||
-        image->type != VK_IMAGE_TYPE_2D ||
-        image->samples != VK_SAMPLE_COUNT_1_BIT || image->mip_levels != 1u ||
-        (storage ? info->imageLayout != VK_IMAGE_LAYOUT_GENERAL :
-            (info->imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
-             info->imageLayout != VK_IMAGE_LAYOUT_GENERAL)))
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    if (storage && (view->components.r != VK_COMPONENT_SWIZZLE_IDENTITY ||
-                    view->components.g != VK_COMPONENT_SWIZZLE_IDENTITY ||
-                    view->components.b != VK_COMPONENT_SWIZZLE_IDENTITY ||
-                    view->components.a != VK_COMPONENT_SWIZZLE_IDENTITY))
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    if (storage && view->view_type != VK_IMAGE_VIEW_TYPE_2D)
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    uint32_t dst_x = 4u, dst_y = 5u, dst_z = 6u, dst_w = 7u;
-    if (!storage && view->format == VK_FORMAT_B8G8R8A8_UNORM) {
-        dst_x = 6u;
-        dst_z = 4u;
-    } else if (view->format != VK_FORMAT_R8G8B8A8_UNORM) {
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    }
-    if (!storage) {
-        const uint32_t base[4] = {dst_x, dst_y, dst_z, dst_w};
-        const VkComponentSwizzle components[4] = {
-            view->components.r, view->components.g,
-            view->components.b, view->components.a,
-        };
-        uint32_t *const destinations[4] = {
-            &dst_x, &dst_y, &dst_z, &dst_w,
-        };
-        for (uint32_t component = 0u; component < 4u; ++component) {
-            switch (components[component]) {
-            case VK_COMPONENT_SWIZZLE_IDENTITY:
-                *destinations[component] = base[component];
-                break;
-            case VK_COMPONENT_SWIZZLE_ZERO:
-                *destinations[component] = 0u;
-                break;
-            case VK_COMPONENT_SWIZZLE_ONE:
-                *destinations[component] = 1u;
-                break;
-            case VK_COMPONENT_SWIZZLE_R:
-            case VK_COMPONENT_SWIZZLE_G:
-            case VK_COMPONENT_SWIZZLE_B:
-            case VK_COMPONENT_SWIZZLE_A:
-                *destinations[component] =
-                    base[components[component] - VK_COMPONENT_SWIZZLE_R];
-                break;
-            default:
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            }
-        }
-    }
-    uint64_t address = vk_ps5_memory_gpu_address(image->memory,
-        image->memory_offset);
-    uint32_t image_type = AGC_GFX1013_IMAGE_TYPE_2D;
-    uint32_t base_array_layer = 0u;
-    uint32_t last_array_layer = 0u;
-    if (view->view_type == VK_IMAGE_VIEW_TYPE_2D) {
-        if (view->base_array_layer > UINT64_MAX / image->array_pitch ||
-            address > UINT64_MAX -
-                (uint64_t)view->base_array_layer * image->array_pitch)
-            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        address += (uint64_t)view->base_array_layer * image->array_pitch;
-    } else if (view->view_type == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
-        image_type = AGC_GFX1013_IMAGE_TYPE_2D_ARRAY;
-        base_array_layer = view->base_array_layer;
-        last_array_layer = view->base_array_layer + view->layer_count - 1u;
-    } else if (view->view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
-               view->view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
-        image_type = AGC_GFX1013_IMAGE_TYPE_CUBE;
-        base_array_layer = view->base_array_layer;
-        last_array_layer = view->base_array_layer + view->layer_count - 1u;
-    } else {
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    }
-    *state = (AgcGfx1013Image2DState){
-        .address = address,
-        .width = image->extent.width,
-        .height = image->extent.height,
-        .format = AGC_GFX1013_IMAGE_FORMAT_RGBA8_UNORM,
-        .image_type = image_type,
-        .dst_sel_x = dst_x,
-        .dst_sel_y = dst_y,
-        .dst_sel_z = dst_z,
-        .dst_sel_w = dst_w,
-        .sample_count = 1u,
-        .base_array_layer = base_array_layer,
-        .last_array_layer = last_array_layer,
-    };
-    return VK_SUCCESS;
-}
-
-static VkResult encode_image_descriptor(
-    const VkPs5DescriptorValue *value, bool storage, void *destination)
-{
-    AgcGfx1013Image2DState image_state;
-    VkResult result = image_descriptor_state(
-        &value->image, storage, &image_state);
-    if (result != VK_SUCCESS) return result;
-    if (agcGfx1013Image2DDescriptorEncode(destination, &image_state) != AGC_OK)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    return VK_SUCCESS;
-}
-
-static VkResult prepare_graphics_descriptor_tables(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
-    uint32_t stage_index, AgcGfx1013ResourceTableBinding *tables,
-    uint32_t *table_count)
-{
-    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[stage_index].metadata;
-    bool used_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS] = {false};
-    *table_count = 0u;
-    for (uint32_t i = 0; i < metadata->user_sgpr_count; ++i) {
-        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[i];
-        if (sgpr->kind != OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET) continue;
-        if (sgpr->index >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
-            !command->graphics_sets[sgpr->index])
-            return VK_ERROR_INITIALIZATION_FAILED;
-        used_sets[sgpr->index] = true;
-    }
-    for (uint32_t i = 0; i < metadata->descriptor_mapping_count; ++i) {
-        const OpenAgcPsbcDescriptorMapping *mapping =
-            &metadata->descriptor_mappings[i];
-        const uint32_t array_size =
-            AGC_SHADER_DESCRIPTOR_ARRAY_SIZE(mapping->array_size);
-        size_t descriptor_size;
-        if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
-            mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER)
-            descriptor_size = sizeof(AgcGfx1013BufferDescriptor);
-        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER)
-            descriptor_size = sizeof(AgcGfx1013CombinedImageSamplerDescriptor);
-        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE)
-            descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
-        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE)
-            descriptor_size = sizeof(AgcGfx1013ImageDescriptor);
-        else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER)
-            descriptor_size = sizeof(AgcSamplerDescriptor);
-        else
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (mapping->set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
-            array_size == 0u ||
-            mapping->byte_offset > VK_PS5_DESCRIPTOR_TABLE_SIZE ||
-            mapping->byte_stride < descriptor_size ||
-            array_size >
-                (VK_PS5_DESCRIPTOR_TABLE_SIZE - mapping->byte_offset) /
-                    mapping->byte_stride)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        VkPs5DescriptorSet *set = command->graphics_sets[mapping->set];
-        if (!set) return VK_ERROR_INITIALIZATION_FAILED;
-        for (uint32_t array = 0; array < array_size; ++array) {
-            VkDescriptorType layout_type;
-            VkPs5DescriptorValue *value = descriptor_value(
-                set, mapping->binding, array, &layout_type);
-            OpenAgcPsbcDescriptorType psbc_type;
-            if (!value || !value->valid ||
-                !psbc_descriptor_type(layout_type, &psbc_type) ||
-                psbc_type != mapping->type)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            size_t offset = mapping->byte_offset +
-                (size_t)array * mapping->byte_stride;
-            void *destination =
-                (uint8_t *)set->table_memory.cpu_address + offset;
-            if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
-                mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER) {
-                VkResult encode_result = encode_buffer_descriptor(
-                    value, destination);
-                if (encode_result != VK_SUCCESS) return encode_result;
-            } else if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLER) {
-                VkPs5Sampler *sampler =
-                    (VkPs5Sampler *)value->image.sampler;
-                if (!sampler) return VK_ERROR_INITIALIZATION_FAILED;
-                memcpy(destination, &sampler->descriptor,
-                       sizeof(sampler->descriptor));
-            } else {
-                if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE) {
-                    VkResult image_result = encode_image_descriptor(
-                        value, true, destination);
-                    if (image_result != VK_SUCCESS) return image_result;
-                    continue;
-                }
-                AgcGfx1013Image2DState image_state;
-                VkResult image_result = image_descriptor_state(
-                    &value->image, false, &image_state);
-                if (image_result != VK_SUCCESS) return image_result;
-                if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE) {
-                    if (agcGfx1013Image2DDescriptorEncode(
-                            destination, &image_state) != AGC_OK)
-                        return VK_ERROR_INITIALIZATION_FAILED;
-                } else {
-                    VkPs5Sampler *sampler =
-                        (VkPs5Sampler *)value->image.sampler;
-                    if (!sampler ||
-                        agcGfx1013CombinedImageSamplerDescriptorEncode(
-                            destination, &image_state,
-                            &sampler->descriptor) != AGC_OK)
-                        return VK_ERROR_INITIALIZATION_FAILED;
-                }
-            }
-        }
-        used_sets[mapping->set] = true;
-    }
-    for (uint32_t set_index = 0;
-         set_index < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set_index) {
-        if (!used_sets[set_index]) continue;
-        VkPs5DescriptorSet *set = command->graphics_sets[set_index];
-        if (agcGpuMemoryFlush(&set->table_memory, 0,
-                VK_PS5_DESCRIPTOR_TABLE_SIZE) != AGC_OK)
-            return VK_ERROR_DEVICE_LOST;
-        tables[*table_count].placeholder =
-            OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(set_index);
-        tables[*table_count].address = descriptor_table_gpu_address(set);
-        (*table_count)++;
-    }
     return VK_SUCCESS;
 }
 
@@ -6703,296 +6149,6 @@ vkCmdBindVertexBuffers(VkCommandBuffer c, uint32_t f, uint32_t n,
         command->vertex_buffers[f + i] = buffer;
         command->vertex_offsets[f + i] = o[i];
     }
-}
-
-static VkResult prepare_vertex_table(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
-    AgcGfx1013ResourceTableBinding *table)
-{
-    if (command->vertex_table_offset >
-            VK_PS5_VERTEX_TABLE_SIZE - VK_PS5_VERTEX_TABLE_SLICE)
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    size_t table_offset = command->vertex_table_offset;
-    AgcGfx1013BufferDescriptor *descriptors =
-        (AgcGfx1013BufferDescriptor *)
-        ((uint8_t *)command->vertex_table_memory.cpu_address + table_offset);
-    memset(descriptors, 0, VK_PS5_VERTEX_TABLE_SLICE);
-    uint32_t descriptor_index = 0u;
-    if (pipeline->robust_buffer_access) {
-        for (uint32_t location = 0;
-             location < OPENAGC_PSBC_MAX_VERTEX_ATTRIBUTES; ++location) {
-            if (!(pipeline->vertex_attribute_mask & (1u << location))) continue;
-            uint32_t binding = pipeline->vertex_attribute_bindings[location];
-            VkPs5Buffer *buffer = command->vertex_buffers[binding];
-            uint32_t stride = pipeline->vertex_strides[binding];
-            uint32_t attribute_offset =
-                pipeline->vertex_attribute_offsets[location];
-            uint32_t attribute_size = pipeline->vertex_attribute_sizes[location];
-            if (!buffer || !buffer->memory || !stride || !attribute_size ||
-                command->vertex_offsets[binding] >= buffer->size ||
-                buffer->memory_offset >
-                    UINT64_MAX - command->vertex_offsets[binding])
-                return VK_ERROR_INITIALIZATION_FAILED;
-            VkDeviceSize available =
-                buffer->size - command->vertex_offsets[binding];
-            VkDeviceSize attribute_available =
-                attribute_offset < available ? available - attribute_offset : 0u;
-            uint64_t record_count = attribute_available >= attribute_size ?
-                1u + (attribute_available - attribute_size) / stride : 0u;
-            if (record_count > UINT32_MAX)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            VkDeviceSize descriptor_offset = command->vertex_offsets[binding];
-            if (attribute_offset < available)
-                descriptor_offset += attribute_offset;
-            if (buffer->memory_offset > UINT64_MAX - descriptor_offset)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
-                buffer->memory_offset + descriptor_offset);
-            if (agcGfx1013BufferDescriptorEncode(
-                    &descriptors[descriptor_index++], address, stride,
-                    (uint32_t)record_count) != AGC_OK)
-                return VK_ERROR_INITIALIZATION_FAILED;
-        }
-    } else {
-        for (uint32_t binding = 0;
-             binding < VK_PS5_MAX_VERTEX_BINDINGS; ++binding) {
-            if (!(pipeline->vertex_binding_mask & (1u << binding))) continue;
-            VkPs5Buffer *buffer = command->vertex_buffers[binding];
-            uint32_t stride = pipeline->vertex_strides[binding];
-            if (!buffer || !buffer->memory || !stride ||
-                command->vertex_offsets[binding] >= buffer->size)
-                return VK_ERROR_INITIALIZATION_FAILED;
-            VkDeviceSize available =
-                buffer->size - command->vertex_offsets[binding];
-            if (available / stride == 0u || available / stride > UINT32_MAX ||
-                buffer->memory_offset >
-                    UINT64_MAX - command->vertex_offsets[binding])
-                return VK_ERROR_INITIALIZATION_FAILED;
-            uint64_t address = vk_ps5_memory_gpu_address(buffer->memory,
-                buffer->memory_offset + command->vertex_offsets[binding]);
-            if (agcGfx1013BufferDescriptorEncode(
-                    &descriptors[descriptor_index++], address, stride,
-                    (uint32_t)(available / stride)) != AGC_OK)
-                return VK_ERROR_INITIALIZATION_FAILED;
-        }
-    }
-    if (agcGpuMemoryFlush(&command->vertex_table_memory, table_offset,
-            VK_PS5_VERTEX_TABLE_SLICE) != AGC_OK)
-        return VK_ERROR_DEVICE_LOST;
-    uint64_t address = command->vertex_table_memory.gpu_address + table_offset;
-#if defined(OPENAGC_GENERIC)
-    address = ((uint64_t)AGC_GFX1013_ADDRESS32_HIGH << 32u) |
-        (uint32_t)address;
-#endif
-    table->placeholder = OPENAGC_VERTEX_BUFFER_TABLE_PLACEHOLDER;
-    table->address = address;
-    command->vertex_table_offset += VK_PS5_VERTEX_TABLE_SLICE;
-    return VK_SUCCESS;
-}
-
-static VkResult prepare_indirect_descriptor_table(
-    VkPs5CommandBuffer *command, VkPs5DescriptorSet *const *sets,
-    uint32_t *table_address)
-{
-    if (!sets || !table_address ||
-        command->vertex_table_offset >
-            VK_PS5_VERTEX_TABLE_SIZE -
-                VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE)
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    size_t table_offset = command->vertex_table_offset;
-    uint32_t *set_addresses = (uint32_t *)(
-        (uint8_t *)command->vertex_table_memory.cpu_address + table_offset);
-    memset(set_addresses, 0, VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE);
-    for (uint32_t set = 0; set < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set) {
-        if (!sets[set])
-            continue;
-        uint64_t set_address = descriptor_table_gpu_address(sets[set]);
-        if ((uint32_t)(set_address >> 32u) !=
-                AGC_GFX1013_ADDRESS32_HIGH || !(uint32_t)set_address)
-            return VK_ERROR_INITIALIZATION_FAILED;
-        set_addresses[set] = (uint32_t)set_address;
-    }
-    if (agcGpuMemoryFlush(&command->vertex_table_memory, table_offset,
-            VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE) != AGC_OK)
-        return VK_ERROR_DEVICE_LOST;
-    uint64_t address = command->vertex_table_memory.gpu_address + table_offset;
-#if defined(OPENAGC_GENERIC)
-    address = ((uint64_t)AGC_GFX1013_ADDRESS32_HIGH << 32u) |
-        (uint32_t)address;
-#endif
-    if ((uint32_t)(address >> 32u) != AGC_GFX1013_ADDRESS32_HIGH)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    *table_address = (uint32_t)address;
-    if (!*table_address)
-        return VK_ERROR_INITIALIZATION_FAILED;
-    command->last_indirect_descriptor_table = *table_address;
-    command->last_indirect_descriptor_table_offset = table_offset;
-    command->vertex_table_offset +=
-        VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE;
-    return VK_SUCCESS;
-}
-
-static VkResult prepare_graphics_stage_user_data(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
-    uint32_t stage_index, bool allow_vertex_table, bool indexed,
-    uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
-    bool indirect_draw, uint32_t *base_vertex_location,
-    uint32_t *start_instance_location, uint32_t *draw_index_location,
-    AgcGfx1013ResourceTableBinding *resource_tables,
-    uint32_t *resource_table_count, AgcRegisterValue *user_data,
-    uint32_t *user_data_count, uint32_t user_data_capacity)
-{
-    const OpenAgcPsbcMetadata *metadata =
-        &pipeline->stages[stage_index].metadata;
-    for (uint32_t n = 0; n < metadata->user_sgpr_count; ++n) {
-        const OpenAgcPsbcUserSgpr *sgpr = &metadata->user_sgprs[n];
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
-            continue;
-        if (sgpr->kind ==
-                OPENAGC_PSBC_USER_SGPR_INDIRECT_DESCRIPTOR_SETS) {
-            if (sgpr->dword_count != 1u ||
-                *user_data_count == user_data_capacity)
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            uint32_t address;
-            VkResult result = prepare_indirect_descriptor_table(
-                command, command->graphics_sets, &address);
-            if (result != VK_SUCCESS)
-                return result;
-            user_data[(*user_data_count)++] = (AgcRegisterValue){
-                sgpr->register_offset, address,
-            };
-            command->last_indirect_descriptor_register =
-                sgpr->register_offset;
-            continue;
-        }
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_VERTEX_BUFFER_TABLE) {
-            if (!allow_vertex_table || *resource_table_count != 0u ||
-                sgpr->dword_count != 1u)
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            VkResult result = prepare_vertex_table(command, pipeline,
-                &resource_tables[*resource_table_count]);
-            if (result != VK_SUCCESS)
-                return result;
-            ++*resource_table_count;
-            continue;
-        }
-        uint32_t value;
-        if (indirect_draw &&
-            (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX ||
-             sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE ||
-             sgpr->kind == OPENAGC_PSBC_USER_SGPR_DRAW_INDEX)) {
-            uint32_t *location = draw_index_location;
-            if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
-                location = base_vertex_location;
-            else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
-                location = start_instance_location;
-            if (!location || *location != UINT32_MAX ||
-                sgpr->dword_count != 1u)
-                return VK_ERROR_FEATURE_NOT_PRESENT;
-            *location = sgpr->register_offset;
-            continue;
-        }
-        if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_BASE_VERTEX)
-            value = indexed ? (uint32_t)vertex_offset : first_element;
-        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_START_INSTANCE)
-            value = first_instance;
-        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_DRAW_INDEX)
-            value = 0u;
-        else if (sgpr->kind == OPENAGC_PSBC_USER_SGPR_PUSH_CONSTANT_POINTER &&
-                 metadata->push_constant_size == 0u)
-            value = 0u;
-        else
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (sgpr->dword_count != 1u ||
-            *user_data_count == user_data_capacity)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        user_data[(*user_data_count)++] = (AgcRegisterValue){
-            sgpr->register_offset, value,
-        };
-    }
-    return VK_SUCCESS;
-}
-
-static bool record_color_blend(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline)
-{
-    int32_t result = agcGfx1013SetColorBlendState(
-        &command->dcb, &pipeline->color_blend);
-    if (result == AGC_OK)
-        return true;
-    command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
-        VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-    return false;
-}
-
-static bool record_raster_state(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
-    AgcGfx1013FrameState *frame)
-{
-    AgcGfx1013PrimitiveSizeState primitive_size = pipeline->primitive_size;
-    if (pipeline->line_width_dynamic) {
-        if (!command->dynamic_line_width_set) {
-            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-            return false;
-        }
-        primitive_size.line_width = command->dynamic_line_width;
-    }
-    int32_t result = agcGfx1013SetPrimitiveSizeState(
-        &command->dcb, &primitive_size);
-    if (result != AGC_OK) {
-        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
-            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-        return false;
-    }
-    result = agcGfx1013ApplyPolygonMode(
-        frame, pipeline->polygon_mode);
-    if (result != AGC_OK) {
-        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-        return false;
-    }
-    frame->raster_mode_control &= ~(
-        (AGC_REG_PA_SU_SC_MODE_CNTL_CULL_FRONT_MASK <<
-            AGC_REG_PA_SU_SC_MODE_CNTL_CULL_FRONT_SHIFT) |
-        (AGC_REG_PA_SU_SC_MODE_CNTL_CULL_BACK_MASK <<
-            AGC_REG_PA_SU_SC_MODE_CNTL_CULL_BACK_SHIFT) |
-        (AGC_REG_PA_SU_SC_MODE_CNTL_FACE_MASK <<
-            AGC_REG_PA_SU_SC_MODE_CNTL_FACE_SHIFT));
-    if (pipeline->cull_mode & AGC_CULL_MODE_FRONT_BIT)
-        frame->raster_mode_control |=
-            1u << AGC_REG_PA_SU_SC_MODE_CNTL_CULL_FRONT_SHIFT;
-    if (pipeline->cull_mode & AGC_CULL_MODE_BACK_BIT)
-        frame->raster_mode_control |=
-            1u << AGC_REG_PA_SU_SC_MODE_CNTL_CULL_BACK_SHIFT;
-    frame->raster_mode_control |= (uint32_t)pipeline->front_face <<
-        AGC_REG_PA_SU_SC_MODE_CNTL_FACE_SHIFT;
-    if (pipeline->rasterizer_discard_enable)
-        frame->clip_control |=
-            1u << AGC_REG_PA_CL_CLIP_CNTL_DX_RASTERIZATION_KILL_SHIFT;
-    frame->primitive_restart_enable = pipeline->primitive_restart_enable;
-    frame->primitive_restart_index = command->index_type ==
-        VK_INDEX_TYPE_UINT16 ? UINT16_MAX : UINT32_MAX;
-    if (!pipeline->depth_bias_enable)
-        return true;
-    AgcGfx1013DepthBiasState state = pipeline->depth_bias;
-    if (pipeline->depth_bias_dynamic) {
-        if (!command->dynamic_depth_bias_set) {
-            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-            return false;
-        }
-        state = command->dynamic_depth_bias;
-    }
-    frame->raster_mode_control |= AGC_GFX1013_DEPTH_BIAS_RASTER_MODE;
-    if (!pipeline->has_depth_stencil ||
-        command->depth_surface_state.format ==
-            AGC_GFX1013_DEPTH_FORMAT_S8_UINT)
-        return true;
-    state.format = command->depth_surface_state.format;
-    result = agcGfx1013SetDepthBiasState(&command->dcb, &state);
-    if (result == AGC_OK)
-        return true;
-    command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
-        VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-    return false;
 }
 
 static VkResult native_bind_graphics_attachments(
@@ -7806,9 +6962,7 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
-    AgcGfx1013FrameState frame = {0};
-    frame.color_target_count = color_count;
-    for (uint32_t slot = 0; slot < color_count; ++slot) {
+    for (uint32_t slot = 0u; slot < color_count; ++slot) {
         uint32_t attachment_index =
             render_pass->subpasses[0].color_attachments[slot];
         if (attachment_index == VK_ATTACHMENT_UNUSED ||
@@ -7820,140 +6974,11 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             &render_pass->attachments[attachment_index];
         VkPs5ImageView *view = framebuffer->attachments[attachment_index];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
-        AgcGfx1013ColorTargetFormat target_format;
-        AgcGfx1013ResourceUsage before;
-        if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-            !image || !image->memory ||
-            !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
-            (image->tiling != VK_IMAGE_TILING_LINEAR &&
-             !image->is_msaa_color_surface) ||
-            !color_target_format(view->format, &target_format) ||
-            !layout_resource_usage(attachment->initialLayout, &before)) {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        AgcGfx1013ColorTargetState *target = slot == 0u ?
-            &frame.color_target : &frame.additional_color_targets[slot - 1u];
-        uint64_t address = vk_ps5_memory_gpu_address(
-            image->memory, image->memory_offset);
-        if (agcGfx1013InitColorTarget(target, address,
-                framebuffer->width, framebuffer->height,
-                target_format) != AGC_OK) {
-            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-            return;
-        }
-        if (image->is_msaa_color_surface) {
-            target->sample_count = 4u;
-            target->fragment_count = 4u;
-            target->swizzle_mode = AGC_GFX1013_SWIZZLE_64KB_R_X;
-        }
-        const AgcGfx1013ResourceTransition transition = {
-            .before = before,
-            .after = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
-        };
-        if (agcGfx1013TransitionResource(
-                &command->dcb, &transition) != AGC_OK) {
-            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
-            return;
-        }
-    }
-    frame.viewport.width = b->renderArea.extent.width;
-    frame.viewport.height = b->renderArea.extent.height;
-    frame.viewport.depth_clip_space = AGC_GFX1013_CLIP_SPACE_ZERO_TO_ONE;
-    frame.scissor.left = (uint32_t)b->renderArea.offset.x;
-    frame.scissor.top = (uint32_t)b->renderArea.offset.y;
-    frame.scissor.right = frame.scissor.left + b->renderArea.extent.width;
-    frame.scissor.bottom = frame.scissor.top + b->renderArea.extent.height;
-    frame.target_mask = color_count == AGC_GFX1013_MAX_COLOR_TARGETS ?
-        UINT32_MAX : (1u << (color_count * 4u)) - 1u;
-    frame.context_load_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
-    frame.context_shadow_control = AGC_GFX1013_CONTEXT_CONTROL_ENABLE;
-    frame.max_vertex_index = UINT32_MAX;
-    frame.ngg_mode_control = AGC_GFX1013_NGG_MODE_CONTROL;
-    frame.vertex_reuse_block_control = AGC_GFX1013_VERTEX_REUSE_BLOCK;
-    frame.instance_step_rate = 1u;
-    frame.clip_control = AGC_GFX1013_VULKAN_CLIP_CONTROL;
-    AgcGfx1013GraphicsDefaultStats stats;
-    if (agcGfx1013BuildFramePrologue(
-            &command->dcb, &frame, &stats) != AGC_OK) {
-        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
-        return;
-    }
-    memset(&command->depth_surface_state, 0,
-           sizeof(command->depth_surface_state));
-    uint32_t depth_index =
-        render_pass->subpasses[0].depth_stencil_attachment;
-    if (depth_index != VK_ATTACHMENT_UNUSED) {
-        const VkAttachmentDescription *depth_attachment =
-            &render_pass->attachments[depth_index];
-        VkPs5ImageView *depth_view = framebuffer->attachments[depth_index];
-        VkPs5Image *depth_image = depth_view ?
-            (VkPs5Image *)depth_view->image : NULL;
-        AgcGfx1013ResourceUsage depth_before;
-        if (depth_attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-            depth_attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-            !depth_image || !depth_image->memory ||
-            !depth_image->is_depth_surface ||
-            !(depth_image->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
-            depth_image->extent.width < framebuffer->width ||
-            depth_image->extent.height < framebuffer->height ||
-            !layout_resource_usage(
-                depth_attachment->initialLayout, &depth_before)) {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        uint64_t depth_base = vk_ps5_memory_gpu_address(
-            depth_image->memory, depth_image->memory_offset);
-        const bool has_depth = depth_image->format != VK_FORMAT_S8_UINT;
-        const bool has_stencil = depth_image->format == VK_FORMAT_S8_UINT ||
-            depth_image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
-            depth_image->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
-        command->depth_surface_state = (AgcGfx1013DepthSurfaceState){
-            .depth_read_address = has_depth ?
-                depth_base + depth_image->depth_plane_offset : 0u,
-            .depth_write_address = has_depth ?
-                depth_base + depth_image->depth_plane_offset : 0u,
-            .stencil_read_address = has_stencil ?
-                depth_base + depth_image->stencil_plane_offset : 0u,
-            .stencil_write_address = has_stencil ?
-                depth_base + depth_image->stencil_plane_offset : 0u,
-            .width = framebuffer->width,
-            .height = framebuffer->height,
-            .format = depth_image->depth_format,
-            .depth_swizzle_mode = has_depth ?
-                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
-            .stencil_swizzle_mode = has_stencil ?
-                AGC_GFX1013_SWIZZLE_64KB_Z_X : 0u,
-            .mip_level_count = 1u,
-            .last_layer = framebuffer->layers - 1u,
-            .sample_count = (uint32_t)depth_image->samples,
-            .depth_read_only = render_pass->subpasses[0].depth_stencil_layout ==
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-            .stencil_read_only = render_pass->subpasses[0].depth_stencil_layout ==
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-        };
-        const AgcGfx1013ResourceTransition depth_transition = {
-            .before = depth_before,
-            .after = render_pass->subpasses[0].depth_stencil_layout ==
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
-                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ :
-                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE,
-        };
-        if (agcGfx1013TransitionResource(
-                &command->dcb, &depth_transition) != AGC_OK) {
-            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
-            return;
-        }
-    }
-    for (uint32_t slot = 0u; slot < color_count; ++slot) {
-        uint32_t attachment_index =
-            render_pass->subpasses[0].color_attachments[slot];
-        const VkAttachmentDescription *attachment =
-            &render_pass->attachments[attachment_index];
-        VkPs5ImageView *view = framebuffer->attachments[attachment_index];
-        VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
         AgcResourceUsage declared_before;
-        if (!image || !native_usage_from_layout(
+        if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            !image || !image->native_image ||
+            !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+            !native_usage_from_layout(
                 attachment->initialLayout, &declared_before)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
@@ -7967,7 +6992,13 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             return;
         }
     }
+    uint32_t depth_index =
+        render_pass->subpasses[0].depth_stencil_attachment;
     if (depth_index != VK_ATTACHMENT_UNUSED) {
+        if (depth_index >= framebuffer->attachment_count) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
         const VkAttachmentDescription *attachment =
             &render_pass->attachments[depth_index];
         VkPs5ImageView *view = framebuffer->attachments[depth_index];
@@ -7978,7 +7009,12 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
             kAgcResourceUsageDepthStencilRead :
             kAgcResourceUsageDepthStencilWrite;
-        if (!image || !native_usage_from_layout(
+        if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
+            !image || !image->native_image || !image->is_depth_surface ||
+            !(image->usage &
+              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
+            !native_usage_from_layout(
                 attachment->initialLayout, &declared_before)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
@@ -7992,7 +7028,6 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             return;
         }
     }
-    command->frame_state = frame;
     command->active_render_pass = render_pass;
     command->active_framebuffer = framebuffer;
     command->active_subpass = 0u;
@@ -8032,21 +7067,10 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
             subpasses[command->active_subpass].color_attachments[slot];
         const VkAttachmentDescription *attachment =
             &command->active_render_pass->attachments[attachment_index];
-        AgcGfx1013ResourceUsage after;
         AgcResourceUsage native_after;
-        if (!layout_resource_usage(attachment->finalLayout, &after) ||
-            !native_usage_from_layout(
+        if (!native_usage_from_layout(
                 attachment->finalLayout, &native_after)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        const AgcGfx1013ResourceTransition transition = {
-            .before = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET,
-            .after = after,
-        };
-        if (agcGfx1013TransitionResource(
-                &command->dcb, &transition) != AGC_OK) {
-            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
             return;
         }
         VkPs5ImageView *view = command->active_framebuffer->attachments[
@@ -8070,29 +7094,15 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
     if (depth_index != VK_ATTACHMENT_UNUSED) {
         const VkAttachmentDescription *depth_attachment =
             &command->active_render_pass->attachments[depth_index];
-        AgcGfx1013ResourceUsage depth_after;
         AgcResourceUsage native_after;
         AgcResourceUsage native_before = command->active_render_pass->
             subpasses[command->active_subpass].depth_stencil_layout ==
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
             kAgcResourceUsageDepthStencilRead :
             kAgcResourceUsageDepthStencilWrite;
-        if (!layout_resource_usage(
-                depth_attachment->finalLayout, &depth_after) ||
-            !native_usage_from_layout(
+        if (!native_usage_from_layout(
                 depth_attachment->finalLayout, &native_after)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
-        const AgcGfx1013ResourceTransition depth_transition = {
-            .before = native_before == kAgcResourceUsageDepthStencilRead ?
-                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ :
-                AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE,
-            .after = depth_after,
-        };
-        if (agcGfx1013TransitionResource(
-                &command->dcb, &depth_transition) != AGC_OK) {
-            command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
             return;
         }
         VkPs5ImageView *view = command->active_framebuffer->attachments[

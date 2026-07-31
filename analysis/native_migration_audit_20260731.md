@@ -1,8 +1,8 @@
 # Vulkan-PS5 Native Migration Audit — 2026-07-31
 
-Living audit of the 26 remaining direct legacy OpenAGC calls in `src/`, with a
-sequencing recommendation that measurably advances the exact-zero goal while
-preserving one ordered native Vulkan queue stream.
+Historical and current audit of Vulkan-PS5's direct low-level OpenAGC calls.
+The mechanically checked inventory reached **exactly zero** on 2026-07-31
+while preserving one ordered native Vulkan queue stream.
 
 ## Current execution revision
 
@@ -17,9 +17,9 @@ The active goal order is now:
 3. **Shader ownership** (complete): code allocation, relocation, flush, and
    fused shader halves are fully behind `AgcShader`; direct draw/dispatch
    recording is native-only.
-4. **Descriptor/tessellation ownership and legacy submission deletion:** remove
-   the duplicate encoder, raw auxiliary allocations, fence labels, and submit
-   path, driving the audit to exactly zero.
+4. **Descriptor/tessellation ownership and legacy submission deletion**
+   (complete, host-qualified): the duplicate encoder, raw auxiliary
+   allocations, fence labels, and submit path are deleted; the audit is zero.
 
 OpenAGC API 39 and Vulkan-PS5 completed `agcCmdUpdateBuffer` and
 `agcCmdFillBuffer` after the initial audit. Those two commands are no longer
@@ -38,7 +38,31 @@ clear/blit/resolve entry points now latch `VK_ERROR_FEATURE_NOT_PRESENT`; none
 can return a successful empty recording. This correctness slice intentionally
 does not change the 34-symbol low-level inventory.
 
-## Current checkpoint: shader execution is native-only (34 → 26)
+## Current checkpoint: native runtime boundary complete (26 → 0)
+
+Vulkan-PS5 now contains no direct `sceAgc*`, `sce_agc_*`, `agcCb*`,
+`agcGfx1013*`, `agcGpuMemory*`, or `agcVideoOut*` call. Descriptor writes and
+vertex/index bindings use typed command APIs. OpenAGC owns sampler border
+tables, shader records, tessellation offchip/factor rings, image layouts,
+command storage, queue submission, finite fence waits, and present chains.
+
+The legacy `SceAgcCb` storage, raw descriptor/vertex tables, flexible-memory
+allocations, EOP labels, DCB submission fallback, tessellation setup, render-
+pass PM4 prologue, and duplicate resource transitions were removed. Vulkan
+image creation now obtains layouts only through `agcGetImageLayout` and
+`agcGetImageSubresourceLayout`. Unsupported command mixtures fail recording
+closed; queue submission never falls back to a second encoder.
+
+`analysis/native_runtime_calls.tsv` intentionally contains only its schema
+header. `tests/native_migration_audit.py` accepts that zero-row inventory and
+continues to fail if a direct low-level symbol reappears. Normal and sanitizer
+host builds pass all 46 CTest gates, and the Prospero target set builds cleanly.
+The focused FW 5.500.008 custom-border gate then passed `covered=18432
+blue=18432 swizzle=BR`, self-exited, and left only the established `amount=0x4000`
+warning; see `examples/qualification-logs/20260731T155934Z-custom-border-color-run1.log`.
+That smoke test does not replace the remaining full FW 5.50 candidate sequence.
+
+## Historical checkpoint: shader execution became native-only (34 → 26)
 
 The ICD no longer owns shader-code allocations, record relocation, cache flush,
 or front/back fusion. `agcCreateShader` copies and relocates complete PSBC
@@ -53,11 +77,8 @@ fixed stale native descriptor/vertex caches: a changed pipeline or descriptor
 set now rebinds rather than returning an incomplete stream. Command tests use
 native draw/dispatch counts as their active oracle.
 
-The mechanically enforced TSV is the exact **26-symbol** source of truth. The
-next slice removes direct descriptor-table encoders and remaining
-tessellation-resource allocation. The final slice deletes Vulkan's legacy
-cursor, frame encoder, raw flexible allocations, and submit/fence path so the
-audit reaches zero.
+At this historical checkpoint the mechanically enforced TSV contained 26
+symbols. The later native-boundary slice removed all of them.
 
 FW 5.500.008 exposed and closed the border-table runtime gap behind this
 reduction. The first native-only custom-border submission failed before its
