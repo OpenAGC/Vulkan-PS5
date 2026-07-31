@@ -59,6 +59,13 @@ tessellation-resource allocation. The final slice deletes Vulkan's legacy
 cursor, frame encoder, raw flexible allocations, and submit/fence path so the
 audit reaches zero.
 
+FW 5.500.008 exposed and closed the border-table runtime gap behind this
+reduction. The first native-only custom-border submission failed before its
+fence; API 42 moved the table allocation, 128-bit entry upload/flush, and base
+register programming into OpenAGC. Candidate
+`53b5f333d704220c91d291d2254534676a7bf6888e0112a30e047109d3d8e025`
+then passed all 18,432 swizzled-blue samples with clean process teardown.
+
 ## 1. Historical pre-shader inventory: how the 34 calls clustered
 
 The mechanically-checked gate is `tests/native_migration_audit.py`, which scans

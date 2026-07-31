@@ -248,6 +248,17 @@ state. The checked direct-call inventory is **26**. Remaining work is direct
 descriptor-table/image-layout ownership followed by deletion of the legacy
 cursor, frame encoder, raw allocator, and submit/fence path.
 
+The first FW 5.500.008 native-only custom-border attempt failed safely at
+submission and exposed that OpenAGC encoded the sampler index without owning
+or programming its table. OpenAGC API 42 now owns the 4,096-entry table and
+programs its base on the native graphics stream; Vulkan passes the exact
+128-bit custom value through `AgcSamplerDesc` v3. Rebuilt candidate
+`53b5f333d704220c91d291d2254534676a7bf6888e0112a30e047109d3d8e025`
+then produced `covered=18432 blue=18432 swizzle=BR`, self-exited, left no
+matching process, and retained only the established raw-ELF `amount=0x4000`
+warning. Evidence is in
+`examples/qualification-logs/20260731T153447Z-custom-border-color-run1.log`.
+
 OpenAGC API 39 adds typed buffer update and fill commands with complete-range
 CopyDestination validation, atomic command-capacity preflight, embedded data,
 and destination retention. Vulkan `vkCmdUpdateBuffer` and `vkCmdFillBuffer`

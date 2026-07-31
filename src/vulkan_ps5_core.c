@@ -311,6 +311,7 @@ typedef struct VkPs5Sampler {
     AgcSamplerDescriptor descriptor;
     VkBool32 custom_border_color;
     uint32_t custom_border_color_index;
+    uint32_t custom_border_color_value[4];
     AgcSampler native_sampler;
 } VkPs5Sampler;
 
@@ -4047,6 +4048,8 @@ static VkResult create_native_sampler(VkDevice device,
     case VK_BORDER_COLOR_INT_CUSTOM_EXT:
         desc.border_color = AGC_SAMPLER_BORDER_CUSTOM;
         desc.custom_border_color_index = sampler->custom_border_color_index;
+        memcpy(desc.custom_border_color, sampler->custom_border_color_value,
+            sizeof(desc.custom_border_color));
         break;
     default:
         desc.border_color = AGC_SAMPLER_BORDER_TRANSPARENT_BLACK; break;
@@ -4155,6 +4158,9 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
             return result;
         }
         sampler->custom_border_color = VK_TRUE;
+        memcpy(sampler->custom_border_color_value,
+            custom_border->customBorderColor.uint32,
+            sizeof(sampler->custom_border_color_value));
         if (agcSamplerDescriptorSetCustomBorderColor(&sampler->descriptor,
                 sampler->custom_border_color_index) != AGC_OK) {
             vk_ps5_device_free_border_color(device,
