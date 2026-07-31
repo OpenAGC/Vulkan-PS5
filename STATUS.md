@@ -342,10 +342,14 @@ accelerated OpenGL; the pinned Mesa EGL/WSI execution gate remains.
 The FW 5.500.008 pbuffer probe now reaches Mesa Zink screen creation, EGL
 context creation, and the expected Vulkan 1.2 renderer string. Vulkan push
 constants are command-buffer state: writes made before or after pipeline bind
-are shadowed per stage and replayed against reflected native ranges before a
-draw or dispatch. Buffer barriers with an access-less source use the tracked
-native state, and same-state buffer/image dependencies still emit an OpenAGC
-transition so visibility is not discarded.
+are shadowed per stage and replayed against the owning stage's reflected native
+range before a draw or dispatch. OpenAGC also gives every stage separate arena
+backing, so overlapping vertex and pixel ranges may retain different values.
+Buffer barriers query the exact byte-range usage and owner from the native
+command buffer instead of relying on the coarse whole-buffer mirror. Same-state
+buffer/image dependencies still emit an OpenAGC transition so visibility is
+not discarded. Generic regressions cover stage-distinct values and a partial
+range followed by a zero-source barrier.
 
 The hardware trace exposed two additional ICD gaps. Zink uses dynamic-rendering
 `loadOp=CLEAR` and a global color-write-to-transfer-read dependency for the
@@ -354,13 +358,15 @@ RGBA8/BGRA8 formats used by the gate. Mesa's readback image also requires the
 mutable `R8G8B8A8`/`A8B8G8R8_PACK32` UNORM/SRGB compatibility class, which is
 now advertised and accepted. The 46-test generic suite remains the gate.
 
-Hardware qualification is still open. An attempted constant-source DMA clear
-timed out the graphics queue and was removed; the source has returned to the
-previously qualified WRITE_DATA fill encoder. The following launch observed a
-user-process abort while the endpoint was still recovering, not a kernel
-panic. Reboot FW 5.50 before retrying the guarded pbuffer/readback run. Do not
-record a passing hash until the rebuilt candidate completes readback, teardown,
-and immediate relaunch.
+Hardware qualification is still open. An incorrect constant-source DMA clear
+timed out the graphics queue and was removed. OpenAGC now uses the established
+seven-dword immediate-source `DMA_DATA` form with bounded chunking; its packet
+and capacity behavior are host-tested but the corrected encoder is not yet
+hardware-qualified. The following launch observed a user-process abort while
+the endpoint was still recovering, not a kernel panic. Reboot FW 5.50 before
+retrying the guarded readback run. Do not record a passing hash until the
+rebuilt candidate completes readback, visible presentation, teardown, and
+immediate relaunch.
 
 ## Milestone 6: multiple viewports (2026-07-29)
 

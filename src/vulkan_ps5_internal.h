@@ -56,6 +56,9 @@ uint32_t vk_ps5_command_buffer_native_draw_count(
 VkBool32 vk_ps5_command_buffer_native_stream_complete(
     VkCommandBuffer command_buffer);
 VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer);
+VkBool32 vk_ps5_command_buffer_push_constant_word(
+    VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
+    uint32_t *value);
 VkBool32 vk_ps5_pipeline_has_native_shaders(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_compute_pipeline(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_graphics_pipeline(VkPipeline pipeline);

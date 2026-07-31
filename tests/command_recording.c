@@ -495,10 +495,18 @@ int main(int argc, char **argv)
     const VkDescriptorSetLayout graphics_set_layouts[] = {
         texture_set_layout, hull_output_set_layout,
     };
+    const VkPushConstantRange graphics_push_range = {
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+            VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0u,
+        .size = sizeof(uint32_t),
+    };
     const VkPipelineLayoutCreateInfo graphics_layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 2,
         .pSetLayouts = graphics_set_layouts,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &graphics_push_range,
     };
     VkPipelineLayout graphics_layout;
     assert(vkCreatePipelineLayout(device, &graphics_layout_info, NULL,
@@ -1126,6 +1134,63 @@ int main(int argc, char **argv)
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_dispatch_count(command) == 1u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    const VkBufferMemoryBarrier whole_write_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = output_buffer,
+        .offset = 0u,
+        .size = VK_WHOLE_SIZE,
+    };
+    const VkBufferMemoryBarrier partial_read_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = output_buffer,
+        .offset = 0u,
+        .size = 16u,
+    };
+    VkBufferMemoryBarrier partial_zero_source_barrier = partial_read_barrier;
+    partial_zero_source_barrier.srcAccessMask = 0u;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
+                         0u, NULL, 1u, &whole_write_barrier, 0u, NULL);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
+                         0u, NULL, 1u, &partial_read_barrier, 0u, NULL);
+    /* A partial transition makes the ICD's whole-buffer mirror mixed.  The
+     * next zero-source barrier must query this exact range from OpenAGC. */
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
+                         0u, NULL, 1u, &partial_zero_source_barrier,
+                         0u, NULL);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    const uint32_t vertex_push_value = UINT32_C(0x11223344);
+    const uint32_t fragment_push_value = UINT32_C(0xaabbccdd);
+    uint32_t cached_push_value = 0u;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPushConstants(command, graphics_layout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0u,
+                       sizeof(vertex_push_value), &vertex_push_value);
+    vkCmdPushConstants(command, graphics_layout,
+                       VK_SHADER_STAGE_FRAGMENT_BIT, 0u,
+                       sizeof(fragment_push_value), &fragment_push_value);
+    assert(vk_ps5_command_buffer_push_constant_word(command,
+        kAgcShaderStageVs, 0u, &cached_push_value));
+    assert(cached_push_value == vertex_push_value);
+    assert(vk_ps5_command_buffer_push_constant_word(command,
+        kAgcShaderStagePs, 0u, &cached_push_value));
+    assert(cached_push_value == fragment_push_value);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
 
     const VkBufferMemoryBarrier native_graphics_barriers[] = {

@@ -561,7 +561,7 @@ typedef struct VkPs5CommandBuffer {
     VkIndexType index_type;
     VkPs5Buffer *vertex_buffers[VK_PS5_MAX_VERTEX_BINDINGS];
     VkDeviceSize vertex_offsets[VK_PS5_MAX_VERTEX_BINDINGS];
-    uint8_t push_constant_data[256u];
+    uint8_t push_constant_data[kAgcShaderStageCount][256u];
     uint64_t push_constant_masks[kAgcShaderStageCount];
     VkPs5NativeBufferState
         native_buffer_states[VK_PS5_MAX_NATIVE_RESOURCE_STATES];
@@ -662,6 +662,23 @@ VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer)
     const VkPs5CommandBuffer *command =
         (const VkPs5CommandBuffer *)command_buffer;
     return command ? command->record_error : VK_ERROR_INITIALIZATION_FAILED;
+}
+
+VkBool32 vk_ps5_command_buffer_push_constant_word(
+    VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
+    uint32_t *value)
+{
+    const VkPs5CommandBuffer *command =
+        (const VkPs5CommandBuffer *)command_buffer;
+    const uint32_t word = offset / sizeof(uint32_t);
+    if (!command || !value || stage >= kAgcShaderStageCount ||
+        (offset & 3u) != 0u || offset > 256u - sizeof(uint32_t) ||
+        (command->push_constant_masks[stage] &
+         (UINT64_C(1) << word)) == 0u)
+        return VK_FALSE;
+    memcpy(value, command->push_constant_data[stage] + offset,
+        sizeof(*value));
+    return VK_TRUE;
 }
 
 static void *alloc_object(VkDevice device, const VkAllocationCallbacks *allocator,
@@ -5683,29 +5700,35 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
     for (uint32_t index = 0u; index < bn; ++index) {
         const VkBufferMemoryBarrier *barrier = &b[index];
         VkPs5Buffer *buffer = (VkPs5Buffer *)barrier->buffer;
-        AgcResourceUsage before;
         AgcResourceUsage after;
         uint64_t size = barrier->size == VK_WHOLE_SIZE ?
             buffer->size - barrier->offset : barrier->size;
+        AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
         AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
-        (void)native_usage_from_access(barrier->srcAccessMask,
-                                       VK_IMAGE_LAYOUT_GENERAL, &before);
         (void)native_usage_from_access(barrier->dstAccessMask,
                                        VK_IMAGE_LAYOUT_GENERAL, &after);
-        AgcResourceUsage current =
-            native_buffer_recorded_usage(command, buffer);
-        AgcResourceUsage effective_before = before ==
-            kAgcResourceUsageUndefined ? current : before;
+        int32_t result = agcGetCommandBufferRangeStateInfo(
+            command->native_graphics_command_buffer, buffer->native_buffer,
+            barrier->offset, size, &state);
+        if (result != AGC_OK) {
+            command->record_error = native_command_result(result);
+            return;
+        }
+        /* Buffer access masks define synchronization scopes, not layouts.
+         * Derive the native prior usage and owner from the exact range so a
+         * partial transition or a zero source mask cannot stale the coarse
+         * whole-buffer mirror. */
+        AgcResourceUsage effective_before = state.usage;
         AgcResourceUsage effective_after = after ==
             kAgcResourceUsageUndefined ? effective_before : after;
         transition.before = effective_before;
         transition.after = effective_after;
-        transition.before_owner = native_owner_for_usage(transition.before);
+        transition.before_owner = state.owner;
         transition.after_owner = native_owner_for_usage(transition.after);
         transition.buffer = buffer->native_buffer;
         transition.buffer_offset = barrier->offset;
         transition.buffer_size = size;
-        int32_t result = agcCmdTransitionResources(
+        result = agcCmdTransitionResources(
             command->native_graphics_command_buffer, 1u, &transition);
         AgcResourceUsage tracked_after = barrier->offset == 0u &&
             size == buffer->size ? effective_after :
@@ -5977,20 +6000,15 @@ static VkResult native_replay_push_constants(
                 &reflection->push_constant_ranges[range_index];
             uint64_t required = native_push_constant_mask(
                 range->offset, range->size);
-            uint32_t ready_stages = 0u;
-            for (uint32_t stage = 0u;
-                 stage < kAgcShaderStageCount; ++stage) {
-                uint32_t stage_bit = 1u << stage;
-                if ((range->stage_mask & stage_bit) != 0u &&
-                    (command->push_constant_masks[stage] & required) ==
-                        required)
-                    ready_stages |= stage_bit;
-            }
-            if (ready_stages != 0u) {
+            const uint32_t stage = reflection->stage;
+            const uint32_t stage_bit = 1u << stage;
+            if ((range->stage_mask & stage_bit) != 0u &&
+                (command->push_constant_masks[stage] & required) ==
+                    required) {
                 int32_t result = agcCmdPushConstants(
-                    command->native_graphics_command_buffer, ready_stages,
+                    command->native_graphics_command_buffer, stage_bit,
                     range->offset, range->size,
-                    command->push_constant_data + range->offset);
+                    command->push_constant_data[stage] + range->offset);
                 if (result != AGC_OK)
                     return native_command_result(result);
             }
@@ -6245,11 +6263,13 @@ vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
         stage_mask |= (1u << kAgcShaderStagePs);
     if (stages & VK_SHADER_STAGE_COMPUTE_BIT)
         stage_mask |= (1u << kAgcShaderStageCs);
-    memcpy(command->push_constant_data + o, v, n);
     uint64_t written = native_push_constant_mask(o, n);
-    for (uint32_t stage = 0u; stage < kAgcShaderStageCount; ++stage)
-        if ((stage_mask & (1u << stage)) != 0u)
+    for (uint32_t stage = 0u; stage < kAgcShaderStageCount; ++stage) {
+        if ((stage_mask & (1u << stage)) != 0u) {
+            memcpy(command->push_constant_data[stage] + o, v, n);
             command->push_constant_masks[stage] |= written;
+        }
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) {
