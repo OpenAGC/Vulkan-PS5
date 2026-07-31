@@ -28,7 +28,10 @@
 #include "vulkan_ps5_indexed_textured_vert_spv.h"
 #define SAMPLE_VERTEX_SPV vulkan_ps5_indexed_textured_vert_spv
 #endif
-#if defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
+#if defined(VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE)
+#include "vulkan_ps5_custom_border_color_frag_spv.h"
+#define SAMPLE_FRAGMENT_SPV vulkan_ps5_custom_border_color_frag_spv
+#elif defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
 #ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
 #include "vulkan_ps5_partial_sample_rate_shading_frag_spv.h"
 #define SAMPLE_FRAGMENT_SPV vulkan_ps5_partial_sample_rate_shading_frag_spv
@@ -56,7 +59,11 @@
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
 
-#ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+#define SAMPLE_NAME "custom_border_color"
+#define SAMPLE_ADDRESS_MODE VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+#define SAMPLE_FILTER VK_FILTER_NEAREST
+#elif defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
 #ifdef VULKAN_PS5_SAMPLE_RATE_SHADING_PARTIAL_PROBE
 #define SAMPLE_NAME "partial_sample_rate_shading"
 #else
@@ -174,7 +181,40 @@ int main(void)
     uint32_t physical_count = 1u;
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &physical_count, &physical));
     if (physical_count != 1u) return 1;
-#if defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
+#if defined(VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE)
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT supported_custom_border = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT,
+    };
+    VkPhysicalDeviceBorderColorSwizzleFeaturesEXT supported_border_swizzle = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT,
+        .pNext = &supported_custom_border,
+    };
+    VkPhysicalDeviceFeatures2 supported_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &supported_border_swizzle,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &supported_features);
+    if (!supported_custom_border.customBorderColors ||
+        !supported_custom_border.customBorderColorWithoutFormat ||
+        !supported_border_swizzle.borderColorSwizzleFromImage) {
+        printf("custom_border_color: required feature contract is unavailable\n");
+        return 1;
+    }
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT enabled_custom_border = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT,
+        .customBorderColors = VK_TRUE,
+        .customBorderColorWithoutFormat = VK_TRUE,
+    };
+    VkPhysicalDeviceBorderColorSwizzleFeaturesEXT enabled_border_swizzle = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT,
+        .pNext = &enabled_custom_border,
+        .borderColorSwizzleFromImage = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
     VkPhysicalDeviceFeatures supported_features;
     vkGetPhysicalDeviceFeatures(physical, &supported_features);
     if (!supported_features.sampleRateShading) {
@@ -289,7 +329,12 @@ int main(void)
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
-#if defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
+#if defined(VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE)
+    const char *const device_extensions[] = {
+        VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME,
+        VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME,
+    };
+#elif defined(VULKAN_PS5_MIRROR_CLAMP_PROBE)
     const char *const device_extensions[] = {
         VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
     };
@@ -302,7 +347,11 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-#if defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
+#if defined(VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE)
+        .pNext = &enabled_border_swizzle,
+        .enabledExtensionCount = 2u,
+        .ppEnabledExtensionNames = device_extensions,
+#elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE) || \
     defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE) || \
     defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE) || \
     defined(VULKAN_PS5_IMAGE_GATHER_PROBE) || \
@@ -568,20 +617,39 @@ int main(void)
     VK_CHECK(vkCreateImageView(device, &target_view_info, NULL, &target_view));
     VkImageViewCreateInfo texture_view_info = target_view_info;
     texture_view_info.image = texture;
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+    texture_view_info.components = (VkComponentMapping){
+        VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G,
+        VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_A,
+    };
+#endif
 #ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
     texture_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
     texture_view_info.subresourceRange.layerCount = 12u;
 #endif
     VkImageView texture_view;
     VK_CHECK(vkCreateImageView(device, &texture_view_info, NULL, &texture_view));
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+    const VkSamplerCustomBorderColorCreateInfoEXT custom_border_info = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT,
+        .customBorderColor = {.float32 = {1.0f, 0.0f, 0.0f, 1.0f}},
+        .format = VK_FORMAT_UNDEFINED,
+    };
+#endif
     const VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+        .pNext = &custom_border_info,
+#endif
         .magFilter = SAMPLE_FILTER,
         .minFilter = SAMPLE_FILTER,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
         .addressModeU = SAMPLE_ADDRESS_MODE,
         .addressModeV = SAMPLE_ADDRESS_MODE,
         .addressModeW = SAMPLE_ADDRESS_MODE,
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+        .borderColor = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT,
+#endif
     };
     VkSampler sampler;
     VK_CHECK(vkCreateSampler(device, &sampler_info, NULL, &sampler));
@@ -947,9 +1015,39 @@ int main(void)
         .image = texture,
         .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
     };
+#ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
+    const VkBufferMemoryBarrier native_buffer_barriers[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = 0u,
+            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = vertex_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = 0u,
+            .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = indirect_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+            VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, NULL, 2, native_buffer_barriers, 1, &texture_barrier);
+#else
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
         &texture_barrier);
+#endif
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
@@ -982,7 +1080,12 @@ int main(void)
                       sizeof(VkDrawIndirectCommand));
 #endif
 #else
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+    vkCmdBindIndexBuffer2(command, index_buffer, 0, sizeof(indices),
+        VK_INDEX_TYPE_UINT16);
+#else
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+#endif
     vkCmdDrawIndexed(command, 3,
 #ifdef VULKAN_PS5_VERTEX_DIVISOR_PROBE
         4,
@@ -1072,7 +1175,30 @@ int main(void)
         TARGET_WIDTH / 2u];
 #endif
     int status = 0;
-#ifdef VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE
+#ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+#if defined(OPENAGC_PROSPERO)
+    uint32_t blue = 0u, unexpected = 0u;
+    for (uint32_t i = 0u; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
+        if (pixels[i] == 0xffff0000u) blue++;
+        else if (pixels[i] != 0u) unexpected++;
+    }
+    if (covered != 18432u || opaque != covered || blue != covered ||
+        unexpected != 0u || center != 0xffff0000u || pixels[0] != 0u ||
+        pixels[TARGET_WIDTH - 1u] != 0u) {
+        printf("custom_border_color: mismatch covered=%u blue=%u unexpected=%u center=%08x\n",
+            covered, blue, unexpected, center);
+        status = 1;
+    } else {
+        printf("custom_border_color: PASS covered=%u blue=%u swizzle=BR\n",
+            covered, blue);
+    }
+#else
+    (void)center;
+    (void)covered;
+    (void)opaque;
+    printf("custom_border_color: PASS command-recording\n");
+#endif
+#elif defined(VULKAN_PS5_IMAGE_CUBE_ARRAY_PROBE)
     uint32_t red = 0u, green = 0u, unexpected = 0u;
     for (uint32_t i = 0u; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
         if (pixels[i] == 0xff0000ffu) red++;

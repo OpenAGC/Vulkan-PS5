@@ -1,0 +1,14 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer ScalarProbe {
+    vec3 values[2];
+    uint result;
+} probe;
+
+void main()
+{
+    probe.result = floatBitsToUint(probe.values[1].x) ^ 0x5a5a5a5au;
+}

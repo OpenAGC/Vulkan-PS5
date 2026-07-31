@@ -5,6 +5,8 @@
 #include <string.h>
 #include <time.h>
 
+VkBool32 vk_ps5_swapchain_has_native_present_chain(VkSwapchainKHR swapchain);
+
 #define CHECK(call) do { \
     VkResult check_result = (call); \
     if (check_result != VK_SUCCESS) { \
@@ -120,13 +122,19 @@ int main(void) {
     extension_count = 0;
     CHECK(vkEnumerateDeviceExtensionProperties(physical_device, NULL,
                                                 &extension_count, NULL));
-    VkExtensionProperties device_extensions[16];
-    if (extension_count > 16) return 1;
+VkExtensionProperties device_extensions[32];
+if (extension_count > 32) return 1;
     CHECK(vkEnumerateDeviceExtensionProperties(physical_device, NULL,
                                                 &extension_count,
                                                 device_extensions));
     if (!has_extension(device_extensions, extension_count,
-                       VK_KHR_SWAPCHAIN_EXTENSION_NAME))
+                       VK_KHR_SWAPCHAIN_EXTENSION_NAME) ||
+        !has_extension(device_extensions, extension_count,
+                       VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME) ||
+        !has_extension(device_extensions, extension_count,
+                       VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME) ||
+        !has_extension(device_extensions, extension_count,
+                       VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME))
         return 1;
 
     float priority = 1.0f;
@@ -138,12 +146,15 @@ int main(void) {
     };
     const char *enabled_device_extensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
+        VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME,
+        VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME,
     };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = 4,
         .ppEnabledExtensionNames = enabled_device_extensions,
     };
     VkDevice device = VK_NULL_HANDLE;
@@ -151,8 +162,19 @@ int main(void) {
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
 
+    const VkFormat mutable_formats[] = {
+        VK_FORMAT_B8G8R8A8_SRGB,
+        VK_FORMAT_B8G8R8A8_UNORM,
+    };
+    const VkImageFormatListCreateInfo format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = 2,
+        .pViewFormats = mutable_formats,
+    };
     VkSwapchainCreateInfoKHR swapchain_info = {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = &format_list,
+        .flags = VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR,
         .surface = surface,
         .minImageCount = 3,
         .imageFormat = format.format,
@@ -169,6 +191,7 @@ int main(void) {
     };
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     CHECK(vkCreateSwapchainKHR(device, &swapchain_info, NULL, &swapchain));
+    if (!vk_ps5_swapchain_has_native_present_chain(swapchain)) return 1;
 
     uint32_t image_count = 0;
     CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, NULL));
@@ -179,6 +202,63 @@ int main(void) {
         VK_INCOMPLETE || short_count != 2)
         return 1;
     CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, images));
+    const VkCommandPoolCreateInfo command_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = 0,
+    };
+    VkCommandPool command_pool = VK_NULL_HANDLE;
+    CHECK(vkCreateCommandPool(device, &command_pool_info, NULL,
+                              &command_pool));
+    VkCommandBuffer present_commands[3] = {VK_NULL_HANDLE};
+    const VkCommandBufferAllocateInfo command_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 3,
+    };
+    CHECK(vkAllocateCommandBuffers(device, &command_allocate_info,
+                                   present_commands));
+    for (uint32_t i = 0; i < 3; ++i) {
+        const VkCommandBufferBeginInfo begin = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        CHECK(vkBeginCommandBuffer(present_commands[i], &begin));
+        const VkImageMemoryBarrier barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = images[i],
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        };
+        vkCmdPipelineBarrier(present_commands[i],
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL,
+            1, &barrier);
+        CHECK(vkEndCommandBuffer(present_commands[i]));
+    }
+    const VkImageViewCreateInfo mutable_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = images[0],
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+        },
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
+            .layerCount = 1,
+        },
+    };
+    VkImageView mutable_view = VK_NULL_HANDLE;
+    CHECK(vkCreateImageView(device, &mutable_view_info, NULL, &mutable_view));
+    vkDestroyImageView(device, mutable_view, NULL);
 
     const VkSemaphoreCreateInfo semaphore_info = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -221,8 +301,23 @@ int main(void) {
         const VkSemaphore present_semaphore = i == 0 ?
             acquire_semaphores[3] : acquire_semaphores[i];
         VkResult per_swapchain = VK_SUCCESS;
+        const VkRectLayerKHR present_rectangle = {
+            .offset = {0, 0},
+            .extent = capabilities.currentExtent,
+            .layer = 0,
+        };
+        const VkPresentRegionKHR present_region = {
+            .rectangleCount = 1,
+            .pRectangles = &present_rectangle,
+        };
+        const VkPresentRegionsKHR present_regions = {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR,
+            .swapchainCount = 1,
+            .pRegions = &present_region,
+        };
         const VkPresentInfoKHR present_info = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .pNext = &present_regions,
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &present_semaphore,
             .swapchainCount = 1,
@@ -279,6 +374,7 @@ int main(void) {
 
     vkDestroySwapchainKHR(device, swapchain, NULL);
     vkDestroySwapchainKHR(device, replacement, NULL);
+    vkDestroyCommandPool(device, command_pool, NULL);
     for (uint32_t i = 0; i < 4; ++i)
         vkDestroySemaphore(device, acquire_semaphores[i], NULL);
     vkDestroyDevice(device, NULL);

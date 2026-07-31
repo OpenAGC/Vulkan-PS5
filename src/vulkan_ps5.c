@@ -6,13 +6,15 @@
 #include "agc_graphics.h"
 #include "agc_memory.h"
 #include "agcdriver.h"
+#include "openagc/runtime.h"
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define VK_PS5_API_VERSION VK_MAKE_API_VERSION(0, 1, 1, 0)
+#define VK_PS5_API_VERSION VK_MAKE_API_VERSION(0, 1, 2, 0)
 #define VK_PS5_VENDOR_ID 0x1002u
 #define VK_PS5_DEVICE_ID 0x163fu
 
@@ -40,6 +42,7 @@ struct VkPs5Queue {
     AgcGpuMemory submit_memory;
     atomic_uint_fast32_t next_submission;
     atomic_flag submit_lock;
+    AgcFence present_ready_fence;
 };
 
 struct VkPs5Device {
@@ -47,6 +50,9 @@ struct VkPs5Device {
     VkAllocationCallbacks allocator;
     VkBool32 has_allocator;
     VkPs5PhysicalDevice *physical_device;
+    AgcDevice native_device;
+    AgcQueue native_graphics_queue;
+    AgcQueue native_compute_queue;
     VkPs5Queue queue;
     AgcGpuMemory tess_offchip_memory;
     AgcGpuMemory tess_factor_memory;
@@ -55,33 +61,45 @@ struct VkPs5Device {
     atomic_flag tessellation_lock;
     VkBool32 tessellation_ready;
     VkBool32 robust_buffer_access;
+    AgcGpuMemory border_color_memory;
+    atomic_flag border_color_lock;
+    uint64_t border_color_slots;
     atomic_uint memory_allocation_count;
 };
 
 struct VkPs5Memory {
-    AgcGpuMemory gpu_memory;
+    AgcDevice device;
+    AgcMemory native_memory;
     void *data;
     VkDeviceSize size;
     uint32_t memory_type_index;
 };
 
-static AgcGfx1013Capabilities ps5_capabilities(void) {
-    AgcGfx1013Capabilities capabilities;
-    int32_t result = agcGfx1013GetCapabilities(&capabilities);
-    if (result != AGC_OK) memset(&capabilities, 0, sizeof(capabilities));
+static void PS5_SYSV_ABI vk_ps5_native_debug_message(
+    void *user_data, const AgcDebugMessage *message)
+{
+    (void)user_data;
+    (void)message;
+}
+
+static AgcDeviceProperties ps5_capabilities(void) {
+    AgcDeviceProperties capabilities = AGC_DEVICE_PROPERTIES_INIT;
+    int32_t result = agcGetDeviceProperties(NULL, &capabilities);
+    if (result != AGC_OK)
+        capabilities = (AgcDeviceProperties)AGC_DEVICE_PROPERTIES_INIT;
     return capabilities;
 }
 
 static VkMemoryPropertyFlags ps5_memory_flags(
-    AgcGfx1013MemoryPropertyFlags flags) {
+    AgcMemoryPropertyFlags flags) {
     VkMemoryPropertyFlags result = 0;
-    if (flags & AGC_GFX1013_MEMORY_DEVICE_LOCAL_BIT)
+    if (flags & AGC_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
         result |= VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    if (flags & AGC_GFX1013_MEMORY_HOST_VISIBLE_BIT)
+    if (flags & AGC_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
         result |= VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    if (flags & AGC_GFX1013_MEMORY_HOST_COHERENT_BIT)
+    if (flags & AGC_MEMORY_PROPERTY_HOST_COHERENT_BIT)
         result |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    if (flags & AGC_GFX1013_MEMORY_HOST_CACHED_BIT)
+    if (flags & AGC_MEMORY_PROPERTY_HOST_CACHED_BIT)
         result |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     return result;
 }
@@ -245,12 +263,140 @@ VkResult vk_ps5_queue_submit_dcb(
     *label = value;
 #endif
     if (agcGpuMemoryWait32(&queue->submit_memory, VK_PS5_DCB_SIZE,
-            value, 5000000u) != AGC_OK)
+            value, 5000000u) != AGC_OK) {
         result = VK_ERROR_DEVICE_LOST;
+    } else {
+        AgcFenceDesc fence_desc = AGC_FENCE_DESC_INIT;
+        AgcFence completed = NULL;
+        fence_desc.signaled = 1u;
+        if (agcCreateFence(queue->device->native_device,
+                &fence_desc, &completed) != AGC_OK) {
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        } else {
+            (void)agcDestroyFence(queue->present_ready_fence);
+            queue->present_ready_fence = completed;
+        }
+    }
 
 done:
     atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
     return result;
+}
+
+VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
+    uint32_t command_buffer_count,
+    const AgcCommandBuffer *command_buffers)
+{
+    VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
+    AgcFence fence = NULL;
+    AgcFenceDesc fence_desc = AGC_FENCE_DESC_INIT;
+    AgcSubmitInfo submit = AGC_SUBMIT_INFO_INIT;
+    int32_t result;
+
+    if (!queue || !queue->device || !queue->device->native_graphics_queue ||
+        !command_buffer_count || !command_buffers)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    while (atomic_flag_test_and_set_explicit(
+        &queue->submit_lock, memory_order_acquire)) {}
+    result = agcCreateFence(queue->device->native_device,
+        &fence_desc, &fence);
+    if (result != AGC_OK) {
+        atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
+        return result == AGC_ERROR_OUT_OF_MEMORY ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_DEVICE_LOST;
+    }
+    submit.command_buffer_count = command_buffer_count;
+    submit.command_buffers = command_buffers;
+    result = agcQueueSubmit(queue->device->native_graphics_queue,
+        &submit, fence);
+    if (result == AGC_OK)
+        result = agcWaitFence(fence, UINT64_C(5000000000));
+    if (result == AGC_OK) {
+        (void)agcDestroyFence(queue->present_ready_fence);
+        queue->present_ready_fence = fence;
+        fence = NULL;
+    }
+    if (fence && agcDestroyFence(fence) != AGC_OK && result == AGC_OK)
+        result = AGC_ERROR_INVALID_STATE;
+    atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
+    if (result == AGC_OK)
+        return VK_SUCCESS;
+    if (result == AGC_ERROR_OUT_OF_MEMORY)
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    if (result == AGC_ERROR_NOT_SUPPORTED)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    return VK_ERROR_DEVICE_LOST;
+}
+
+VkResult vk_ps5_queue_present_native(VkQueue queue_handle,
+    AgcPresentChain present_chain, uint32_t image_index, uint64_t frame_id,
+    uint64_t timeout_ns)
+{
+    VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
+    if (!queue || !present_chain || !queue->present_ready_fence)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    while (atomic_flag_test_and_set_explicit(
+        &queue->submit_lock, memory_order_acquire)) {}
+    int32_t result = agcPresent(present_chain, image_index, frame_id,
+        queue->present_ready_fence, timeout_ns);
+    atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
+    if (result == AGC_OK)
+        return VK_SUCCESS;
+    if (result == AGC_ERROR_TIMEOUT || result == AGC_ERROR_BUSY)
+        return VK_TIMEOUT;
+    if (result == AGC_ERROR_INVALID_STATE)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    return VK_ERROR_SURFACE_LOST_KHR;
+}
+
+VkResult vk_ps5_device_initialize_present_images(VkDevice device_handle,
+    uint32_t image_count, const AgcImage *images)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    AgcCommandBufferDesc command_desc = AGC_COMMAND_BUFFER_DESC_INIT;
+    AgcCommandBuffer command = NULL;
+    AgcResourceTransition transitions[16];
+    VkResult result = VK_ERROR_INITIALIZATION_FAILED;
+    uint32_t i;
+    int32_t native_result;
+
+    if (!device || !images || image_count < 2u || image_count > 16u)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    command_desc.queue_type = kAgcQueueGraphics;
+    command_desc.capacity_dwords = 512u;
+    native_result = agcCreateCommandBuffer(device->native_device,
+        &command_desc, &command);
+    if (native_result != AGC_OK)
+        return native_result == AGC_ERROR_OUT_OF_MEMORY ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
+    native_result = agcBeginCommandBuffer(command);
+    for (i = 0u; native_result == AGC_OK && i < image_count; ++i) {
+        transitions[i] = (AgcResourceTransition)AGC_RESOURCE_TRANSITION_INIT;
+        transitions[i].resource_type = kAgcResourceTypeImage;
+        transitions[i].before = kAgcResourceUsageUndefined;
+        transitions[i].after = kAgcResourceUsageVideoOutScanout;
+        transitions[i].before_owner = kAgcResourceOwnerHost;
+        transitions[i].after_owner = kAgcResourceOwnerGraphics;
+        transitions[i].image = images[i];
+        transitions[i].image_range =
+            (AgcImageSubresourceRange)AGC_IMAGE_SUBRESOURCE_RANGE_INIT;
+    }
+    if (native_result == AGC_OK)
+        native_result = agcCmdTransitionResources(command, image_count,
+            transitions);
+    if (native_result == AGC_OK)
+        native_result = agcEndCommandBuffer(command);
+    if (native_result == AGC_OK) {
+        AgcCommandBuffer submitted = command;
+        result = vk_ps5_queue_submit_native((VkQueue)&device->queue,
+            1u, &submitted);
+    }
+    if (result == VK_SUCCESS)
+        (void)agcResetCommandBuffer(command);
+    (void)agcDestroyCommandBuffer(command);
+    return native_result == AGC_OK ? result :
+        native_result == AGC_ERROR_OUT_OF_MEMORY ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
 }
 
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory_handle) {
@@ -262,7 +408,27 @@ uint64_t vk_ps5_memory_gpu_address(
     VkDeviceMemory memory_handle, VkDeviceSize offset) {
     VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
     if (!memory || offset > memory->size) return 0;
-    return memory->gpu_memory.gpu_address + offset;
+    AgcAllocationInfo info = AGC_ALLOCATION_INFO_INIT;
+    if (agcGetObjectAllocationInfo(memory->device, AGC_OBJECT_TYPE_MEMORY,
+            memory->native_memory, &info) != AGC_OK ||
+        offset > UINT64_MAX - info.gpu_address)
+        return 0;
+    return info.gpu_address + offset;
+}
+
+AgcDevice vk_ps5_native_device(VkDevice device_handle) {
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    return device ? device->native_device : NULL;
+}
+
+AgcMemory vk_ps5_native_memory(VkDeviceMemory memory_handle) {
+    VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
+    return memory ? memory->native_memory : NULL;
+}
+
+uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory_handle) {
+    VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
+    return memory ? memory->memory_type_index : UINT32_MAX;
 }
 
 static VkResult enumerate_items(uint32_t total, size_t item_size, const void *items,
@@ -290,9 +456,33 @@ static const VkExtensionProperties instance_extensions[] = {
 };
 
 static const VkExtensionProperties device_extensions[] = {
-    { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
-    { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
-      VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
+{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
+{ VK_KHR_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_MAINTENANCE_1_SPEC_VERSION },
+{ VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
+VK_KHR_CREATE_RENDERPASS_2_SPEC_VERSION },
+{ VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME,
+VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_SPEC_VERSION },
+{ VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+VK_KHR_TIMELINE_SEMAPHORE_SPEC_VERSION },
+{ VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME,
+VK_KHR_IMAGE_FORMAT_LIST_SPEC_VERSION },
+{ VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_EXTENSION_NAME,
+VK_KHR_SWAPCHAIN_MUTABLE_FORMAT_SPEC_VERSION },
+{ VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME,
+VK_KHR_INCREMENTAL_PRESENT_SPEC_VERSION },
+{ VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+VK_EXT_LINE_RASTERIZATION_SPEC_VERSION },
+{ VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+VK_EXT_SCALAR_BLOCK_LAYOUT_SPEC_VERSION },
+{ VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+VK_KHR_DYNAMIC_RENDERING_SPEC_VERSION },
+{ VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME,
+VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION },
+{ VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME,
+VK_EXT_BORDER_COLOR_SWIZZLE_SPEC_VERSION },
+{ VK_KHR_MAINTENANCE_5_EXTENSION_NAME, VK_KHR_MAINTENANCE_5_SPEC_VERSION },
+{ VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
+VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
     { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
       VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_SPEC_VERSION },
     { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
@@ -352,7 +542,7 @@ vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo,
         if (VK_API_VERSION_VARIANT(requested) != 0 ||
             VK_API_VERSION_MAJOR(requested) > 1 ||
             (VK_API_VERSION_MAJOR(requested) == 1 &&
-             VK_API_VERSION_MINOR(requested) > 1))
+             VK_API_VERSION_MINOR(requested) > 2))
             return VK_ERROR_INCOMPATIBLE_DRIVER;
     }
 
@@ -412,7 +602,7 @@ vkEnumeratePhysicalDeviceGroups(VkInstance instance, uint32_t *pPhysicalDeviceGr
 }
 
 static void fill_properties(VkPhysicalDeviceProperties *properties) {
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     memset(properties, 0, sizeof(*properties));
     properties->apiVersion = VK_PS5_API_VERSION;
     properties->driverVersion = VK_MAKE_VERSION(0, 1, 0);
@@ -552,6 +742,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     memset(features, 0, sizeof(*features));
     features->robustBufferAccess = VK_TRUE;
     features->dualSrcBlend = VK_TRUE;
+    features->alphaToOne = VK_TRUE;
     features->depthBiasClamp = VK_TRUE;
     features->depthClamp = VK_TRUE;
     features->drawIndirectFirstInstance = VK_TRUE;
@@ -585,17 +776,17 @@ vkGetPhysicalDeviceFeatures(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFea
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice physicalDevice,
                                     VkPhysicalDeviceMemoryProperties *pMemoryProperties) {
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     (void)physicalDevice;
     if (!pMemoryProperties) return;
     memset(pMemoryProperties, 0, sizeof(*pMemoryProperties));
-    pMemoryProperties->memoryTypeCount = capabilities.memory_profile_count;
-    pMemoryProperties->memoryHeapCount = capabilities.memory_profile_count;
-    for (uint32_t i = 0; i < capabilities.memory_profile_count; ++i) {
+    pMemoryProperties->memoryTypeCount = capabilities.memory_heap_count;
+    pMemoryProperties->memoryHeapCount = capabilities.memory_heap_count;
+    for (uint32_t i = 0; i < capabilities.memory_heap_count; ++i) {
         pMemoryProperties->memoryTypes[i].propertyFlags =
-            ps5_memory_flags(capabilities.memory_profiles[i].property_flags);
+            ps5_memory_flags(capabilities.memory_heaps[i].property_flags);
         pMemoryProperties->memoryTypes[i].heapIndex = i;
-        pMemoryProperties->memoryHeaps[i].size = capabilities.memory_profiles[i].size;
+        pMemoryProperties->memoryHeaps[i].size = capabilities.memory_heaps[i].size;
         pMemoryProperties->memoryHeaps[i].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
     }
 }
@@ -623,7 +814,7 @@ vkGetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice,
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat format,
                                     VkFormatProperties *pFormatProperties) {
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     int color_index = ps5_color_format(format);
     int depth_index = ps5_depth_format(format);
     (void)physicalDevice;
@@ -694,7 +885,7 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
                                          VkImageType type, VkImageTiling tiling,
                                          VkImageUsageFlags usage, VkImageCreateFlags flags,
                                          VkImageFormatProperties *pImageFormatProperties) {
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     (void)physicalDevice;
     if (!pImageFormatProperties) return VK_ERROR_INITIALIZATION_FAILED;
     memset(pImageFormatProperties, 0, sizeof(*pImageFormatProperties));
@@ -752,7 +943,7 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
         !(usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                     VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)))
         pImageFormatProperties->sampleCounts |= VK_SAMPLE_COUNT_4_BIT;
-    pImageFormatProperties->maxResourceSize = capabilities.memory_profiles[0].size;
+    pImageFormatProperties->maxResourceSize = capabilities.memory_heaps[0].size;
     return VK_SUCCESS;
 }
 
@@ -780,7 +971,7 @@ vkEnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice, const char
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                                VkPhysicalDeviceProperties2 *pProperties) {
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     if (!pProperties) return;
     fill_properties(&pProperties->properties);
     for (VkBaseOutStructure *next = (VkBaseOutStructure *)pProperties->pNext;
@@ -824,7 +1015,7 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             VkPhysicalDeviceMaintenance3Properties *maintenance =
                 (VkPhysicalDeviceMaintenance3Properties *)next;
             maintenance->maxPerSetDescriptors = 1024;
-            maintenance->maxMemoryAllocationSize = capabilities.memory_profiles[1].size;
+            maintenance->maxMemoryAllocationSize = capabilities.memory_heaps[1].size;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT:
@@ -885,7 +1076,59 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             v11->maxMultiviewInstanceIndex = 0;
             v11->protectedNoFault = VK_FALSE;
             v11->maxPerSetDescriptors = 1024;
-            v11->maxMemoryAllocationSize = capabilities.memory_profiles[1].size;
+            v11->maxMemoryAllocationSize = capabilities.memory_heaps[1].size;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES: {
+            VkPhysicalDeviceVulkan12Properties *v12 =
+                (VkPhysicalDeviceVulkan12Properties *)next;
+            void *saved_next = v12->pNext;
+            memset(v12, 0, sizeof(*v12));
+            v12->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+            v12->pNext = saved_next;
+            v12->driverID = VK_DRIVER_ID_MESA_RADV;
+            strncpy(v12->driverName, "Vulkan-PS5",
+                VK_MAX_DRIVER_NAME_SIZE - 1u);
+            strncpy(v12->driverInfo,
+                "OpenAGC gfx1013 experimental Vulkan ICD",
+                VK_MAX_DRIVER_INFO_SIZE - 1u);
+            v12->denormBehaviorIndependence =
+                VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
+            v12->roundingModeIndependence =
+                VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_NONE;
+            v12->maxTimelineSemaphoreValueDifference = UINT64_MAX;
+            v12->framebufferIntegerColorSampleCounts =
+                VK_SAMPLE_COUNT_1_BIT;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES: {
+            VkPhysicalDeviceTimelineSemaphoreProperties *timeline =
+                (VkPhysicalDeviceTimelineSemaphoreProperties *)next;
+            timeline->maxTimelineSemaphoreValueDifference = UINT64_MAX;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES: {
+            VkPhysicalDeviceLineRasterizationProperties *line =
+                (VkPhysicalDeviceLineRasterizationProperties *)next;
+            line->lineSubPixelPrecisionBits = 8u;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_PROPERTIES_EXT:
+            ((VkPhysicalDeviceCustomBorderColorPropertiesEXT *)next)
+                ->maxCustomBorderColorSamplers = 64u;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_PROPERTIES: {
+            VkPhysicalDeviceMaintenance5Properties *maintenance5 =
+                (VkPhysicalDeviceMaintenance5Properties *)next;
+            maintenance5->earlyFragmentMultisampleCoverageAfterSampleCounting =
+                VK_FALSE;
+            maintenance5->earlyFragmentSampleMaskTestBeforeSampleCounting =
+                VK_FALSE;
+            maintenance5->depthStencilSwizzleOneSupport = VK_FALSE;
+            maintenance5->polygonModePointSize = VK_FALSE;
+            maintenance5->nonStrictSinglePixelWideLinesUseParallelogram =
+                VK_FALSE;
+            maintenance5->nonStrictWideLinesUseParallelogram = VK_FALSE;
             break;
         }
         default:
@@ -942,6 +1185,47 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceHostQueryResetFeatures *)next)->hostQueryReset =
                 VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES:
+            ((VkPhysicalDeviceTimelineSemaphoreFeatures *)next)
+                ->timelineSemaphore = VK_TRUE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES:
+            ((VkPhysicalDeviceScalarBlockLayoutFeatures *)next)
+                ->scalarBlockLayout = VK_TRUE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+            ((VkPhysicalDeviceDynamicRenderingFeatures *)next)
+                ->dynamicRendering = VK_TRUE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT: {
+            VkPhysicalDeviceCustomBorderColorFeaturesEXT *border =
+                (VkPhysicalDeviceCustomBorderColorFeaturesEXT *)next;
+            border->customBorderColors = VK_TRUE;
+            border->customBorderColorWithoutFormat = VK_TRUE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
+            VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *swizzle =
+                (VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *)next;
+            swizzle->borderColorSwizzle = VK_FALSE;
+            swizzle->borderColorSwizzleFromImage = VK_TRUE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES:
+            ((VkPhysicalDeviceMaintenance5Features *)next)->maintenance5 =
+                VK_TRUE;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
+            VkPhysicalDeviceLineRasterizationFeatures *line =
+                (VkPhysicalDeviceLineRasterizationFeatures *)next;
+            line->rectangularLines = VK_TRUE;
+            line->bresenhamLines = VK_FALSE;
+            line->smoothLines = VK_FALSE;
+            line->stippledRectangularLines = VK_FALSE;
+            line->stippledBresenhamLines = VK_FALSE;
+            line->stippledSmoothLines = VK_FALSE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT:
             ((VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT *)next)
                 ->shaderDemoteToHelperInvocation = VK_TRUE;
@@ -951,6 +1235,18 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                 (VkPhysicalDeviceVertexAttributeDivisorFeatures *)next;
             divisor->vertexAttributeInstanceRateDivisor = VK_TRUE;
             divisor->vertexAttributeInstanceRateZeroDivisor = VK_FALSE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES: {
+            VkPhysicalDeviceVulkan12Features *f =
+                (VkPhysicalDeviceVulkan12Features *)next;
+            memset(&f->samplerMirrorClampToEdge, 0,
+                sizeof(*f) - offsetof(VkPhysicalDeviceVulkan12Features,
+                    samplerMirrorClampToEdge));
+            f->samplerMirrorClampToEdge = VK_TRUE;
+            f->scalarBlockLayout = VK_TRUE;
+            f->hostQueryReset = VK_TRUE;
+            f->timelineSemaphore = VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
@@ -1132,6 +1428,32 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
+            const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *swizzle =
+                (const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *)next;
+            if (swizzle->borderColorSwizzle)
+                return VK_TRUE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES:
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
+            const VkPhysicalDeviceLineRasterizationFeatures *line =
+                (const VkPhysicalDeviceLineRasterizationFeatures *)next;
+            if (line->bresenhamLines || line->smoothLines ||
+                line->stippledRectangularLines ||
+                line->stippledBresenhamLines || line->stippledSmoothLines)
+                return VK_TRUE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT:
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES: {
@@ -1139,6 +1461,26 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                 (const VkPhysicalDeviceVertexAttributeDivisorFeatures *)next;
             if (f->vertexAttributeInstanceRateZeroDivisor)
                 return VK_TRUE;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES: {
+            const VkPhysicalDeviceVulkan12Features *requested =
+                (const VkPhysicalDeviceVulkan12Features *)next;
+            VkPhysicalDeviceVulkan12Features supported = {0};
+            supported.samplerMirrorClampToEdge = VK_TRUE;
+            supported.scalarBlockLayout = VK_TRUE;
+            supported.hostQueryReset = VK_TRUE;
+            supported.timelineSemaphore = VK_TRUE;
+            const VkBool32 *request_bits =
+                &requested->samplerMirrorClampToEdge;
+            const VkBool32 *supported_bits =
+                &supported.samplerMirrorClampToEdge;
+            const size_t count = (sizeof(*requested) -
+                offsetof(VkPhysicalDeviceVulkan12Features,
+                    samplerMirrorClampToEdge)) / sizeof(VkBool32);
+            for (size_t i = 0; i < count; ++i)
+                if (request_bits[i] && !supported_bits[i])
+                    return VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
@@ -1229,16 +1571,49 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     atomic_init(&device->queue.next_submission, 0);
     atomic_flag_clear(&device->queue.submit_lock);
     atomic_flag_clear(&device->tessellation_lock);
-    if (sce_agc_initialize() != AGC_OK ||
-        sce_agc_initialize_internal_memory() != AGC_OK ||
-        sceAgcDriverNotifyDefaultStates(0) != AGC_OK ||
-        sceAgcDriverSetupAsyncGraphics(1) != AGC_OK ||
+    atomic_flag_clear(&device->border_color_lock);
+    AgcDeviceDesc native_device_desc = AGC_DEVICE_DESC_INIT;
+    AgcQueueDesc native_queue_desc = AGC_QUEUE_DESC_INIT;
+    native_device_desc.required_capability_bits = AGC_RUNTIME_CAP_BASELINE;
+    int32_t native_result = agcCreateDevice(
+        &native_device_desc, &device->native_device);
+    if (native_result == AGC_OK) {
+        AgcDebugCallbackDesc debug_desc = AGC_DEBUG_CALLBACK_DESC_INIT;
+        debug_desc.severity_mask = AGC_DEBUG_MESSAGE_SEVERITY_ERROR_BIT;
+        debug_desc.category_mask = AGC_DEBUG_MESSAGE_CATEGORY_ALL;
+        debug_desc.callback = vk_ps5_native_debug_message;
+        native_result = agcSetDebugCallback(
+            device->native_device, &debug_desc);
+    }
+    if (native_result == AGC_OK)
+        native_result = agcCreateQueue(device->native_device,
+            &native_queue_desc, &device->native_graphics_queue);
+    native_queue_desc.type = kAgcQueueCompute;
+    if (native_result == AGC_OK)
+        native_result = agcCreateQueue(device->native_device,
+            &native_queue_desc, &device->native_compute_queue);
+    if (native_result == AGC_OK) {
+        AgcFenceDesc present_fence_desc = AGC_FENCE_DESC_INIT;
+        present_fence_desc.signaled = 1u;
+        native_result = agcCreateFence(device->native_device,
+            &present_fence_desc, &device->queue.present_ready_fence);
+    }
+    if (native_result != AGC_OK ||
         agcGpuMemoryAllocateFlexible(&device->queue.submit_memory,
             VK_PS5_DCB_SIZE + sizeof(uint32_t), 256u,
             "vulkan_ps5_queue") != AGC_OK) {
         agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
+        if (device->queue.present_ready_fence)
+            (void)agcDestroyFence(device->queue.present_ready_fence);
+        if (device->native_compute_queue)
+            (void)agcDestroyQueue(device->native_compute_queue);
+        if (device->native_graphics_queue)
+            (void)agcDestroyQueue(device->native_graphics_queue);
+        if (device->native_device)
+            (void)agcDestroyDevice(device->native_device);
         ps5_free(pAllocator, device);
-        return VK_ERROR_INITIALIZATION_FAILED;
+        return native_result == AGC_ERROR_OUT_OF_MEMORY ?
+            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
     }
     set_loader_magic_value(device);
     set_loader_magic_value(&device->queue);
@@ -1252,10 +1627,74 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
     agcGpuMemoryFreeFlexible(&device->tess_ring_table_memory);
+    agcGpuMemoryFreeFlexible(&device->border_color_memory);
     agcGpuMemoryFreeFlexible(&device->tess_factor_memory);
     agcGpuMemoryFreeFlexible(&device->tess_offchip_memory);
     agcGpuMemoryFreeFlexible(&device->queue.submit_memory);
+    (void)agcDestroyFence(device->queue.present_ready_fence);
+    (void)agcDestroyQueue(device->native_compute_queue);
+    (void)agcDestroyQueue(device->native_graphics_queue);
+    (void)agcDestroyDevice(device->native_device);
     ps5_free(allocator, device);
+}
+
+#define VK_PS5_CUSTOM_BORDER_COLOR_COUNT 64u
+
+VkResult vk_ps5_device_allocate_border_color(
+    VkDevice device_handle, const VkClearColorValue *color, uint32_t *index)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !color || !index)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    while (atomic_flag_test_and_set_explicit(
+               &device->border_color_lock, memory_order_acquire)) {}
+    VkResult result = VK_SUCCESS;
+    if (!device->border_color_memory.cpu_address &&
+        agcGpuMemoryAllocateFlexible(&device->border_color_memory,
+            VK_PS5_CUSTOM_BORDER_COLOR_COUNT * sizeof(VkClearColorValue),
+            256u, "vulkan_ps5_border_colors") != AGC_OK)
+        result = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    uint32_t slot = 0u;
+    if (result == VK_SUCCESS) {
+        while (slot < VK_PS5_CUSTOM_BORDER_COLOR_COUNT &&
+               (device->border_color_slots & (UINT64_C(1) << slot)))
+            ++slot;
+        if (slot == VK_PS5_CUSTOM_BORDER_COLOR_COUNT) {
+            result = VK_ERROR_TOO_MANY_OBJECTS;
+        } else {
+            device->border_color_slots |= UINT64_C(1) << slot;
+            memcpy((uint8_t *)device->border_color_memory.cpu_address +
+                    slot * sizeof(*color), color, sizeof(*color));
+            if (agcGpuMemoryFlush(&device->border_color_memory,
+                    slot * sizeof(*color), sizeof(*color)) != AGC_OK) {
+                device->border_color_slots &= ~(UINT64_C(1) << slot);
+                result = VK_ERROR_DEVICE_LOST;
+            } else {
+                *index = slot;
+            }
+        }
+    }
+    atomic_flag_clear_explicit(&device->border_color_lock,
+        memory_order_release);
+    return result;
+}
+
+void vk_ps5_device_free_border_color(VkDevice device_handle, uint32_t index)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || index >= VK_PS5_CUSTOM_BORDER_COLOR_COUNT)
+        return;
+    while (atomic_flag_test_and_set_explicit(
+               &device->border_color_lock, memory_order_acquire)) {}
+    device->border_color_slots &= ~(UINT64_C(1) << index);
+    atomic_flag_clear_explicit(&device->border_color_lock,
+        memory_order_release);
+}
+
+uint64_t vk_ps5_device_border_color_table(VkDevice device_handle)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    return device ? device->border_color_memory.gpu_address : 0u;
 }
 
 VkResult vk_ps5_device_prepare_tessellation(
@@ -1383,16 +1822,17 @@ VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkAllocateMemory(VkDevice device_handle, const VkMemoryAllocateInfo *pAllocateInfo,
                  const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory) {
     VkPs5Device *device = (VkPs5Device *)device_handle;
-    AgcGfx1013Capabilities capabilities = ps5_capabilities();
+    AgcDeviceProperties capabilities = ps5_capabilities();
     if (!device || !pAllocateInfo || !pMemory ||
         pAllocateInfo->sType != VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO ||
-        pAllocateInfo->memoryTypeIndex >= capabilities.memory_profile_count ||
+        pAllocateInfo->memoryTypeIndex >= capabilities.memory_heap_count ||
         pAllocateInfo->allocationSize == 0)
         return VK_ERROR_INITIALIZATION_FAILED;
     VkDeviceSize heap_size =
-        capabilities.memory_profiles[pAllocateInfo->memoryTypeIndex].size;
+        capabilities.memory_heaps[pAllocateInfo->memoryTypeIndex].size;
     if (pAllocateInfo->allocationSize > heap_size || pAllocateInfo->allocationSize > SIZE_MAX)
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    VkBool32 dedicated = VK_FALSE;
     for (const VkBaseInStructure *next = (const VkBaseInStructure *)pAllocateInfo->pNext;
          next; next = next->pNext) {
         if (next->sType == VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO) {
@@ -1403,6 +1843,12 @@ vkAllocateMemory(VkDevice device_handle, const VkMemoryAllocateInfo *pAllocateIn
         } else if (next->sType == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO &&
                    ((const VkExportMemoryAllocateInfo *)next)->handleTypes != 0) {
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        } else if (next->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO) {
+            const VkMemoryDedicatedAllocateInfo *info =
+                (const VkMemoryDedicatedAllocateInfo *)next;
+            if (info->image && info->buffer)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            dedicated = (info->image || info->buffer) ? VK_TRUE : VK_FALSE;
         }
     }
     unsigned allocations = atomic_load(&device->memory_allocation_count);
@@ -1417,21 +1863,31 @@ vkAllocateMemory(VkDevice device_handle, const VkMemoryAllocateInfo *pAllocateIn
         atomic_fetch_sub(&device->memory_allocation_count, 1);
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
-    size_t alignment = (size_t)
-        capabilities.memory_profiles[pAllocateInfo->memoryTypeIndex].minimum_alignment;
-    int32_t memory_result = pAllocateInfo->memoryTypeIndex == 0u ?
-        agcGpuMemoryAllocateFlexible(&memory->gpu_memory,
-            (size_t)pAllocateInfo->allocationSize,
-            alignment > 0x4000u ? 0x4000u : alignment,
-            "vulkan_ps5_memory") :
-        agcGpuMemoryAllocateDirectWriteCombined(&memory->gpu_memory,
-            (size_t)pAllocateInfo->allocationSize, alignment);
+    uint64_t alignment =
+        capabilities.memory_heaps[pAllocateInfo->memoryTypeIndex].minimum_alignment;
+    AgcMemoryDesc memory_desc = AGC_MEMORY_DESC_INIT;
+    memory_desc.size = pAllocateInfo->allocationSize;
+    memory_desc.heap = pAllocateInfo->memoryTypeIndex == 0u ?
+        AGC_MEMORY_HEAP_FLEXIBLE : AGC_MEMORY_HEAP_GARLIC;
+    memory_desc.alignment = memory_desc.heap == AGC_MEMORY_HEAP_FLEXIBLE &&
+        alignment > 0x4000u ? 0x4000u : alignment;
+    if (dedicated)
+        memory_desc.flags |= AGC_MEMORY_CREATE_DEDICATED_BIT;
+    int32_t memory_result = agcCreateMemory(device->native_device,
+        &memory_desc, &memory->native_memory);
     if (memory_result != AGC_OK) {
         ps5_free(allocator, memory);
         atomic_fetch_sub(&device->memory_allocation_count, 1);
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
-    memory->data = memory->gpu_memory.cpu_address;
+    memory->device = device->native_device;
+    if (agcMapMemory(memory->native_memory, 0u, pAllocateInfo->allocationSize,
+            &memory->data) != AGC_OK) {
+        (void)agcDestroyMemory(memory->native_memory);
+        ps5_free(allocator, memory);
+        atomic_fetch_sub(&device->memory_allocation_count, 1);
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
     memory->size = pAllocateInfo->allocationSize;
     memory->memory_type_index = pAllocateInfo->memoryTypeIndex;
     *pMemory = (VkDeviceMemory)memory;
@@ -1445,10 +1901,8 @@ vkFreeMemory(VkDevice device_handle, VkDeviceMemory memory_handle,
     VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
     if (!device || !memory) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
-    if (memory->gpu_memory.type == AGC_GPU_MEMORY_TYPE_FLEXIBLE)
-        agcGpuMemoryFreeFlexible(&memory->gpu_memory);
-    else
-        agcGpuMemoryFreeDirect(&memory->gpu_memory);
+    (void)agcUnmapMemory(memory->native_memory);
+    (void)agcDestroyMemory(memory->native_memory);
     ps5_free(allocator, memory);
     atomic_fetch_sub(&device->memory_allocation_count, 1);
 }
@@ -1461,13 +1915,18 @@ vkMapMemory(VkDevice device, VkDeviceMemory memory_handle, VkDeviceSize offset,
     if (!memory || !ppData || offset > memory->size) return VK_ERROR_MEMORY_MAP_FAILED;
     VkDeviceSize available = memory->size - offset;
     if (size != VK_WHOLE_SIZE && size > available) return VK_ERROR_MEMORY_MAP_FAILED;
-    *ppData = (uint8_t *)memory->data + offset;
+    VkDeviceSize map_size = size == VK_WHOLE_SIZE ? available : size;
+    if (!map_size || agcMapMemory(memory->native_memory, offset, map_size,
+            ppData) != AGC_OK)
+        return VK_ERROR_MEMORY_MAP_FAILED;
     return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkUnmapMemory(VkDevice device, VkDeviceMemory memory) {
-    (void)device; (void)memory;
+    (void)device;
+    VkPs5Memory *native = (VkPs5Memory *)memory;
+    if (native) (void)agcUnmapMemory(native->native_memory);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -1482,8 +1941,8 @@ vkFlushMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
         VkDeviceSize size = pMemoryRanges[i].size == VK_WHOLE_SIZE ?
             memory->size - pMemoryRanges[i].offset : pMemoryRanges[i].size;
         if (!size || size > memory->size - pMemoryRanges[i].offset ||
-            agcGpuMemoryFlush(&memory->gpu_memory,
-                (size_t)pMemoryRanges[i].offset, (size_t)size) != AGC_OK)
+            agcFlushMemory(memory->native_memory,
+                pMemoryRanges[i].offset, size) != AGC_OK)
             return VK_ERROR_MEMORY_MAP_FAILED;
     }
     return VK_SUCCESS;
@@ -1501,8 +1960,8 @@ vkInvalidateMappedMemoryRanges(VkDevice device, uint32_t memoryRangeCount,
         VkDeviceSize size = pMemoryRanges[i].size == VK_WHOLE_SIZE ?
             memory->size - pMemoryRanges[i].offset : pMemoryRanges[i].size;
         if (!size || size > memory->size - pMemoryRanges[i].offset ||
-            agcGpuMemoryInvalidate(&memory->gpu_memory,
-                (size_t)pMemoryRanges[i].offset, (size_t)size) != AGC_OK)
+            agcInvalidateMemory(memory->native_memory,
+                pMemoryRanges[i].offset, size) != AGC_OK)
             return VK_ERROR_MEMORY_MAP_FAILED;
     }
     return VK_SUCCESS;
@@ -1576,11 +2035,15 @@ static const ProcEntry device_procs[] = {
     ENTRY(vkCreateFence), ENTRY(vkDestroyFence), ENTRY(vkResetFences),
     ENTRY(vkGetFenceStatus), ENTRY(vkWaitForFences),
     ENTRY(vkCreateSemaphore), ENTRY(vkDestroySemaphore),
+    ENTRY(vkGetSemaphoreCounterValue), ENTRY(vkWaitSemaphores),
+    ENTRY(vkSignalSemaphore),
     ENTRY(vkCreateEvent), ENTRY(vkDestroyEvent), ENTRY(vkGetEventStatus),
     ENTRY(vkSetEvent), ENTRY(vkResetEvent),
     ENTRY(vkCreateBuffer), ENTRY(vkDestroyBuffer),
     ENTRY(vkCreateImage), ENTRY(vkDestroyImage),
     ENTRY(vkGetImageSubresourceLayout), ENTRY(vkCreateImageView),
+    ENTRY(vkGetImageSubresourceLayout2),
+    ENTRY(vkGetDeviceImageSubresourceLayout),
     ENTRY(vkDestroyImageView), ENTRY(vkCreateBufferView), ENTRY(vkDestroyBufferView),
     ENTRY(vkCreateCommandPool), ENTRY(vkDestroyCommandPool),
     ENTRY(vkResetCommandPool), ENTRY(vkTrimCommandPool),
@@ -1596,7 +2059,7 @@ static const ProcEntry device_procs[] = {
     ALIAS("vkGetImageSparseMemoryRequirements2KHR", vkGetImageSparseMemoryRequirements2),
     ALIAS("vkTrimCommandPoolKHR", vkTrimCommandPool),
     ENTRY(vkCreateQueryPool), ENTRY(vkDestroyQueryPool), ENTRY(vkGetQueryPoolResults),
-    ENTRY(vkResetQueryPoolEXT),
+    ENTRY(vkResetQueryPool), ENTRY(vkResetQueryPoolEXT),
     ENTRY(vkCreateShaderModule), ENTRY(vkDestroyShaderModule),
     ENTRY(vkCreatePipelineCache), ENTRY(vkDestroyPipelineCache),
     ENTRY(vkGetPipelineCacheData), ENTRY(vkMergePipelineCaches),
@@ -1609,6 +2072,8 @@ static const ProcEntry device_procs[] = {
     ENTRY(vkFreeDescriptorSets), ENTRY(vkUpdateDescriptorSets),
     ENTRY(vkCreateFramebuffer), ENTRY(vkDestroyFramebuffer),
     ENTRY(vkCreateRenderPass), ENTRY(vkDestroyRenderPass),
+    ENTRY(vkCreateRenderPass2), ENTRY(vkCmdBeginRenderPass2),
+    ENTRY(vkCmdNextSubpass2), ENTRY(vkCmdEndRenderPass2),
     ENTRY(vkGetRenderAreaGranularity), ENTRY(vkCreateDescriptorUpdateTemplate),
     ENTRY(vkDestroyDescriptorUpdateTemplate), ENTRY(vkUpdateDescriptorSetWithTemplate),
     ENTRY(vkGetDescriptorSetLayoutSupport), ENTRY(vkCreateSamplerYcbcrConversion),
@@ -1625,17 +2090,38 @@ static const ProcEntry device_procs[] = {
     ENTRY(vkCmdSetLineWidth), ENTRY(vkCmdSetDepthBias), ENTRY(vkCmdSetBlendConstants),
     ENTRY(vkCmdSetDepthBounds), ENTRY(vkCmdSetStencilCompareMask),
     ENTRY(vkCmdSetStencilWriteMask), ENTRY(vkCmdSetStencilReference),
-    ENTRY(vkCmdBindIndexBuffer), ENTRY(vkCmdBindVertexBuffers), ENTRY(vkCmdDraw),
+    ENTRY(vkCmdBindIndexBuffer), ENTRY(vkCmdBindIndexBuffer2),
+    ENTRY(vkCmdBindVertexBuffers), ENTRY(vkCmdDraw),
     ENTRY(vkCmdDrawIndexed), ENTRY(vkCmdDrawIndirect), ENTRY(vkCmdDrawIndexedIndirect),
+    ENTRY(vkCmdDrawIndirectCount), ENTRY(vkCmdDrawIndexedIndirectCount),
     ENTRY(vkCmdBlitImage), ENTRY(vkCmdClearDepthStencilImage),
     ENTRY(vkCmdClearAttachments), ENTRY(vkCmdResolveImage),
     ENTRY(vkCmdBeginRenderPass), ENTRY(vkCmdNextSubpass), ENTRY(vkCmdEndRenderPass),
+    ENTRY(vkCmdBeginRendering), ENTRY(vkCmdEndRendering),
+    ENTRY(vkGetRenderingAreaGranularity),
     ENTRY(vkCmdSetDeviceMask), ENTRY(vkCmdDispatchBase),
     ALIAS("vkCmdSetDeviceMaskKHR", vkCmdSetDeviceMask),
     ALIAS("vkCmdDispatchBaseKHR", vkCmdDispatchBase),
     ALIAS("vkCreateDescriptorUpdateTemplateKHR", vkCreateDescriptorUpdateTemplate),
     ALIAS("vkDestroyDescriptorUpdateTemplateKHR", vkDestroyDescriptorUpdateTemplate),
     ALIAS("vkUpdateDescriptorSetWithTemplateKHR", vkUpdateDescriptorSetWithTemplate),
+    ALIAS("vkGetSemaphoreCounterValueKHR", vkGetSemaphoreCounterValue),
+    ALIAS("vkWaitSemaphoresKHR", vkWaitSemaphores),
+    ALIAS("vkSignalSemaphoreKHR", vkSignalSemaphore),
+    ALIAS("vkCreateRenderPass2KHR", vkCreateRenderPass2),
+    ALIAS("vkCmdBeginRenderPass2KHR", vkCmdBeginRenderPass2),
+    ALIAS("vkCmdNextSubpass2KHR", vkCmdNextSubpass2),
+    ALIAS("vkCmdEndRenderPass2KHR", vkCmdEndRenderPass2),
+    ALIAS("vkCmdBeginRenderingKHR", vkCmdBeginRendering),
+    ALIAS("vkCmdEndRenderingKHR", vkCmdEndRendering),
+    ALIAS("vkCmdBindIndexBuffer2KHR", vkCmdBindIndexBuffer2),
+    ALIAS("vkGetRenderingAreaGranularityKHR", vkGetRenderingAreaGranularity),
+    ALIAS("vkGetDeviceImageSubresourceLayoutKHR",
+        vkGetDeviceImageSubresourceLayout),
+    ALIAS("vkGetImageSubresourceLayout2KHR", vkGetImageSubresourceLayout2),
+    ENTRY(vkGetBufferDeviceAddress),
+    ENTRY(vkGetBufferOpaqueCaptureAddress),
+    ENTRY(vkGetDeviceMemoryOpaqueCaptureAddress),
     ALIAS("vkGetDescriptorSetLayoutSupportKHR", vkGetDescriptorSetLayoutSupport),
     ALIAS("vkCreateSamplerYcbcrConversionKHR", vkCreateSamplerYcbcrConversion),
     ALIAS("vkDestroySamplerYcbcrConversionKHR", vkDestroySamplerYcbcrConversion),

@@ -1,0 +1,14 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : require
+
+layout(local_size_x = 1) in;
+
+layout(set = 1, binding = 3, scalar) buffer ScalarData {
+    vec3 value;
+    float result;
+} data;
+
+void main()
+{
+    data.result = data.value.x;
+}

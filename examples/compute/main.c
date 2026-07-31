@@ -26,6 +26,13 @@
 #define IMAGE_DIMENSION 64u
 #define VALUE_COUNT (IMAGE_DIMENSION * IMAGE_DIMENSION)
 #define GROUP_COUNT (IMAGE_DIMENSION / 8u)
+#elif defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)
+#include "vulkan_ps5_scalar_block_layout_spv.h"
+#define vulkan_ps5_compute_spv vulkan_ps5_scalar_block_layout_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "scalar_block_layout"
+#define VALUE_COUNT 16u
+#define GROUP_COUNT 1u
 #else
 #include "vulkan_ps5_compute_spv.h"
 #define SAMPLE_LABEL "compute"
@@ -111,6 +118,21 @@ int main(void)
         return 1;
     }
     const void *device_features = &variable_pointer_features;
+#elif defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)
+    VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &scalar_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &features2);
+    if (!scalar_features.scalarBlockLayout) {
+        printf("scalar_block_layout: required feature is unavailable\n");
+        return 1;
+    }
+    scalar_features.scalarBlockLayout = VK_TRUE;
+    const void *device_features = &scalar_features;
 #elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
       defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
     VkPhysicalDeviceFeatures supported_features;
@@ -148,6 +170,11 @@ int main(void)
 #endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+#if defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames =
+            (const char *const[]){VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME},
+#endif
     };
     VK_CHECK(vkCreateDevice(physical, &device_info, NULL, &device));
 
@@ -224,6 +251,12 @@ int main(void)
     uint32_t *initial_values = mapped;
     initial_values[4] = 0x11223344u;
     initial_values[8] = 0xffffffffu;
+#elif defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)
+    uint32_t *initial_values = mapped;
+    initial_values[3] = 0x3f400000u;
+    initial_values[4] = 0x3e800000u;
+    initial_values[6] = 0xcdcdcdcdu;
+    initial_values[8] = 0xababababu;
 #endif
     const VkMappedMemoryRange mapped_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -500,6 +533,23 @@ int main(void)
     if (!status)
         printf(SAMPLE_LABEL ": PASS %u deterministic pixels\n", VALUE_COUNT);
 #endif
+#elif defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)
+    const uint32_t expected = 0x3f400000u ^ 0x5a5a5a5au;
+#if !defined(OPENAGC_PROSPERO)
+    (void)values;
+    (void)expected;
+    int status = 0;
+    printf("scalar_block_layout: PASS command recording\n");
+#else
+    int status = values[6] != expected || values[8] != 0xababababu;
+    if (status) {
+        printf("scalar_block_layout: mismatch result=%08x expected=%08x guard=%08x\n",
+            values[6], expected, values[8]);
+    } else {
+        printf("scalar_block_layout: PASS stride=12 result_offset=24 result=%08x\n",
+            values[6]);
+    }
+#endif
 #else
     int status = 0;
     for (uint32_t i = 0; i < VALUE_COUNT; ++i) {
@@ -534,7 +584,9 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if (defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) || \
      defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
-     defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)) && defined(OPENAGC_PROSPERO)
+     defined(VULKAN_PS5_ROBUST_BUFFER_PROBE) || \
+     defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)) && \
+    defined(OPENAGC_PROSPERO)
     fflush(stdout);
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);
 #endif

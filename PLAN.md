@@ -58,6 +58,18 @@ Vulkan-PS5 owns:
 
 ### Migration milestone 0: freeze and audit the baseline
 
+Current progress: `analysis/native_runtime_calls.tsv` is the mechanically
+checked ownership inventory for all 34 remaining direct hardware-facing calls
+currently present in `src/`. The `vulkan_ps5.native_migration_audit` CTest gate requires
+each call to retain a migration category, native owner, and regression gate.
+The advertised capability/format snapshot and remaining duplicated-policy
+audit are still pending.
+
+Typed native indirect recording and occlusion-query storage/recording/results
+are complete. The latter is FW 5.500.008-qualified with an exact
+`samples=18432 green=18432` oracle and clean guarded lifecycle; neither path
+retains Vulkan-side raw addresses or packet emission.
+
 1. Record the current advertised Vulkan version, features, extensions, limits,
    queues, memory types, formats, and WSI modes as a machine-readable baseline.
 2. Inventory every direct OpenAGC low-level call and classify it as lifecycle,
@@ -72,6 +84,20 @@ Exit criteria: every hardware-facing call has a migration owner and a named
 regression gate; no currently advertised capability is silently dropped.
 
 ### Migration milestone 1: device, capabilities, and resource memory
+
+The logical-device contract gap is resolved in OpenAGC API 26. Its runtime
+owns a process backend until the last independent `AgcDevice` is destroyed,
+requires active devices to select the same AGC defaults version, and tracks
+each generic compute queue by its exact backend handle. Vulkan now creates one
+native device and native graphics/compute queue pair per `VkDevice`; its
+lifecycle regression holds two Vulkan devices concurrently and proves the
+survivor remains usable after peer teardown.
+
+OpenAGC API 28 supplies explicit allocations, placed resources, image tiling,
+typed/swizzled views, and normalized sampler state.
+`VkDeviceMemory` and bound `VkBuffer` objects now use `AgcMemory` and
+`AgcBuffer`; generic and sanitizer qualification must remain green while the
+completed, FW 5.50-qualified image/view/sampler half remains under regression.
 
 1. Create one `AgcDevice` per Vulkan device and map queues to `AgcQueue`.
 2. Derive physical-device properties and format/feature qualification from
@@ -90,6 +116,16 @@ or duplicated image-layout calculator.
 
 ### Migration milestone 2: shader reflection and pipelines
 
+In progress: OpenAGC API 36/PSBC API 18 now back all Vulkan shader stages,
+all compute pipelines, and the advertised point, line, triangle, geometry,
+and tessellation graphics forms with native objects. Native fixed state covers
+polygon modes, culling, rasterizer discard, strip/fan primitive restart,
+depth clamp, static/dynamic depth bias and line width, logic operations, and
+pipeline switching. The compiler emits only descriptor sets
+addressable by each stage while preserving every binding within those sets,
+and explicitly marks alpha-to-one epilogs. Command encoding still consumes
+the retained legacy binding until Milestone 3.
+
 1. Translate Vulkan shader modules, specialization, vertex input, descriptor
    layouts, push constants, render-target/depth formats, blend/raster/depth,
    multisampling, and stage linkage into native pipeline descriptors.
@@ -107,6 +143,39 @@ linkage cases; rejected pipelines emit no commands.
 
 ### Migration milestone 3: commands, transitions, and synchronization
 
+In progress: each Vulkan command buffer owns paired queue-typed native command
+buffers, but the graphics DCB is now the single ordered Vulkan stream and may
+carry compute work. Their lifecycle is synchronized with Vulkan allocation,
+begin/end rollback, reset, pool reset, free, and teardown. Compatible pipeline
+binds, supported typed buffer/image barriers, and explicitly transitioned
+buffer copies record natively. Compute descriptors with explicit compatible
+resource state and their dispatches also record on the ordered graphics DCB.
+Graphics descriptor/attachment/vertex/index binding, 16-entry static or
+dynamic viewport/scissor state, baseline draws, and finite-wait native queue
+submission now form an FW 5.500.008-qualified path. PSBC exposes an explicit
+runtime API-version handshake so stale host/Prospero compiler archives fail
+closed. OpenAGC APIs 36-38 now own typed indirect draw, indexed-draw, dispatch,
+occlusion-query, physical-device-property, and buffer-copy recording, including
+multi-draw DrawIndex expansion and argument-buffer retention; Vulkan's
+superseded indirect/copy encoders have been deleted and the audit has fallen
+from 45 to 37 calls. Native-only operations now latch the complete-stream
+requirement in both command orderings so legacy fallback cannot silently omit
+them. Kernel-submitted native command storage now uses dedicated mappings; the
+first shared-heap native-copy candidate panicked FW 5.50, while the isolated
+replacement passed the same cleanup-guarded two-region workload twice. The
+native multi-draw path is FW 5.50-qualified by the deterministic
+11,472-pixel two-draw oracle. OpenAGC API 41 now owns typed color/BC image
+regions and buffer/image transfer records. `vkCmdCopyImage`,
+`vkCmdCopyBufferToImage`, and `vkCmdCopyImageToBuffer` record through those
+contracts, including partial mips/layers and explicit buffer row/image
+strides. Clear, blit, depth/stencil-transfer, and resolve forms fail closed
+instead of silently succeeding. Typed native buffer update and fill remain
+complete in API 39. WSI uses dedicated native scanout images, `AgcPresentChain`,
+and the ordered queue's retained completion fence; this removes the three raw
+VideoOut symbols and reduces the audit to 34. Next move shader code/fusion,
+descriptor tables, and tessellation state behind native ownership, then delete
+legacy submission/fence handling and the other superseded encoders.
+
 1. Back Vulkan command pools/buffers with native command allocators and
    `AgcCommandBuffer` state while retaining Vulkan reset and simultaneous-use
    rules.
@@ -118,8 +187,9 @@ linkage cases; rejected pipelines emit no commands.
    transition instead of inventing raw cache bits in the ICD.
 4. Map queue submissions, multiple command buffers, fences, semaphores, and
    waits/signals to native synchronization with explicit finite host deadlines.
-5. Add timeline semaphores or additional queue families only after the native
-   counter and ownership contracts are complete and hardware-qualified.
+5. Preserve the host-tested Vulkan timeline-semaphore contract while migrating
+   it to native counters; add queue families only after native ownership is
+   complete and hardware-qualified.
 
 Exit criteria: deterministic compute, graphics, indirect, transfer, depth,
 MSAA, query, and compute-to-graphics workloads pass normal/sanitizer/VVL tests
@@ -127,8 +197,10 @@ and bounded endpoint gates without ICD-owned PM4 or fence-label code.
 
 ### Migration milestone 4: WSI, validation, and capture
 
-1. Map swapchain images and presentation to OpenAGC-owned scanout resources,
-   transitions, fences, bounded flip waits, and teardown.
+1. **FW 5.50 complete:** map swapchain images and presentation to OpenAGC-owned
+   scanout resources, transitions, fences, bounded flip waits, and teardown.
+   The API-40 candidate passed 1,800 frames and clean lifecycle with SHA-256
+   `0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`.
 2. Keep Vulkan surface/swapchain semantics and application-facing image state
    in the ICD while all firmware patch and VideoOut hardware policy stays in
    OpenAGC.
@@ -421,20 +493,31 @@ the native-runtime migration.
   a standard instance/device lifecycle. The harness rejects source-workspace
   paths in installed metadata and link commands. Host passes as part of the
   11/11 suite; the Prospero run proves relocated archive use plus transitive
-  `kernel`, `SceAgcDriver`, `SceVideoOut`, `unwind`, `c++abi`, `c++`, and `m`
-  links. The retained installed-package ELF SHA-256 is
-  `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
+  `kernel`, `SceVideoOut`, `unwind`, `c++abi`, `c++`, and `m` links while
+  rejecting an installed `SceAgcDriver` dependency. The retained
+  installed-package ELF SHA-256 is
+  `1fd79429140e26884cc492761d8551cf7a2b8769c39066463d9f05f6c9fc5547`.
   Its dedicated one-shot runner passes a safety simulation and requires
   the standard Vulkan PASS oracle, self-KillApp ordering, exact-PID removal,
   post-run websrv availability, and no kernel warning beyond the proven single
   raw-ELF `0x4000` baseline.
-  The retained FW 5.500.008 run executed once after a fresh availability
-  signal and passed: PID 153 printed `package-consumer: PASS result=0`, the
-  kernel recorded self-KillApp followed by `All processes exited`, ps5debug-NG
-  proved the exact PID absent, and websrv remained responsive. The scoped klog
-  contained only the proven raw-ELF warning. Evidence is retained at
-  `20260728T070752Z-package-consumer.log` and
-  `20260728T070752Z-package-consumer-target.klog`. This closes Milestone 5.
+  The current consumer holds two Vulkan devices and queues concurrently,
+  exercises a timeline semaphore, destroys its peer, and allocates/frees
+  memory through the survivor. That exact FW 5.500.008 candidate ran once and
+  passed: PID 154 printed
+  `package-consumer: PASS result=0`, ps5debug-NG proved the exact PID absent,
+  and the scoped klog contained only the proven raw-ELF warning. Evidence is
+  retained at `20260731T065637Z-package-consumer.log` and
+  `20260731T065637Z-package-consumer-target.klog`.
+  The SDL/Zink capability track is pinned in
+  `analysis/zink-compatibility.md`. Render-pass 2, descriptor update templates,
+  timeline semaphores, mutable/incremental WSI, and rectangular line
+  rasterization are implemented. Scalar block layout and shader-epilog
+  `alphaToOne`, dynamic rendering, custom border color/image swizzle,
+  maintenance5, and Vulkan 1.2 are implemented. FW 5.500.008 readback qualifies
+  the scalar, alpha, dynamic-rendering, and swizzled-border slices, and the
+  strict Mesa GL 2.1 report is now zero-gap. Zink remains unsupported until
+  pinned Mesa passes through the PS5 EGL/WSI bridge.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset
@@ -599,7 +682,10 @@ the native-runtime migration.
 - Implement render passes, dynamic rendering-equivalent internal behavior, MRT, depth/stencil, clears, resolves, indirect draws, geometry, tessellation, compute, occlusion/timestamp queries, and pipeline statistics where supported.
 - Implement Vulkan fences and semaphores through native OpenAGC fences,
   waits/signals, and submission values. Keep host waits bounded and thread-safe.
-- Keep timeline semaphores, sparse resources, transform feedback, descriptor indexing, and advanced optional extensions disabled until their complete semantics are implemented.
+- Keep sparse resources, transform feedback, descriptor indexing, and advanced
+  optional extensions disabled until their complete semantics are implemented.
+  Timeline semaphores now have complete host-visible and completion-ordered
+  queue semantics, but still await migration to native counters.
 
 ### Extensions and WSI
 

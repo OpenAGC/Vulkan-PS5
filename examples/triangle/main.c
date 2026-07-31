@@ -55,6 +55,17 @@
 #define vulkan_ps5_triangle_vert_spv vulkan_ps5_wide_lines_vert_spv
 #include "../system_service_exit.h"
 #define SAMPLE_LABEL "wide_lines"
+#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE)
+#include "vulkan_ps5_alpha_to_one_frag_spv.h"
+#include "vulkan_ps5_triangle_vert_spv.h"
+#define vulkan_ps5_triangle_frag_spv vulkan_ps5_alpha_to_one_frag_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "alpha_to_one"
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#include "vulkan_ps5_triangle_frag_spv.h"
+#include "vulkan_ps5_triangle_vert_spv.h"
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "dynamic_rendering"
 #elif defined(VULKAN_PS5_LARGE_POINTS_PROBE)
 #include "vulkan_ps5_large_points_vert_spv.h"
 #include "vulkan_ps5_non_solid_frag_spv.h"
@@ -75,6 +86,9 @@
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
 #include "../system_service_exit.h"
 #define SAMPLE_LABEL "logic_op"
+#elif defined(VULKAN_PS5_QUERY_SAMPLE)
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "query"
 #elif defined(VULKAN_PS5_TESSELLATION_SAMPLE)
 #include "vulkan_ps5_tess_control_spv.h"
 #include "vulkan_ps5_tess_evaluation_spv.h"
@@ -211,6 +225,16 @@ int main(void)
     }
     const VkPhysicalDeviceFeatures enabled_features = {
         .robustBufferAccess = VK_TRUE,
+    };
+#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE)
+    VkPhysicalDeviceFeatures supported_features;
+    vkGetPhysicalDeviceFeatures(physical, &supported_features);
+    if (!supported_features.alphaToOne) {
+        printf("alpha_to_one: alphaToOne is unavailable\n");
+        return 1;
+    }
+    const VkPhysicalDeviceFeatures enabled_features = {
+        .alphaToOne = VK_TRUE,
     };
 #elif defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE)
     VkPhysicalDeviceFeatures supported_features;
@@ -360,6 +384,14 @@ int main(void)
                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES_EXT,
             .shaderDemoteToHelperInvocation = VK_TRUE,
         };
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+    const char *device_extensions[] = {
+        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+    };
+    const VkPhysicalDeviceDynamicRenderingFeatures enabled_dynamic_rendering = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+        .dynamicRendering = VK_TRUE,
+    };
 #elif defined(VULKAN_PS5_QUERY_SAMPLE)
     const char *device_extensions[] = {
         VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
@@ -368,17 +400,31 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
         .hostQueryReset = VK_TRUE,
     };
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    const char *device_extensions[] = {
+        VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+    };
+    const VkPhysicalDeviceLineRasterizationFeatures enabled_line = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES,
+        .rectangularLines = VK_TRUE,
+    };
 #endif
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 #if defined(VULKAN_PS5_DEMOTE_PROBE)
         .pNext = &enabled_demote,
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+        .pNext = &enabled_dynamic_rendering,
 #elif defined(VULKAN_PS5_QUERY_SAMPLE)
         .pNext = &host_reset,
+#elif defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        .pNext = &enabled_line,
 #endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+    defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE) || \
     defined(VULKAN_PS5_ROBUST_VERTEX_PROBE) || \
     defined(VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE) || \
     defined(VULKAN_PS5_CULL_DISTANCE_PROBE) || \
@@ -392,7 +438,10 @@ int main(void)
     defined(VULKAN_PS5_QUERY_SAMPLE)
         .pEnabledFeatures = &enabled_features,
 #endif
-#if defined(VULKAN_PS5_DEMOTE_PROBE) || defined(VULKAN_PS5_QUERY_SAMPLE)
+#if defined(VULKAN_PS5_DEMOTE_PROBE) || \
+    defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE) || \
+    defined(VULKAN_PS5_QUERY_SAMPLE) || \
+    defined(VULKAN_PS5_WIDE_LINES_PROBE)
         .enabledExtensionCount = 1,
         .ppEnabledExtensionNames = device_extensions,
 #endif
@@ -903,8 +952,18 @@ int main(void)
         .pScissors = &scissor,
 #endif
     };
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+    const VkPipelineRasterizationLineStateCreateInfo rectangular_line = {
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO,
+        .lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR,
+    };
+#endif
     const VkPipelineRasterizationStateCreateInfo rasterization = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_WIDE_LINES_PROBE)
+        .pNext = &rectangular_line,
+#endif
 #if defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
         .polygonMode = VK_POLYGON_MODE_LINE,
 #else
@@ -921,6 +980,9 @@ int main(void)
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+#if defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE)
+        .alphaToOneEnable = VK_TRUE,
+#endif
     };
     const VkPipelineColorBlendAttachmentState blend_attachment = {
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
@@ -936,8 +998,19 @@ int main(void)
         .attachmentCount = 1,
         .pAttachments = &blend_attachment,
     };
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+    const VkFormat dynamic_color_format = VK_FORMAT_R8G8B8A8_UNORM;
+    const VkPipelineRenderingCreateInfo pipeline_rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &dynamic_color_format,
+    };
+#endif
     const VkGraphicsPipelineCreateInfo pipeline_info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+        .pNext = &pipeline_rendering,
+#endif
         .stageCount = sizeof(stages) / sizeof(stages[0]),
         .pStages = stages,
         .pVertexInputState = &vertex_input,
@@ -951,7 +1024,9 @@ int main(void)
         .pMultisampleState = &multisample,
         .pColorBlendState = &blend,
         .layout = pipeline_layout,
+#if !defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
         .renderPass = render_pass,
+#endif
     };
     VK_CHECK(vkCreateGraphicsPipelines(
         device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
@@ -994,16 +1069,36 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &command_begin));
+#if !defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
         .framebuffer = framebuffer,
         .renderArea = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}},
     };
+#endif
 #if defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     vkCmdResetQueryPool(command, query_pool, 0, 1);
 #endif
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+    const VkRenderingAttachmentInfo dynamic_color = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
+    const VkRenderingInfo dynamic_rendering = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {{0, 0}, {TARGET_WIDTH, TARGET_HEIGHT}},
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &dynamic_color,
+    };
+    vkCmdBeginRendering(command, &dynamic_rendering);
+#else
     vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+#endif
 #if defined(VULKAN_PS5_QUERY_SAMPLE) && \
     !defined(VULKAN_PS5_QUERY_LIFECYCLE_ONLY) && \
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
@@ -1049,7 +1144,11 @@ int main(void)
     !defined(VULKAN_PS5_QUERY_COMMAND_RESET_ONLY)
     vkCmdEndQuery(command, query_pool, 0);
 #endif
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+    vkCmdEndRendering(command);
+#else
     vkCmdEndRenderPass(command);
+#endif
     VK_CHECK(vkEndCommandBuffer(command));
 
     VkQueue queue;
@@ -1304,6 +1403,15 @@ int main(void)
         center == 0xffff0000u && pixels[0] == 0u &&
         pixels[TARGET_WIDTH - 1u] == 0u;
 #endif
+#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE) || \
+    defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+    image_ok = 1;
+#else
+    image_ok = green_count >= 16000u && green_count <= 21000u &&
+        unexpected_count == 0u && center == GREEN_RGBA8 &&
+        pixels[0] == 0u && pixels[TARGET_WIDTH - 1u] == 0u;
+#endif
 #else
     image_ok = green_count >= 16000u && green_count <= 21000u &&
         unexpected_count == 0u && center == GREEN_RGBA8 &&
@@ -1424,6 +1532,18 @@ int main(void)
         printf("robust_vertex_access: PASS OOB attribute=0 blue=%u\n",
             blue_count);
 #endif
+#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+        printf("alpha_to_one: PASS command recording\n");
+#else
+        printf("alpha_to_one: PASS %u green pixels\n", green_count);
+#endif
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+        printf("dynamic_rendering: PASS command recording\n");
+#else
+        printf("dynamic_rendering: PASS %u green pixels\n", green_count);
+#endif
 #else
         printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);
 #endif
@@ -1488,6 +1608,9 @@ int main(void)
      defined(VULKAN_PS5_CLIP_DISTANCE_PROBE) || \
      defined(VULKAN_PS5_DEMOTE_PROBE) || \
      defined(VULKAN_PS5_WIDE_LINES_PROBE) || \
+     defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE) || \
+     defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE) || \
+     defined(VULKAN_PS5_QUERY_SAMPLE) || \
      defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE) || \
      defined(VULKAN_PS5_LARGE_POINTS_PROBE))
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);

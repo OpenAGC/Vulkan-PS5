@@ -12,6 +12,8 @@ klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf=${VULKAN_PS5_EXIT_ELF:-$build_dir/vulkan_ps5_system_exit_probe.elf}
+cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
+require_cleanup=${VULKAN_PS5_REQUIRE_CLEANUP:-0}
 remote_name=${VULKAN_PS5_EXIT_REMOTE_NAME:-vulkan_ps5_system_exit_probe}
 file_stem=${VULKAN_PS5_EXIT_FILE_STEM:-system-exit-probe}
 display_name=${VULKAN_PS5_EXIT_DISPLAY_NAME:-system-exit probe}
@@ -20,6 +22,10 @@ failure_pattern=${VULKAN_PS5_EXIT_FAILURE_PATTERN:-'system-exit-probe: unexpecte
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero probe: $elf" >&2
+    exit 2
+fi
+if [ "$require_cleanup" = 1 ] && [ ! -f "$cleanup_elf" ]; then
+    echo "missing Prospero cleanup prerequisite: $cleanup_elf" >&2
     exit 2
 fi
 if ! command -v nc >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1 || \
@@ -31,6 +37,24 @@ if ! curl -sS --connect-timeout 3 --max-time 5 \
     "http://${PS5_HOST}:8080/" >/dev/null; then
     echo "FW 5.50 websrv is unreachable at ${PS5_HOST}:8080" >&2
     exit 1
+fi
+
+if [ "$require_cleanup" = 1 ]; then
+    cleanup_dir=/data/homebrew/vulkan_ps5_process_cleanup
+    curl -sS --connect-timeout 3 --max-time 30 \
+        "ftp://${PS5_HOST}:2121/" --quote "MKD $cleanup_dir" \
+        >/dev/null 2>&1 || true
+    curl -sS --connect-timeout 3 --max-time 30 -T "$cleanup_elf" \
+        "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" >/dev/null
+    curl -sS --connect-timeout 3 --max-time 10 \
+        "http://${PS5_HOST}:8080/hbldr?pipe=0&daemon=1&path=${cleanup_dir}/eboot.elf" \
+        >/dev/null
+    sleep 2
+    if ! curl -sS --connect-timeout 3 --max-time 5 \
+        "http://${PS5_HOST}:8080/" >/dev/null; then
+        echo "FW 5.50 cleanup prerequisite left websrv unreachable" >&2
+        exit 1
+    fi
 fi
 
 kill_exact_pid() {

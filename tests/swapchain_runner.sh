@@ -8,6 +8,7 @@ trap 'rm -rf "$test_root"' EXIT
 
 mkdir -p "$test_root/bin" "$test_root/build" "$test_root/pyps4debug"
 : >"$test_root/build/vulkan_ps5_swapchain_example.elf"
+: >"$test_root/build/vulkan_ps5_process_cleanup.elf"
 
 cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
@@ -89,6 +90,18 @@ grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
     "$test_root/clean.out" >/dev/null
 grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
     "$test_root/clean.out" >/dev/null
+
+mv "$test_root/build/vulkan_ps5_process_cleanup.elf" \
+    "$test_root/build/vulkan_ps5_process_cleanup.elf.missing"
+if run_runner clean "$test_root/missing-cleanup.out" \
+    "$test_root/missing-cleanup-logs"; then
+    echo "missing cleanup prerequisite unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'missing Prospero cleanup prerequisite' \
+    "$test_root/missing-cleanup.out" >/dev/null
+mv "$test_root/build/vulkan_ps5_process_cleanup.elf.missing" \
+    "$test_root/build/vulkan_ps5_process_cleanup.elf"
 
 : >"$test_root/uv.log"
 if run_runner crash "$test_root/crash.out" "$test_root/crash-logs"; then

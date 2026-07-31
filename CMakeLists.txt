@@ -77,7 +77,7 @@ target_include_directories(vulkan_ps5_objects
     "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(vulkan_ps5_objects PRIVATE
-  OpenAGC::openagc OpenAgcPsbc::Compiler)
+  OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
 
 add_library(vulkan_ps5_static STATIC $<TARGET_OBJECTS:vulkan_ps5_objects>)
 add_library(VulkanPS5::ICD ALIAS vulkan_ps5_static)
@@ -89,7 +89,7 @@ target_include_directories(vulkan_ps5_static
     "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(vulkan_ps5_static PUBLIC
-  Vulkan::Headers OpenAGC::openagc OpenAgcPsbc::Compiler)
+  Vulkan::Headers OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
 
 if(VULKAN_PS5_BUILD_SHARED)
   add_library(vulkan_ps5_icd SHARED $<TARGET_OBJECTS:vulkan_ps5_objects>)
@@ -100,7 +100,7 @@ if(VULKAN_PS5_BUILD_SHARED)
       "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
   target_link_libraries(vulkan_ps5_icd PRIVATE
-    OpenAGC::openagc OpenAgcPsbc::Compiler)
+    OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
   set(VULKAN_PS5_ICD_LIBRARY_PATH
     "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}vulkan_ps5${CMAKE_SHARED_LIBRARY_SUFFIX}")
   configure_file(vulkan_ps5_icd.json.in vulkan_ps5_icd.json @ONLY)
@@ -108,6 +108,16 @@ endif()
 
 if(VULKAN_PS5_BUILD_TESTS)
   enable_testing()
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME vulkan_ps5.native_migration_audit
+      COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/native_migration_audit.py"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+  else()
+    message(WARNING
+      "Python 3 not found; vulkan_ps5.native_migration_audit is disabled")
+  endif()
   add_executable(vulkan_ps5_lifecycle_test tests/lifecycle.c)
   target_link_libraries(vulkan_ps5_lifecycle_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.lifecycle COMMAND vulkan_ps5_lifecycle_test)
@@ -128,6 +138,19 @@ if(VULKAN_PS5_BUILD_TESTS)
   target_link_libraries(vulkan_ps5_eden_profile_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.eden_profile_report
     COMMAND vulkan_ps5_eden_profile_test)
+  add_executable(vulkan_ps5_zink_profile_test tests/zink_profile.c)
+  target_link_libraries(vulkan_ps5_zink_profile_test PRIVATE vulkan_ps5_static)
+  add_test(NAME vulkan_ps5.zink_gl21_profile_report
+    COMMAND vulkan_ps5_zink_profile_test)
+  add_executable(vulkan_ps5_capability_snapshot tests/capability_snapshot.c)
+  target_link_libraries(vulkan_ps5_capability_snapshot PRIVATE vulkan_ps5_static)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME vulkan_ps5.capability_baseline
+      COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/capability_snapshot_test.py"
+        "$<TARGET_FILE:vulkan_ps5_capability_snapshot>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/analysis/vulkan-capability-baseline.tsv")
+  endif()
   if(EXISTS "${VULKAN_MEMORY_ALLOCATOR_ROOT}/include/vk_mem_alloc.h")
     enable_language(CXX)
     add_executable(vulkan_ps5_eden_vma_test tests/eden_vma.cpp)
@@ -257,7 +280,7 @@ if(VULKAN_PS5_BUILD_TESTS)
     set(PIPELINE_SHADER_OUTPUTS)
     foreach(shader pipeline.vert pipeline.frag pipeline.comp pipeline.geom
                    pipeline.tesc pipeline.tese pipeline_sample.frag
-                   pipeline_cube_array.frag)
+                   pipeline_cube_array.frag pipeline_scalar.comp)
       set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
       add_custom_command(OUTPUT "${output}"
         COMMAND "${GLSLANG_VALIDATOR}" -V
@@ -353,6 +376,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_storage_image_spv.h")
   set(VULKAN_PS5_ROBUST_BUFFER_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_buffer_spv.h")
+  set(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_scalar_block_layout_spv.h")
   set(VULKAN_PS5_VARIABLE_POINTERS_BINARY
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_variable_pointers.spv")
   set(VULKAN_PS5_VARIABLE_POINTERS_HEADER
@@ -389,11 +414,25 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/compute/main.c "${VULKAN_PS5_ROBUST_BUFFER_HEADER}")
   target_compile_definitions(vulkan_ps5_robust_buffer_probe PRIVATE
     VULKAN_PS5_ROBUST_BUFFER_PROBE=1)
+  add_custom_command(OUTPUT "${VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_scalar_block_layout_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/scalar_block_layout.comp"
+      -o "${VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/scalar_block_layout.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_scalar_block_layout_probe
+    examples/compute/main.c "${VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER}")
+  target_compile_definitions(vulkan_ps5_scalar_block_layout_probe PRIVATE
+    VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE=1)
   if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME vulkan_ps5.storage_image_command_recording
       COMMAND vulkan_ps5_storage_image_probe)
     add_test(NAME vulkan_ps5.robust_buffer_command_recording
       COMMAND vulkan_ps5_robust_buffer_probe)
+    add_test(NAME vulkan_ps5.scalar_block_layout_command_recording
+      COMMAND vulkan_ps5_scalar_block_layout_probe)
     add_test(NAME vulkan_ps5.robust_vertex_command_recording
       COMMAND vulkan_ps5_robust_vertex_probe)
   endif()
@@ -423,6 +462,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_vert_spv.h")
   set(VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_triangle_frag_spv.h")
+  set(VULKAN_PS5_ALPHA_TO_ONE_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_alpha_to_one_frag_spv.h")
   set(VULKAN_PS5_ROBUST_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_vertex_spv.h")
   set(VULKAN_PS5_ROBUST_VERTEX_FRAGMENT_HEADER
@@ -474,6 +515,13 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
       -o "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/triangle.frag"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_ALPHA_TO_ONE_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_alpha_to_one_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/alpha_to_one.frag"
+      -o "${VULKAN_PS5_ALPHA_TO_ONE_FRAGMENT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/triangle/alpha_to_one.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_ROBUST_VERTEX_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
@@ -654,6 +702,24 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_NON_SOLID_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_wide_lines_probe PRIVATE
     VULKAN_PS5_WIDE_LINES_PROBE=1)
+  add_executable(vulkan_ps5_alpha_to_one_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_ALPHA_TO_ONE_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_alpha_to_one_probe PRIVATE
+    VULKAN_PS5_ALPHA_TO_ONE_PROBE=1)
+  add_executable(vulkan_ps5_dynamic_rendering_probe
+    examples/triangle/main.c
+    "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
+    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_dynamic_rendering_probe PRIVATE
+    VULKAN_PS5_DYNAMIC_RENDERING_PROBE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.alpha_to_one_command_recording
+      COMMAND vulkan_ps5_alpha_to_one_probe)
+    add_test(NAME vulkan_ps5.dynamic_rendering_command_recording
+      COMMAND vulkan_ps5_dynamic_rendering_probe)
+  endif()
   add_executable(vulkan_ps5_shader_demote_probe
     examples/triangle/main.c
     "${VULKAN_PS5_DEMOTE_VERTEX_HEADER}"
@@ -802,6 +868,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indexed_textured_vert_spv.h")
   set(VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_indexed_textured_frag_spv.h")
+  set(VULKAN_PS5_CUSTOM_BORDER_COLOR_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_custom_border_color_frag_spv.h")
   set(VULKAN_PS5_IMAGE_GATHER_FRAGMENT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_image_gather_frag_spv.h")
   set(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_HEADER
@@ -833,6 +901,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       -o "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}"
     DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/indexed_textured.frag"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_CUSTOM_BORDER_COLOR_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_custom_border_color_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/custom_border_color.frag"
+      -o "${VULKAN_PS5_CUSTOM_BORDER_COLOR_FRAGMENT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/indexed_textured/custom_border_color.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_IMAGE_GATHER_FRAGMENT_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -945,6 +1021,16 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_INDEXED_TEXTURED_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_mirror_clamp_probe PRIVATE
     VULKAN_PS5_MIRROR_CLAMP_PROBE=1)
+  add_executable(vulkan_ps5_custom_border_color_probe
+    examples/indexed_textured/main.c
+    "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
+    "${VULKAN_PS5_CUSTOM_BORDER_COLOR_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_custom_border_color_probe PRIVATE
+    VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.custom_border_color_command_recording
+      COMMAND vulkan_ps5_custom_border_color_probe)
+  endif()
   add_executable(vulkan_ps5_vertex_divisor_probe
     examples/indexed_textured/main.c
     "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"
@@ -975,6 +1061,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_storage_image_probe
       vulkan_ps5_robust_buffer_probe
+      vulkan_ps5_scalar_block_layout_probe
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
@@ -982,6 +1069,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
       vulkan_ps5_wide_lines_probe
+      vulkan_ps5_alpha_to_one_probe
+      vulkan_ps5_dynamic_rendering_probe
       vulkan_ps5_shader_demote_probe
       vulkan_ps5_shader_clip_distance_probe
       vulkan_ps5_shader_cull_distance_probe
@@ -995,6 +1084,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
       vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
+      vulkan_ps5_custom_border_color_probe
       vulkan_ps5_shader_image_gather_probe
       vulkan_ps5_fragment_stores_atomics_probe
       vulkan_ps5_image_cube_array_probe
@@ -1009,12 +1099,15 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_storage_image_probe
       vulkan_ps5_robust_buffer_probe
+      vulkan_ps5_scalar_block_layout_probe
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example
       vulkan_ps5_logic_op_probe vulkan_ps5_fill_mode_non_solid_probe
       vulkan_ps5_large_points_probe
       vulkan_ps5_wide_lines_probe
+      vulkan_ps5_alpha_to_one_probe
+      vulkan_ps5_dynamic_rendering_probe
       vulkan_ps5_shader_demote_probe
       vulkan_ps5_shader_clip_distance_probe
       vulkan_ps5_shader_cull_distance_probe
@@ -1030,6 +1123,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_query_example vulkan_ps5_query_lifecycle_probe
       vulkan_ps5_query_reset_probe vulkan_ps5_query_idle_probe
       vulkan_ps5_indexed_textured_example vulkan_ps5_mirror_clamp_probe
+      vulkan_ps5_custom_border_color_probe
       vulkan_ps5_shader_image_gather_probe
       vulkan_ps5_fragment_stores_atomics_probe
       vulkan_ps5_image_cube_array_probe
@@ -1050,6 +1144,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       SceSystemService)
     target_link_libraries(vulkan_ps5_robust_buffer_probe PRIVATE
       SceSystemService)
+    target_link_libraries(vulkan_ps5_scalar_block_layout_probe PRIVATE
+      SceSystemService)
     target_link_libraries(vulkan_ps5_variable_pointers_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_robust_vertex_probe PRIVATE
@@ -1067,6 +1163,15 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       SceSystemService)
     target_link_libraries(vulkan_ps5_wide_lines_probe PRIVATE
       SceSystemService)
+    target_link_libraries(vulkan_ps5_alpha_to_one_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_dynamic_rendering_probe PRIVATE
+      SceSystemService)
+    foreach(query_target IN ITEMS vulkan_ps5_query_example
+        vulkan_ps5_query_lifecycle_probe vulkan_ps5_query_reset_probe
+        vulkan_ps5_query_idle_probe)
+      target_link_libraries(${query_target} PRIVATE SceSystemService)
+    endforeach()
     target_link_libraries(vulkan_ps5_shader_demote_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_shader_clip_distance_probe PRIVATE
@@ -1094,6 +1199,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_vertex_pipeline_stores_atomics_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_mirror_clamp_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_custom_border_color_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_vertex_divisor_probe PRIVATE
       SceSystemService)

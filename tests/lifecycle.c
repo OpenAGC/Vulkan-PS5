@@ -9,12 +9,12 @@ int main(void) {
     uint32_t api_version = 0;
     assert(vkEnumerateInstanceVersion(&api_version) == VK_SUCCESS);
     assert(VK_API_VERSION_MAJOR(api_version) == 1);
-    assert(VK_API_VERSION_MINOR(api_version) == 1);
+    assert(VK_API_VERSION_MINOR(api_version) == 2);
 
     VkApplicationInfo app = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "lifecycle",
-        .apiVersion = VK_API_VERSION_1_1,
+        .apiVersion = VK_API_VERSION_1_2,
     };
     VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -94,12 +94,42 @@ int main(void) {
     assert(divisor_properties.maxVertexAttribDivisor == UINT32_MAX);
     assert(divisor_properties.supportsNonZeroFirstInstance == VK_FALSE);
     assert(subgroup.subgroupSize == 32);
+    VkPhysicalDeviceTimelineSemaphoreProperties timeline_properties = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES,
+    };
+    VkPhysicalDeviceProperties2 timeline_properties2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &timeline_properties,
+    };
+    vkGetPhysicalDeviceProperties2(physical, &timeline_properties2);
+assert(timeline_properties.maxTimelineSemaphoreValueDifference ==
+UINT64_MAX);
+VkPhysicalDeviceLineRasterizationProperties line_properties = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES,
+};
+VkPhysicalDeviceProperties2 line_properties2 = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+.pNext = &line_properties,
+};
+vkGetPhysicalDeviceProperties2(physical, &line_properties2);
+assert(line_properties.lineSubPixelPrecisionBits == 8);
+    VkPhysicalDeviceCustomBorderColorPropertiesEXT border_properties = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_PROPERTIES_EXT,
+    };
+    VkPhysicalDeviceProperties2 border_properties2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &border_properties,
+    };
+    vkGetPhysicalDeviceProperties2(physical, &border_properties2);
+    assert(border_properties.maxCustomBorderColorSamplers == 64u);
 
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 7);
-    VkExtensionProperties extensions[7];
+assert(extension_count == 20);
+VkExtensionProperties extensions[20];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
@@ -109,6 +139,15 @@ int main(void) {
     VkBool32 has_sampler_mirror_clamp = VK_FALSE;
     VkBool32 has_shader_float_controls = VK_FALSE;
     VkBool32 has_shader_demote = VK_FALSE;
+    VkBool32 has_maintenance1 = VK_FALSE;
+    VkBool32 has_renderpass2 = VK_FALSE;
+    VkBool32 has_descriptor_template = VK_FALSE;
+    VkBool32 has_timeline = VK_FALSE;
+    VkBool32 has_scalar_layout = VK_FALSE;
+    VkBool32 has_dynamic_rendering = VK_FALSE;
+    VkBool32 has_custom_border_color = VK_FALSE;
+    VkBool32 has_border_color_swizzle = VK_FALSE;
+    VkBool32 has_maintenance5 = VK_FALSE;
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
             VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
@@ -124,10 +163,32 @@ int main(void) {
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME) == 0;
         has_shader_demote |= strcmp(extensions[i].extensionName,
             VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME) == 0;
+        has_maintenance1 |= strcmp(extensions[i].extensionName,
+            VK_KHR_MAINTENANCE_1_EXTENSION_NAME) == 0;
+        has_renderpass2 |= strcmp(extensions[i].extensionName,
+            VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME) == 0;
+        has_descriptor_template |= strcmp(extensions[i].extensionName,
+            VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME) == 0;
+        has_timeline |= strcmp(extensions[i].extensionName,
+            VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0;
+        has_scalar_layout |= strcmp(extensions[i].extensionName,
+            VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME) == 0;
+        has_dynamic_rendering |= strcmp(extensions[i].extensionName,
+            VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME) == 0;
+        has_custom_border_color |= strcmp(extensions[i].extensionName,
+            VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME) == 0;
+        has_border_color_swizzle |= strcmp(extensions[i].extensionName,
+            VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME) == 0;
+        has_maintenance5 |= strcmp(extensions[i].extensionName,
+            VK_KHR_MAINTENANCE_5_EXTENSION_NAME) == 0;
     }
     assert(has_host_query_reset && has_vertex_divisor && has_swapchain &&
            has_driver_properties && has_sampler_mirror_clamp &&
-           has_shader_float_controls && has_shader_demote);
+           has_shader_float_controls && has_shader_demote &&
+           has_maintenance1 && has_renderpass2 && has_descriptor_template);
+    assert(has_timeline && has_scalar_layout && has_dynamic_rendering &&
+           has_custom_border_color && has_border_color_swizzle);
+    assert(has_maintenance5);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -155,6 +216,7 @@ int main(void) {
     };
     vkGetPhysicalDeviceFeatures2(physical, &features2);
     assert(features2.features.robustBufferAccess == VK_TRUE);
+    assert(features2.features.alphaToOne == VK_TRUE);
     assert(host_query_reset.hostQueryReset == VK_TRUE);
     assert(demote_features.shaderDemoteToHelperInvocation == VK_TRUE);
     assert(divisor_features.vertexAttributeInstanceRateDivisor == VK_TRUE);
@@ -204,6 +266,91 @@ int main(void) {
     vkGetPhysicalDeviceFeatures2(physical, &variable_pointer_features2);
     assert(variable_pointer_features.variablePointers == VK_TRUE);
     assert(variable_pointer_features.variablePointersStorageBuffer == VK_TRUE);
+    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 timeline_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &timeline_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &timeline_features2);
+assert(timeline_features.timelineSemaphore == VK_TRUE);
+VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+};
+VkPhysicalDeviceFeatures2 scalar_features2 = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+.pNext = &scalar_features,
+};
+vkGetPhysicalDeviceFeatures2(physical, &scalar_features2);
+assert(scalar_features.scalarBlockLayout == VK_TRUE);
+VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+};
+VkPhysicalDeviceFeatures2 dynamic_rendering_features2 = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+.pNext = &dynamic_rendering_features,
+};
+vkGetPhysicalDeviceFeatures2(physical, &dynamic_rendering_features2);
+assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT custom_border_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 custom_border_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &custom_border_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &custom_border_features2);
+    assert(custom_border_features.customBorderColors == VK_TRUE);
+    assert(custom_border_features.customBorderColorWithoutFormat == VK_TRUE);
+    VkPhysicalDeviceBorderColorSwizzleFeaturesEXT border_swizzle_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 border_swizzle_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &border_swizzle_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &border_swizzle_features2);
+    assert(border_swizzle_features.borderColorSwizzle == VK_FALSE);
+    assert(border_swizzle_features.borderColorSwizzleFromImage == VK_TRUE);
+    VkPhysicalDeviceMaintenance5Features maintenance5_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 maintenance5_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &maintenance5_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &maintenance5_features2);
+    assert(maintenance5_features.maintenance5 == VK_TRUE);
+    VkPhysicalDeviceVulkan12Features features12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 features12_query = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &features12,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &features12_query);
+    assert(features12.samplerMirrorClampToEdge == VK_TRUE);
+    assert(features12.scalarBlockLayout == VK_TRUE);
+    assert(features12.hostQueryReset == VK_TRUE);
+    assert(features12.timelineSemaphore == VK_TRUE);
+    assert(features12.drawIndirectCount == VK_FALSE);
+    assert(features12.bufferDeviceAddress == VK_FALSE);
+VkPhysicalDeviceLineRasterizationFeatures line_features = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES,
+};
+VkPhysicalDeviceFeatures2 line_features2 = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+.pNext = &line_features,
+};
+vkGetPhysicalDeviceFeatures2(physical, &line_features2);
+assert(line_features.rectangularLines == VK_TRUE);
+assert(line_features.bresenhamLines == VK_FALSE);
+assert(line_features.smoothLines == VK_FALSE);
+assert(line_features.stippledRectangularLines == VK_FALSE);
 
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT divisor_features_ext = {
         .sType =
@@ -222,6 +369,7 @@ int main(void) {
     VkPhysicalDeviceFeatures features;
     vkGetPhysicalDeviceFeatures(physical, &features);
     assert(features.robustBufferAccess == VK_TRUE);
+    assert(features.alphaToOne == VK_TRUE);
     assert(features.depthBiasClamp == VK_TRUE);
     assert(features.depthClamp == VK_TRUE);
     assert(features.drawIndirectFirstInstance == VK_TRUE);
@@ -269,6 +417,7 @@ int main(void) {
     features.vertexPipelineStoresAndAtomics = VK_FALSE;
     features.wideLines = VK_FALSE;
     features.robustBufferAccess = VK_FALSE;
+    features.alphaToOne = VK_FALSE;
     const VkBool32 *feature_bits = (const VkBool32 *)&features;
     for (size_t i = 0; i < sizeof(features) / sizeof(*feature_bits); ++i)
         assert(feature_bits[i] == VK_FALSE);
@@ -321,7 +470,7 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-        .enabledExtensionCount = 6,
+.enabledExtensionCount = 11,
         .ppEnabledExtensionNames =
             (const char *const[]){
                 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
@@ -330,10 +479,26 @@ int main(void) {
                 VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
                 VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
                 VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
-            },
-    };
+                VK_KHR_MAINTENANCE_1_EXTENSION_NAME,
+                VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME,
+                VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME,
+VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+},
+};
+VkPhysicalDeviceLineRasterizationFeatures enabled_line = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES,
+.rectangularLines = VK_TRUE,
+};
+VkPhysicalDeviceTimelineSemaphoreFeatures enabled_timeline = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+.timelineSemaphore = VK_TRUE,
+};
+enabled_timeline.pNext = &enabled_line;
     VkPhysicalDeviceHostQueryResetFeatures enabled_host_query_reset = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
+        .pNext = &enabled_timeline,
         .hostQueryReset = VK_TRUE,
     };
     VkPhysicalDeviceVertexAttributeDivisorFeatures enabled_divisor = {
@@ -463,6 +628,128 @@ int main(void) {
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
     assert(queue != VK_NULL_HANDLE);
+    assert(vkGetDeviceProcAddr(device, "vkCreateRenderPass2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdBeginRenderPass2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdNextSubpass2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdEndRenderPass2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdBeginRenderingKHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdEndRenderingKHR") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdBindIndexBuffer2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device,
+        "vkGetRenderingAreaGranularityKHR") != NULL);
+    assert(vkGetDeviceProcAddr(device,
+        "vkGetDeviceImageSubresourceLayoutKHR") != NULL);
+    assert(vkGetDeviceProcAddr(device,
+        "vkGetImageSubresourceLayout2KHR") != NULL);
+    assert(vkGetDeviceProcAddr(device,
+        "vkCreateDescriptorUpdateTemplateKHR") != NULL);
+    VkDevice peer_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &device_info, NULL, &peer_device) ==
+           VK_SUCCESS);
+    VkQueue peer_queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(peer_device, 0, 0, &peer_queue);
+    assert(peer_queue != VK_NULL_HANDLE && peer_queue != queue);
+    vkDestroyDevice(peer_device, NULL);
+    assert(vkDeviceWaitIdle(device) == VK_SUCCESS);
+
+    const VkSemaphoreTypeCreateInfo timeline_type = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue = 2,
+    };
+    const VkSemaphoreCreateInfo timeline_create = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &timeline_type,
+    };
+    VkSemaphore timeline_semaphore = VK_NULL_HANDLE;
+    assert(vkCreateSemaphore(device, &timeline_create, NULL,
+                             &timeline_semaphore) == VK_SUCCESS);
+    uint64_t timeline_value = 0;
+    assert(vkGetSemaphoreCounterValue(device, timeline_semaphore,
+                                      &timeline_value) == VK_SUCCESS);
+    assert(timeline_value == 2);
+    const VkSemaphoreWaitInfo wait_three = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .semaphoreCount = 1,
+        .pSemaphores = &timeline_semaphore,
+        .pValues = (const uint64_t[]){3},
+    };
+    assert(vkWaitSemaphores(device, &wait_three, 0) == VK_TIMEOUT);
+    const VkSemaphoreSignalInfo signal_three = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+        .semaphore = timeline_semaphore,
+        .value = 3,
+    };
+    assert(vkSignalSemaphore(device, &signal_three) == VK_SUCCESS);
+    const uint64_t wait_value = 3;
+    const uint64_t signal_value = 5;
+    const VkTimelineSemaphoreSubmitInfo timeline_submit = {
+        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+        .waitSemaphoreValueCount = 1,
+        .pWaitSemaphoreValues = &wait_value,
+        .signalSemaphoreValueCount = 1,
+        .pSignalSemaphoreValues = &signal_value,
+    };
+    const VkPipelineStageFlags timeline_wait_stage =
+        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    const VkSubmitInfo timeline_queue_submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = &timeline_submit,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &timeline_semaphore,
+        .pWaitDstStageMask = &timeline_wait_stage,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &timeline_semaphore,
+    };
+    assert(vkQueueSubmit(queue, 1, &timeline_queue_submit,
+                         VK_NULL_HANDLE) == VK_SUCCESS);
+    assert(vkGetSemaphoreCounterValue(device, timeline_semaphore,
+                                      &timeline_value) == VK_SUCCESS);
+    assert(timeline_value == 5);
+    const VkSemaphoreWaitInfo wait_five = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .semaphoreCount = 1,
+        .pSemaphores = &timeline_semaphore,
+        .pValues = &signal_value,
+    };
+    assert(vkWaitSemaphores(device, &wait_five, 1000000) == VK_SUCCESS);
+    vkDestroySemaphore(device, timeline_semaphore, NULL);
+
+    const VkAttachmentDescription2 attachment2 = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkAttachmentReference2 color_reference2 = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    };
+    const VkSubpassDescription2 subpass2 = {
+        .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_reference2,
+    };
+    const VkRenderPassCreateInfo2 render_pass_info2 = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
+        .attachmentCount = 1,
+        .pAttachments = &attachment2,
+        .subpassCount = 1,
+        .pSubpasses = &subpass2,
+    };
+    VkRenderPass render_pass2 = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass2(device, &render_pass_info2, NULL,
+                               &render_pass2) == VK_SUCCESS);
+    assert(render_pass2 != VK_NULL_HANDLE);
+    vkDestroyRenderPass(device, render_pass2, NULL);
 
     const VkQueryPoolCreateInfo query_info = {
         .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,

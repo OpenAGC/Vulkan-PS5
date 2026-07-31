@@ -84,13 +84,17 @@ for archive in libvulkan_ps5.a libopenagc.a libopenagc_psbc.a; do
 done
 
 if [ -n "$toolchain" ]; then
-    for library in kernel SceAgcDriver SceVideoOut SceSystemService \
+    for library in kernel SceVideoOut SceSystemService \
                    unwind c++abi c++ m; do
         if ! grep -F -- "-l$library" "$link_log" >/dev/null; then
             echo "Prospero consumer link omitted -l$library" >&2
             exit 1
         fi
     done
+    if grep -F -- "-lSceAgcDriver" "$link_log" >/dev/null; then
+        echo "Prospero consumer acquired forbidden -lSceAgcDriver dependency" >&2
+        exit 1
+    fi
     if [ -n "$artifact_output" ]; then
         mkdir -p "$(dirname "$artifact_output")"
         cmake -E copy "$consumer_build/vulkan_ps5_package_consumer.elf" \

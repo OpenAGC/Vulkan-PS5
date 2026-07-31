@@ -64,7 +64,7 @@ static int create_buffer(VkPhysicalDevice physical, VkDevice device,
     return result;
 }
 
-int main(void)
+static int run_buffer_copy(void)
 {
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -194,6 +194,18 @@ int main(void)
     vkFreeMemory(device, source_memory, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
+    return status;
+}
+
+int main(void)
+{
+    int status;
+
+    (void)setvbuf(stdout, NULL, _IONBF, 0);
+    (void)setvbuf(stderr, NULL, _IONBF, 0);
+    puts("buffer_copy: stage=start");
+    status = run_buffer_copy();
+    printf("buffer_copy: stage=exit status=%d\n", status);
 #if defined(OPENAGC_PROSPERO)
     vulkan_ps5_system_service_exit("buffer_copy");
 #endif

@@ -280,15 +280,26 @@ int main(int argc, char **argv)
     const VkDescriptorBufferInfo output_info = {
         output_buffer, 0, VK_WHOLE_SIZE,
     };
-    const VkWriteDescriptorSet descriptor_write = {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = descriptor_sets[0],
+    const VkDescriptorUpdateTemplateEntry descriptor_template_entry = {
         .dstBinding = 0,
+        .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .pBufferInfo = &output_info,
+        .offset = 0,
+        .stride = sizeof(output_info),
     };
-    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+    const VkDescriptorUpdateTemplateCreateInfo descriptor_template_info = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO,
+        .descriptorUpdateEntryCount = 1,
+        .pDescriptorUpdateEntries = &descriptor_template_entry,
+        .templateType = VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET,
+        .descriptorSetLayout = set_layout,
+    };
+    VkDescriptorUpdateTemplate descriptor_template = VK_NULL_HANDLE;
+    assert(vkCreateDescriptorUpdateTemplate(device, &descriptor_template_info,
+        NULL, &descriptor_template) == VK_SUCCESS);
+    vkUpdateDescriptorSetWithTemplate(device, descriptor_sets[0],
+                                      descriptor_template, &output_info);
     const VkCopyDescriptorSet descriptor_copy = {
         .sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
         .srcSet = descriptor_sets[0],
@@ -370,6 +381,21 @@ int main(int argc, char **argv)
     VkSampler anisotropic_sampler;
     assert(vkCreateSampler(device, &anisotropic_sampler_info, NULL,
                            &anisotropic_sampler) == VK_SUCCESS);
+    const VkSamplerCustomBorderColorCreateInfoEXT custom_border_info = {
+        .sType =
+            VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT,
+        .customBorderColor = {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}},
+        .format = VK_FORMAT_UNDEFINED,
+    };
+    VkSamplerCreateInfo custom_sampler_info = sampler_info;
+    custom_sampler_info.pNext = &custom_border_info;
+    custom_sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    custom_sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    custom_sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    custom_sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
+    VkSampler custom_sampler;
+    assert(vkCreateSampler(device, &custom_sampler_info, NULL,
+                           &custom_sampler) == VK_SUCCESS);
     VkSamplerCreateInfo invalid_anisotropic_sampler_info =
         anisotropic_sampler_info;
     invalid_anisotropic_sampler_info.maxAnisotropy = 0.5f;
@@ -525,7 +551,9 @@ int main(int argc, char **argv)
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_LINEAR,
-        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
     };
@@ -754,6 +782,27 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &graphics_info, NULL,
                                      &graphics_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
+    const VkFormat dynamic_color_formats[] = {
+        VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
+    };
+    const VkPipelineRenderingCreateInfo pipeline_rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 2,
+        .pColorAttachmentFormats = dynamic_color_formats,
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .stencilAttachmentFormat = VK_FORMAT_D32_SFLOAT_S8_UINT,
+    };
+    VkGraphicsPipelineCreateInfo dynamic_rendering_pipeline_info =
+        graphics_info;
+    dynamic_rendering_pipeline_info.pNext = &pipeline_rendering;
+    dynamic_rendering_pipeline_info.renderPass = VK_NULL_HANDLE;
+    dynamic_rendering_pipeline_info.subpass = 0;
+    VkPipeline dynamic_rendering_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &dynamic_rendering_pipeline_info, NULL,
+        &dynamic_rendering_pipeline) == VK_SUCCESS);
     const VkPipelineViewportStateCreateInfo dynamic_viewport_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 2,
@@ -788,6 +837,8 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &static_bias_info, NULL,
                                      &static_bias_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        static_bias_pipeline));
     VkPipelineRasterizationStateCreateInfo non_solid_raster = rasterization;
     non_solid_raster.depthBiasEnable = VK_FALSE;
     non_solid_raster.polygonMode = VK_POLYGON_MODE_LINE;
@@ -798,20 +849,25 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &non_solid_info, NULL,
                                      &line_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(line_pipeline));
     non_solid_raster.polygonMode = VK_POLYGON_MODE_POINT;
     VkPipeline point_pipeline;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &non_solid_info, NULL,
                                      &point_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(point_pipeline));
     VkPipelineInputAssemblyStateCreateInfo point_input_assembly = input_assembly;
     point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
     point_list_info.pInputAssemblyState = &point_input_assembly;
+    point_list_info.pRasterizationState = &non_solid_raster;
     point_list_info.pDynamicState = NULL;
     VkPipeline point_list_pipeline;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &point_list_info, NULL,
                                      &point_list_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        point_list_pipeline));
     VkPipelineInputAssemblyStateCreateInfo line_input_assembly = input_assembly;
     line_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     VkPipelineRasterizationStateCreateInfo wide_line_raster = rasterization;
@@ -825,6 +881,8 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &wide_line_info, NULL,
                                      &wide_line_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        wide_line_pipeline));
     const VkDynamicState line_width_dynamic_state =
         VK_DYNAMIC_STATE_LINE_WIDTH;
     const VkPipelineDynamicStateCreateInfo line_width_dynamic_info = {
@@ -839,6 +897,8 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &dynamic_line_info, NULL,
                                      &dynamic_line_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        dynamic_line_pipeline));
     VkPipelineColorBlendStateCreateInfo logic_blend = blend;
     logic_blend.logicOpEnable = VK_TRUE;
     logic_blend.logicOp = VK_LOGIC_OP_XOR;
@@ -848,6 +908,7 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &logic_info, NULL,
                                      &logic_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(logic_pipeline));
     const VkPipelineShaderStageCreateInfo geometry_stages[] = {
         graphics_stages[0],
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
@@ -861,6 +922,8 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &geometry_info, NULL,
                                      &geometry_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        geometry_pipeline));
     const VkPipelineShaderStageCreateInfo tessellation_stages[] = {
         graphics_stages[0],
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
@@ -887,6 +950,8 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &tessellation_info, NULL,
                                      &tessellation_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        tessellation_pipeline));
 
     const VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -901,6 +966,9 @@ int main(int argc, char **argv)
     };
     VkCommandBuffer command;
     assert(vkAllocateCommandBuffers(device, &allocate_info, &command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_has_native(command));
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
     const VkQueryPoolCreateInfo query_info = {
         .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
         .queryType = VK_QUERY_TYPE_OCCLUSION,
@@ -912,9 +980,13 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_RECORDING);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdDispatch(command, 1, 1, 1);
     assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdSetLineWidth(command, 0.5f);
@@ -926,14 +998,293 @@ int main(int argc, char **argv)
     vkCmdDraw(command, 3, 1, 0, 0);
     assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
-    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     const VkBufferCopy buffer_copies[2] = {
         {0u, 0u, 16u},
         {32u, 32u, 16u},
     };
+    const VkBufferMemoryBarrier copy_barriers[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = indirect_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = output_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         2u, copy_barriers, 0u, NULL);
     vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 2u,
                     buffer_copies);
-    vkCmdResetQueryPool(command, query_pool, 0, 2);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const VkImageCopy image_copy = {
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .extent = {256u, 256u, 1u},
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdCopyImage(command, color_image, VK_IMAGE_LAYOUT_GENERAL,
+                   color_image_1, VK_IMAGE_LAYOUT_GENERAL, 1u, &image_copy);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const VkBufferImageCopy buffer_image_copy = {
+        .bufferOffset = 0u,
+        .bufferRowLength = 8u,
+        .bufferImageHeight = 4u,
+        .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .imageOffset = {2, 2, 0},
+        .imageExtent = {4u, 3u, 1u},
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdCopyBufferToImage(command, indirect_buffer, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &buffer_image_copy);
+    vkCmdCopyImageToBuffer(command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, output_buffer, 1u, &buffer_image_copy);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const uint32_t update_data[4] = {
+        0x10203040u, 0x50607080u, 0x90a0b0c0u, 0xd0e0f000u,
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdUpdateBuffer(command, output_buffer, 0u, sizeof(update_data),
+                      update_data);
+    vkCmdFillBuffer(command, output_buffer, 32u, 16u, 0xa5a5a5a5u);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const VkBufferMemoryBarrier compute_barriers[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = output_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = indirect_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
+                         0u, NULL, 2u, compute_barriers, 0u, NULL);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDispatch(command, 3, 5, 7);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_dispatch_count(command) == 1u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                             VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                         0u, 0u, NULL, 2u, compute_barriers, 0u, NULL);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDispatchIndirect(command, indirect_buffer, 0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_dispatch_count(command) == 1u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    const VkBufferMemoryBarrier native_graphics_barriers[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = vertex_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_INDEX_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = index_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = indirect_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+    };
+    const VkImageMemoryBarrier native_texture_barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = texture_image,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+        },
+    };
+    const VkRenderPassBeginInfo native_render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, {256, 256}},
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0u, 0u, NULL, 3u, native_graphics_barriers,
+                         1u, &native_texture_barrier);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 0u, 1u, &texture_set,
+                            0u, NULL);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBeginRenderPass(command, &native_render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
+    const VkDeviceSize native_vertex_offset = 0u;
+    vkCmdBindVertexBuffers(command, 0u, 1u, &vertex_buffer,
+                           &native_vertex_offset);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBindIndexBuffer(command, index_buffer, 0u, VK_INDEX_TYPE_UINT16);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdDrawIndexed(command, 3u, 1u, 0u, 0, 0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 2u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                             VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+                         0u, 0u, NULL, 3u, native_graphics_barriers,
+                         1u, &native_texture_barrier);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 0u, 1u, &texture_set,
+                            0u, NULL);
+    vkCmdBeginRenderPass(command, &native_render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
+    vkCmdBindVertexBuffers(command, 0u, 1u, &vertex_buffer,
+                           &native_vertex_offset);
+    vkCmdDrawIndirect(command, indirect_buffer, 0u, 2u,
+                      sizeof(VkDrawIndirectCommand));
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBindIndexBuffer(command, index_buffer, 0u, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexedIndirect(command, indirect_buffer, 64u, 2u,
+                             sizeof(VkDrawIndexedIndirectCommand));
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 4u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    /* Query reset/begin/end must remain wholly native: once a query command
+     * is present, falling back to the legacy stream would silently omit it. */
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0u, 0u, NULL, 3u, native_graphics_barriers,
+                         1u, &native_texture_barrier);
+    vkCmdResetQueryPool(command, query_pool, 0u, 2u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 0u, 1u, &texture_set,
+                            0u, NULL);
+    vkCmdBeginRenderPass(command, &native_render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
+    vkCmdBindVertexBuffers(command, 0u, 1u, &vertex_buffer,
+                           &native_vertex_offset);
+    vkCmdBeginQuery(command, query_pool, 1u,
+                    VK_QUERY_CONTROL_PRECISE_BIT);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndQuery(command, query_pool, 1u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    /* Native-only commands must never be silently discarded when a later
+     * command can be encoded only by the temporary legacy fallback. */
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 2u,
+                    buffer_copies);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDispatch(command, 3, 5, 7);
+    assert(vk_ps5_command_buffer_record_error(command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    /* The reverse ordering must also fail closed: once fallback is selected,
+     * a subsequent native-only copy cannot be accepted. */
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDispatch(command, 3, 5, 7);
+    assert(!vk_ps5_command_buffer_native_stream_complete(command));
+    vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 2u,
+                    buffer_copies);
+    assert(vk_ps5_command_buffer_record_error(command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
                             0, 1, &descriptor_sets[1], 0, NULL);
@@ -948,9 +1299,15 @@ int main(int argc, char **argv)
         .framebuffer = framebuffer,
         .renderArea = {{0, 0}, {256, 256}},
     };
-    vkCmdBeginRenderPass(command, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+const VkSubpassBeginInfo subpass_begin = {
+.sType = VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO,
+.contents = VK_SUBPASS_CONTENTS_INLINE,
+};
+const VkSubpassEndInfo subpass_end = {
+.sType = VK_STRUCTURE_TYPE_SUBPASS_END_INFO,
+};
+vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
-    vkCmdBeginQuery(command, query_pool, 1, VK_QUERY_CONTROL_PRECISE_BIT);
     const VkDeviceSize vertex_offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     const VkViewport dynamic_viewports[] = {
@@ -977,12 +1334,6 @@ int main(int argc, char **argv)
                       geometry_pipeline);
     vkCmdBindIndexBuffer(command, index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command, 3, 1, 0, 0, 0);
-    vkCmdDrawIndirect(command, indirect_buffer, 0u, 1u,
-                      sizeof(VkDrawIndirectCommand));
-    vkCmdDrawIndirect(command, indirect_buffer, 0u, 2u,
-                      sizeof(VkDrawIndirectCommand));
-    vkCmdDrawIndexedIndirect(command, indirect_buffer, 64u, 2u,
-                             sizeof(VkDrawIndexedIndirectCommand));
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_bias_pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
@@ -1007,9 +1358,53 @@ int main(int argc, char **argv)
     vkCmdDraw(command, 2, 1, 0, 0);
     vkCmdSetLineWidth(command, 32.0f);
     vkCmdDraw(command, 2, 1, 0, 0);
-    vkCmdEndQuery(command, query_pool, 1);
-    vkCmdEndRenderPass(command);
+vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_EXECUTABLE);
+
+    VkCommandBuffer dynamic_rendering_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &dynamic_rendering_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(dynamic_rendering_command, &begin_info) ==
+        VK_SUCCESS);
+    const VkRenderingAttachmentInfo dynamic_colors[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = color_view,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = color_view_1,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        },
+    };
+    const VkRenderingAttachmentInfo dynamic_depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = depth_view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
+    const VkRenderingInfo dynamic_rendering = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {{0, 0}, {256, 256}},
+        .layerCount = 1,
+        .colorAttachmentCount = 2,
+        .pColorAttachments = dynamic_colors,
+        .pDepthAttachment = &dynamic_depth_stencil,
+        .pStencilAttachment = &dynamic_depth_stencil,
+    };
+    vkCmdBeginRendering(dynamic_rendering_command, &dynamic_rendering);
+    vkCmdBindPipeline(dynamic_rendering_command,
+        VK_PIPELINE_BIND_POINT_GRAPHICS, dynamic_rendering_pipeline);
+    vkCmdEndRendering(dynamic_rendering_command);
+    assert(vkEndCommandBuffer(dynamic_rendering_command) == VK_SUCCESS);
 
     VkCommandBuffer unset_line_width_command;
     assert(vkAllocateCommandBuffers(device, &allocate_info,
@@ -1097,6 +1492,78 @@ int main(int argc, char **argv)
                     &usage_copy);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    VkImageCopy partial_image_copy = image_copy;
+    partial_image_copy.extent.width = 128u;
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyImage(invalid_copy_command, color_image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, color_image_1,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u,
+                   &partial_image_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdCopyImage(invalid_copy_command, color_image,
+                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, color_image_1,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1u, &image_copy);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdUpdateBuffer(invalid_copy_command, output_buffer, 2u,
+                      sizeof(update_data), update_data);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdFillBuffer(invalid_copy_command, output_buffer, 0u, 6u, 0u);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+
+    const VkClearColorValue clear_color = {{0u, 0u, 0u, 0u}};
+    const VkImageSubresourceRange color_range = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+    };
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdClearColorImage(invalid_copy_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1u, &color_range);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdBlitImage(invalid_copy_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1, VK_IMAGE_LAYOUT_GENERAL,
+        0u, NULL, VK_FILTER_NEAREST);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdClearDepthStencilImage(invalid_copy_command, depth_image,
+        VK_IMAGE_LAYOUT_GENERAL, NULL, 0u, NULL);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdClearAttachments(invalid_copy_command, 0u, NULL, 0u, NULL);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdResolveImage(invalid_copy_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1, VK_IMAGE_LAYOUT_GENERAL,
+        0u, NULL);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
 
     const uint32_t *dwords;
     uint32_t count = vk_ps5_command_buffer_dwords(command, &dwords);
@@ -1146,8 +1613,6 @@ int main(int argc, char **argv)
     bool found_line_width_16 = false, found_line_width_32 = false;
     bool found_vulkan_clip_control = false, found_depth_clamp = false;
     bool found_vulkan_depth_transform = false;
-    uint32_t occlusion_snapshots = 0;
-    bool found_query_reset = false, found_query_availability = false;
     uint32_t last_single_sh_register = UINT32_MAX;
     uint32_t last_single_sh_value = UINT32_MAX;
     uint32_t indirect_base_vertex_register = UINT32_MAX;
@@ -1166,16 +1631,6 @@ int main(int argc, char **argv)
             assert(dwords[i - 1] != OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(0));
             found_dispatch = true;
         } else if (opcode == AGC_PM4_OP_DMA_DATA) {
-            assert(i + 7u < count && dma_copy_count < 2u);
-            uint64_t source_address = vk_ps5_memory_gpu_address(
-                indirect_memory, (VkDeviceSize)dma_copy_count * 32u);
-            uint64_t destination_address = vk_ps5_memory_gpu_address(
-                output_memory, (VkDeviceSize)dma_copy_count * 32u);
-            assert(dwords[i + 2u] == 16u);
-            assert(dwords[i + 3u] == (uint32_t)destination_address);
-            assert(dwords[i + 4u] == (uint32_t)(destination_address >> 32u));
-            assert(dwords[i + 5u] == (uint32_t)source_address);
-            assert(dwords[i + 6u] == (uint32_t)(source_address >> 32u));
             dma_copy_count++;
         } else if (opcode == AGC_PM4_OP_DRAW_INDEX_2) {
             assert(i + 5 < count && dwords[i + 4] == 3);
@@ -1184,9 +1639,16 @@ int main(int argc, char **argv)
             assert(dwords[i + 3] == (uint32_t)(index_address >> 32));
             found_draw = true;
         } else if (opcode == AGC_PM4_OP_DRAW_INDIRECT) {
-            assert(i + 4 < count);
+            assert(!"native helper must use DRAW_INDIRECT_MULTI");
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
+            assert(!"native helper must use DRAW_INDEX_INDIRECT_MULTI");
+        } else if (opcode == AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
+            assert(i + 9 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
-            assert(dwords[i + 4] == 2u);
+            assert(dwords[i + 4] == 0x280u);
+            assert(dwords[i + 5] == 1u);
+            assert(dwords[i + 8] == 16u);
+            assert(dwords[i + 9] == 2u);
             if (indirect_base_vertex_register == UINT32_MAX) {
                 indirect_base_vertex_register = dwords[i + 2];
                 indirect_start_instance_register = dwords[i + 3];
@@ -1197,19 +1659,18 @@ int main(int argc, char **argv)
             assert(last_single_sh_register == indirect_draw_index_register);
             assert(last_single_sh_value == (indirect_count == 2u ? 1u : 0u));
             indirect_count++;
-        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT) {
-            assert(i + 4 < count);
+        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
+            assert(i + 9 < count);
             assert(dwords[i + 2] != 0u && dwords[i + 3] != 0u);
-            assert(dwords[i + 4] == 0u);
+            assert(dwords[i + 4] == 0x280u);
+            assert(dwords[i + 5] == 1u);
+            assert(dwords[i + 8] == 20u);
+            assert(dwords[i + 9] == 2u);
             assert(dwords[i + 2] == indirect_base_vertex_register);
             assert(dwords[i + 3] == indirect_start_instance_register);
             assert(last_single_sh_register == indirect_draw_index_register);
             assert(last_single_sh_value == indexed_indirect_count);
             indexed_indirect_count++;
-        } else if (opcode == AGC_PM4_OP_DRAW_INDIRECT_MULTI) {
-            assert(!"DrawID pipeline must expand non-indexed multi draws");
-        } else if (opcode == AGC_PM4_OP_DRAW_INDEX_INDIRECT_MULTI) {
-            assert(!"DrawID pipeline must expand indexed multi draws");
         } else if (opcode == AGC_PM4_OP_DRAW_INDEX_AUTO) {
             found_tess_draw |= i + 2 < count && dwords[i + 1] == 3u;
         } else if (opcode == AGC_PM4_OP_CONTEXT_CONTROL) {
@@ -1321,15 +1782,6 @@ int main(int argc, char **argv)
         } else if (opcode == AGC_PM4_OP_SET_UCONFIG_REG && i + 2 < count &&
                    dwords[i + 1] == AGC_REG_VGT_TF_MEMORY_BASE_HI) {
             found_tess_ring_base_hi = true;
-        } else if (opcode == AGC_PM4_OP_EVENT_WRITE &&
-                   i + 3 < count && dwords[i + 1] == 0x115u) {
-            ++occlusion_snapshots;
-        } else if (opcode == AGC_PM4_OP_WRITE_DATA) {
-            assert(i + 3 < count && dwords[i + 1] == 0x00100100u);
-            found_query_reset = true;
-        } else if (opcode == AGC_PM4_OP_RELEASE_MEM &&
-                   i + 7 < count && dwords[i + 5] == 1u) {
-            found_query_availability = true;
         }
         if (opcode == AGC_PM4_OP_SET_SH_REG && packet_length == 3u) {
             last_single_sh_register = dwords[i + 1u];
@@ -1337,9 +1789,9 @@ int main(int argc, char **argv)
         }
         i += packet_length;
     }
-    assert(found_dispatch && found_draw && dma_copy_count == 2u &&
-           indirect_count == 3u &&
-           indexed_indirect_count == 2u && found_tess_draw &&
+    assert(found_dispatch && found_draw && dma_copy_count == 0u &&
+           indirect_count == 0u &&
+           indexed_indirect_count == 0u && found_tess_draw &&
            found_tess_context && found_tess_ring_size &&
            found_tess_offchip && found_tess_ring_base &&
            found_tess_ring_base_hi && found_tess_hull_lds &&
@@ -1355,9 +1807,7 @@ int main(int argc, char **argv)
            found_line_width_32 &&
            found_vulkan_clip_control && found_depth_clamp &&
            found_vulkan_depth_transform &&
-           found_depth_surface && found_depth_control && found_stencil_control &&
-           found_query_reset && occlusion_snapshots == 2 &&
-           found_query_availability);
+           found_depth_surface && found_depth_control && found_stencil_control);
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
@@ -1395,6 +1845,41 @@ int main(int argc, char **argv)
         VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_PARTIAL_BIT) == VK_SUCCESS);
     assert(query_results[0] == 0u);
 
+    assert(vkResetCommandBuffer(command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0u, 0u, NULL, 2u, native_graphics_barriers,
+                         1u, &native_texture_barrier);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      graphics_pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            graphics_layout, 0u, 1u, &texture_set,
+                            0u, NULL);
+    vkCmdBeginRenderPass(command, &native_render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
+    vkCmdBindVertexBuffers(command, 0u, 1u, &vertex_buffer,
+                           &native_vertex_offset);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    vkCmdBindIndexBuffer(command, index_buffer, 0u, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(command, 3u, 1u, 0u, 0, 0u);
+    vkCmdEndRenderPass(command);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 2u);
+    assert(vkResetFences(device, 1u, &fence) == VK_SUCCESS);
+    assert(vkQueueSubmit(queue, 1u, &submit_info, fence) == VK_SUCCESS);
+    assert(vkGetFenceStatus(device, fence) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_EXECUTABLE);
+
+    assert(vkResetCommandPool(device, pool, 0u) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_state(command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vk_ps5_command_buffer_native_state(dynamic_rendering_command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
+
     vkDestroyFence(device, fence, NULL);
     vkDestroyQueryPool(device, query_pool, NULL);
     vkDestroyCommandPool(device, pool, NULL);
@@ -1409,6 +1894,7 @@ int main(int argc, char **argv)
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, logic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
+    vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);
     vkDestroyImage(device, depth_image, NULL);
@@ -1424,6 +1910,7 @@ int main(int argc, char **argv)
     vkDestroyDescriptorSetLayout(device, hull_output_set_layout, NULL);
     vkDestroyDescriptorSetLayout(device, texture_set_layout, NULL);
     vkDestroySampler(device, anisotropic_sampler, NULL);
+    vkDestroySampler(device, custom_sampler, NULL);
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);
     vkDestroyImage(device, texture_image, NULL);
@@ -1434,6 +1921,7 @@ int main(int argc, char **argv)
     vkDestroyShaderModule(device, tess_control, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
     vkDestroyPipeline(device, pipeline, NULL);
+    vkDestroyDescriptorUpdateTemplate(device, descriptor_template, NULL);
     vkDestroyDescriptorPool(device, descriptor_pool, NULL);
     vkDestroyPipelineLayout(device, layout, NULL);
     vkDestroyShaderModule(device, module, NULL);

@@ -1,6 +1,6 @@
 # Implementation Status
 
-## Current architecture status (2026-07-30)
+## Current architecture status (2026-07-31)
 
 The current ICD is a mature direct consumer of OpenAGC's low-level gfx1013
 builders, memory helpers, capabilities, submission, synchronization, VideoOut,
@@ -8,31 +8,255 @@ and `openagc-psbc` compiler metadata. Its host, loader/VVL, sanitizer,
 relocatable-package, and bounded FW 5.50 evidence below remains the regression
 baseline.
 
-The target ownership model has changed, but the migration has not yet been
-implemented: after OpenAGC stabilizes its native device/resource/pipeline API,
-Vulkan-PS5 will translate Vulkan semantics to native `AgcDevice`, `AgcQueue`,
-resource, shader, pipeline, command-buffer, fence, transition, capture, and
-presentation objects. Existing direct paths remain active until an equivalent
-native vertical slice passes the same gates.
+The target ownership model is being migrated in vertical slices. Device and
+queue lifecycle now use native `AgcDevice` and `AgcQueue`; resource, shader,
+pipeline, command-buffer, fence, transition, and capture paths remain direct
+until an equivalent native slice passes the same gates. Presentation now uses
+native `AgcPresentChain` ownership.
 
 Migration status:
 
-- **Baseline freeze:** planned. Record the advertised feature/extension/limit/
-  queue/format matrix and inventory every direct hardware-facing call.
-- **Device and resource migration:** blocked on stable OpenAGC native device,
-  runtime-info, heap, buffer, image, view, and sampler contracts.
-- **Pipeline migration:** blocked on native shader/pipeline objects consuming
-  versioned `openagc-psbc` reflection and rejecting incompatible exports,
-  attachments, blending, descriptors, samples, wave modes, and stage linkage.
-- **Command and synchronization migration:** blocked on native command-buffer,
-  transition, multi-submit, wait/signal, bounded-fence, and deferred-retirement
-  contracts.
-- **WSI migration:** blocked on OpenAGC-owned scanout resources and native
-  presentation lifecycle. Firmware patches and VideoOut hardware policy must
-  not remain duplicated in the ICD.
-- **Endpoint qualification:** pending after migration. Existing FW 5.50 passes
-  do not qualify the native path or FW 11.60; selected standard Vulkan
-  applications must use one firmware-neutral build on both endpoints.
+- **Baseline freeze:** complete. `analysis/native_runtime_calls.tsv` owns all
+  34 remaining direct hardware-facing calls by migration category, native
+  replacement, and named regression gate. `vulkan_ps5.native_migration_audit` fails when a
+  new call is unowned or an inventory entry becomes stale. The advertised
+  feature/extension/limit/queue/format snapshot is frozen and its strict
+  pinned-Mesa report has zero gaps.
+- **Device and resource migration:** the resource slice is active. OpenAGC
+  API 28 retains API 26's multiple-logical-device contract, API 27 explicit
+  `AgcMemory` plus placed resource binding. It supports exact
+  per-device child ownership, matching active AGC defaults versions, and
+  last-device shutdown. Every `VkDevice` now owns one native `AgcDevice` and
+  native graphics/compute queues. The Vulkan lifecycle gate creates two devices
+  concurrently, destroys one, and proves the survivor remains usable.
+  `VkDeviceMemory` allocation/mapping/cache operations now use `AgcMemory`,
+  and bound `VkBuffer` objects own placed `AgcBuffer` handles while the legacy
+  command encoder temporarily queries the allocation address. Images now use
+  native layout queries and placed `AgcImage`; compatible views are created as
+  typed/swizzled `AgcImageView` objects, and every sampler owns a normalized
+  `AgcSampler`. Direct descriptor-table assembly remains until command-buffer
+  migration consumes these native handles.
+- **Pipeline migration:** active. Every compiled Vulkan stage now owns an
+  `AgcShader`; compute pipelines own `AgcComputePipeline`, and the qualified
+  point/line/triangle, geometry, and tessellation graphics forms own
+`AgcGraphicsPipeline`. OpenAGC API 36 and PSBC API 18 carry an explicit
+  alpha-to-one reflection bit and prune
+  descriptor sets that have no stage user-SGPR address, while retaining every
+  binding in an addressable set. Native ownership now includes polygon modes,
+  culling, rasterizer discard, strip/fan primitive restart, depth clamp,
+  static/dynamic depth bias and line width, logic operations, and pipeline
+  switching. The legacy executable bindings remain until native
+  command-buffer migration consumes these handles.
+- **Command and synchronization migration:** active. Every Vulkan command
+  buffer now owns paired graphics/compute `AgcCommandBuffer` streams because
+  Vulkan queue family 0 exposes both workloads while the native objects are
+  intentionally queue-typed. Allocate, begin, failed-end rollback, successful
+  end, individual reset, pool reset, free, and pool destruction keep both
+  streams in lockstep. The graphics stream is now the ordered Vulkan queue
+  stream and may carry both graphics and compute pipeline binds; OpenAGC can
+  carry their eventual dispatches in that same hardware-proven DCB compute
+  carrier. `vkCmdPipelineBarrier`
+  translates supported buffer/image barriers into typed native usages,
+  ownership, byte ranges, and image subresource ranges. Explicitly transitioned
+  buffer copies are also recorded with `agcCmdCopyBuffer`. Resource-less memory
+  barriers and queue-family ownership transfers remain fail-closed. Descriptors
+  with explicit compatible native resource states bind through
+  `agcCmdBindDescriptors`; compute dispatch and baseline graphics attachment,
+  descriptor, vertex/index, viewport/scissor, and draw state are mirrored
+  natively. A complete native graphics stream now submits through
+  `agcQueueSubmit` with a finite native fence wait. Unsupported command mixtures
+  still use the legacy mirror until shader/descriptor ownership is complete,
+  so the duplicate encoder has not yet been deleted. Image-region and
+  buffer/image color transfers now record through OpenAGC API 41; unsupported
+  clear, blit, depth/stencil transfer, and resolve forms fail closed. If a command
+  buffer contains any native-only copy, query, or indirect command, a later
+  legacy fallback—or a native-only command after fallback—now fails command-
+  buffer finalization instead of silently omitting work. Indirect draw,
+  indexed draw, and dispatch now use typed native argument buffers; the
+  superseded Vulkan-side multi-draw encoder has been removed.
+- **WSI migration:** host-complete. Swapchain images are dedicated native
+  scanout resources retained by `AgcPresentChain`; native and legacy queue
+  completions publish an `AgcFence` consumed by bounded presentation, and
+  acquire exhaustion uses condition-variable wakeup instead of CPU polling.
+  The three raw `agcVideoOut*` calls are absent. Linked candidate
+  `0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`
+  passed 1,800 frames and clean teardown on FW 5.500.008.
+- **Endpoint qualification:** the native lifecycle slice is FW 5.50 qualified
+  by the concurrent-device installed-package consumer. Remaining native slices
+  and the complete FW 11.60 endpoint qualification are pending.
+
+The API-27 memory/buffer slice is host- and FW 5.500.008-qualified. A clean
+generic build passes all 46 tests, ASAN/UBSAN passes all 46, OpenAGC's clean
+generic suite passes 19/19 with 17,572 assertions, and the warning-free
+Prospero build produced the tested artifacts. The package consumer ELF
+`1fd79429140e26884cc492761d8551cf7a2b8769c39066463d9f05f6c9fc5547`
+passed native device/memory lifetime. The buffer-copy ELF
+`893ca67daae21821466a3bb0df4c75d50076d8e431283d92bd976d69388bbca2`
+then copied 144 bytes across two regions with 112 guard bytes intact, proving
+the placed-buffer binding offset feeds real GPU execution. Both cleanup-
+guarded runs self-terminated and left only the established raw-ELF
+`amount=0x4000` warning. Evidence is retained in
+`examples/qualification-logs/20260731T082817Z-package-consumer.log` and
+`examples/qualification-logs/20260731T082834Z-buffer-copy-run1.log` with their
+matching target klogs.
+
+The first API-38 native-copy candidate
+`0c1355192de8302bee43172540410a3424480bd379e5aa942d0e523f807e25b5`
+kernel-panicked the FW 5.50 console and is retired. The packet and address
+audit found that its new native DCB was suballocated beside mutable transfer
+resources, whereas the earlier passing carrier used an isolated command
+mapping. OpenAGC now allocates kernel-submitted native command storage from
+dedicated flexible mappings, and the buffer-copy probe is unbuffered and
+always reaches its SystemService-exit wrapper on ordinary failures. Fixed
+candidate `35315b83d6731844d825b932e16dad904003b3a0cc6b4114c261b35455ec4d56`
+passed the exact two-region/112-guard workload twice after cleanup, left no
+process, kept all diagnostic ports reachable, and produced no GPU-fault or
+panic signature. See
+`analysis/fw550_native_buffer_copy_panic_20260731.md`.
+
+The API-28 image/view/sampler slice is also host- and FW 5.500.008-qualified.
+The storage-image candidate
+`2030aac81046a6e5b270a9b8e6c2ee2953cf2555d09c753c0c43e8004d10b03f`
+wrote all 4,096 deterministic pixels. The depth candidate
+`94766f98dfd632b3821df01682dbe0cc78fc724eb93a80c967c6f08db82a5b46`
+passed twice with identical `54145/12288/9830` raw-depth counts and 22,118
+stencil writes. The cube-array candidate
+`2e9cfb91fd3f6c783ccda4f864d5399c80264a7eafdd0b4029c29b0545ec1c84`
+produced 9,216 red and 9,216 green samples, while custom-border candidate
+`61ef02a082c16723310565ee67e979fb960a2a76a3a78aef6caa8b42ce692bc8`
+produced all 18,432 expected blue samples through BR view swizzle. The storage,
+cube-array, and border probes used the cleanup/klog guard, self-terminated, and
+left only the established raw-ELF `amount=0x4000` warning. Evidence is retained
+at UTC timestamps `20260731T084955Z`,
+`20260731T085013Z`, `20260731T085153Z`, and `20260731T085214Z`.
+
+The first API-29 shader/pipeline ownership slice is host-, sanitizer-,
+Prospero-, and FW 5.500.008-qualified. All 46 normal and ASan/UBSan tests pass;
+the pipeline tests prove native shader ownership plus native compute and
+qualified graphics pipeline creation. Storage-image candidate
+`3198c1a4fe43adb58ddf0de11d223c894c10fba698891df071d05c2cf8ae694a`
+created the reflected native compute pipeline and wrote all 4,096 pixels.
+Alpha-to-one candidate
+`4bcefd5ae07303b4d72d5f6a13b2e3ac921e4be3eecc91ae8d59b88dcfbb153f`
+created the reflected native graphics pipeline and produced 18,432 green
+pixels. Both cleanup-guarded runs self-terminated with only the established
+raw-ELF `amount=0x4000` warning; evidence is retained at UTC timestamps
+`20260731T092529Z` and `20260731T092556Z`.
+
+The typed-transition and first native-copy slice passes all 46 generic and all
+46 ASan/UBSan tests plus the Prospero build. Command-recording tests assert the
+paired native objects progress through Initial, Recording, rollback to Initial,
+and Executable states, Vulkan buffer/image barriers produce native transition
+journals, and explicitly transitioned two-region copies record through the
+native copy API while preserving every legacy command result. A separate
+storage-buffer regression proves typed shader-write transition, native
+descriptor bind, and a 3x5x7 native dispatch are recorded exactly once.
+OpenAGC's
+graphics-DCB compute regression also proves shader-write resource state is
+legal on that ordered stream. This is a host-qualified foundation, not a
+completed command migration: the API-36 indirect slice removed the first
+superseded encoder and reduced the direct-call inventory from 45 to 44.
+
+The first end-to-end native graphics/submission slice is FW 5.500.008-
+qualified. A stale Prospero PSBC archive first exposed an unversioned compiler
+ABI failure; PSBC now exports `openagcPsbcGetApiVersion`, and Vulkan rejects a
+header/runtime mismatch explicitly. OpenAGC API 36 adds the firmware-neutral
+`agcCmdSetViewportScissors` array command for all 16 advertised viewports, so
+static and dynamic Vulkan viewport/scissor state is materialized in the native
+stream instead of inheriting firmware defaults. Candidate
+`e424f83e3ef3fb0bb808f7031369305d87cb6bd416504f7e2f3b273577830700`
+then passed the cleanup-guarded dynamic-rendering gate with exactly 18,432
+green pixels and a clean bounded exit. Evidence is retained in
+`examples/qualification-logs/20260731T114855Z-dynamic-rendering-run1.log` and
+its matching target klog.
+
+OpenAGC API 36 adds typed `agcCmdDrawIndirect`,
+`agcCmdDrawIndexedIndirect`, and `agcCmdDispatchIndirect` commands plus the
+dedicated indirect-buffer usage bit. The runtime validates complete 16/20/12-
+byte records, final multi-draw bounds, queue state, reflected bindings and
+system-SGPR locations, command capacity, and buffer retention. Vulkan now
+records indirect graphics and compute through those commands and no longer
+calls its legacy multi-draw encoder. Generic command tests cover multi-draw,
+indexed multi-draw, dispatch-indirect, typed barriers, native counts, and
+fail-closed invalid ranges. The cleanup-guarded FW 5.500.008 indirect-draw
+candidate `5e9819ead2bf0fe16218f36a8733af3f8063c3a9702f941dd841b8e068d87fb3`
+produced exactly 11,472 green pixels split 5,736/5,736 across the two draws,
+with `firstVertex=1`, `firstInstance=1,2`, and `drawID=0,1`. It self-terminated,
+left no matching process, and produced only the established raw-ELF
+`amount=0x4000` warning. Evidence is retained in
+`examples/qualification-logs/20260731T122117Z-indirect-draw-run1.log` and its
+matching target klog. The first diagnostic attempt correctly fell back to the
+legacy stream because required typed vertex/argument transitions were absent;
+the guarded retry added those Vulkan barriers and exercised the native stream.
+
+OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
+query-buffer reset, begin, and end commands. Vulkan query pools now own
+`AgcMemory` plus a placed `AgcBuffer`; query recording no longer emits legacy
+query snapshots, raw-address writes, or availability packets, and host results
+use the bounded native reducer. A query command fails closed if an earlier
+operation already made the native stream incomplete, preventing silent loss
+through legacy fallback. Generic command coverage records reset/begin/draw/end
+on one complete native stream and proves query storage retention. The migration
+audit fell from 44 to 40 direct calls. API 38 then moved physical limits,
+format masks, sample counts, and heap profiles behind the versioned
+`agcGetDeviceProperties` contract. Buffer copies now query effective native
+range state, record exact typed transitions, and execute only through
+`agcCmdCopyBuffer`; Vulkan no longer computes GPU addresses or packet capacity
+for copies. Removing the now-unused legacy capacity helper reduces the audit
+to 37. Command tests cover native-only copy followed by legacy fallback and
+the reverse ordering, require both to fail finalization, and prove reset clears
+the latch before a legacy-only recording. The buffer-copy hardware runner also
+requires cleanup-first execution, and native command storage is isolated from
+mutable resource allocations. This query slice is host-qualified and
+hardware-qualified on FW 5.500.008. The cleanup-guarded candidate
+`db041bf9ab4a47eb4fd79f746588410bdcf851a16a680675f8dbcd008298feb5`
+returned exactly `samples=18432 green=18432`, self-terminated through
+SystemService, left no matching process, and produced only the established
+raw-ELF `amount=0x4000` warning. The first native attempt exposed graphics
+defaults resetting `DB_COUNT_CONTROL` between begin-query and draw; API 37 now
+establishes those defaults atomically before the first query. Evidence is in
+`examples/qualification-logs/20260731T125526Z-query-full.log` and its matching
+target klog.
+
+The transfer-image migration now consumes OpenAGC API 41.
+`vkCmdCopyImage` accepts multiple validated color regions across mips and array
+layers, while `vkCmdCopyBufferToImage` and `vkCmdCopyImageToBuffer` preserve
+Vulkan byte offsets, row lengths, image heights, subresource layers, signed
+offsets, and extents through typed native records. The ICD conservatively
+transitions the image and buffer objects to queue-owned copy usage; OpenAGC
+then validates subresource layouts, BC block rules, footprints, retention, and
+command capacity. The command-recording gate covers a partial image copy and
+a strided buffer→image→buffer chain. Color clear, blit, depth/stencil clear,
+attachment clear, and resolve fail closed instead of silently succeeding. The
+direct-call audit remains 34 because these `agcCmd*` calls replace no audited
+low-level symbol.
+
+OpenAGC API 39 adds typed buffer update and fill commands with complete-range
+CopyDestination validation, atomic command-capacity preflight, embedded data,
+and destination retention. Vulkan `vkCmdUpdateBuffer` and `vkCmdFillBuffer`
+now validate their standard limits and record exclusively through those native
+commands; they are no longer silent stubs. This command-completeness slice does
+not add or remove a low-level symbol, so the audit remains at 37 pending
+deletion of the shared legacy command/submission path.
+
+OpenAGC API 40 extends the native scanout contract to the ICD's frozen
+BGRA8-SRGB surface format. Vulkan WSI now propagates dedicated-allocation
+intent into `AgcMemory`, initializes all three swapchain images to native
+VideoOut scanout state on the ordered graphics queue, and presents with the
+queue's causally published completion fence. The focused WSI and migration-
+audit gates pass, reducing the checked direct-call inventory from 37 to 34.
+The first cleanup-guarded FW 5.50 candidate failed safely before submission
+because Vulkan `oldLayout=UNDEFINED` was encoded literally after native WSI
+had already initialized the image to scanout. Undefined-layout barriers now
+discard from the tracked current native state and elide the already-scanout
+transition; the focused WSI test reproduces that exact command recording.
+Rebuilt ELF
+`0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`
+then passed 1,800/1,800 acquire/submit/present frames on FW 5.500.008, complete
+Vulkan teardown, self-exit, exact-PID absence, and a clean scoped kernel log
+apart from the established raw-ELF `amount=0x4000` warning. Evidence:
+`examples/qualification-logs/20260731T142327Z-swapchain-run1.log` and its
+matching target klog.
 
 The completed Eden profile and all hardware-qualified Vulkan features remain
 supported by the current implementation. Migration must not silently drop an
@@ -40,6 +264,51 @@ advertised feature. Conversely, a native OpenAGC capability is not advertised
 through Vulkan until Vulkan semantics, validation, and exact-firmware gates
 also pass. `PLAN.md` is authoritative for migration order; the dated sections
 below are the implementation and qualification ledger.
+
+## SDL/Zink capability slice (2026-07-31)
+
+The pinned Mesa GL 2.1 Zink reporter and its exact remaining contract are
+recorded in `analysis/zink-compatibility.md`. Vulkan-PS5 now enumerates and
+implements maintenance1, render-pass 2, descriptor update templates, timeline
+semaphores, image format lists, mutable swapchains, incremental present, and
+rectangular line rasterization, dynamic rendering, custom border colors and
+image-view border swizzle, maintenance5, and Vulkan 1.2. Scalar block layout
+passes a real compiler pipeline, and `alphaToOne` changes the generated gfx1013
+pixel epilog through PSBC API 16. The pinned strict report now passes with
+`api=0 extensions=0 features=0 total=0`.
+
+FW 5.500.008 now hardware-qualifies both additions through cleanup-guarded,
+finite-wait readback probes. Scalar layout used a 12-byte `vec3` array stride,
+wrote its result at byte 24, and preserved the std430-offset guard; its ELF
+SHA-256 is `c46f0cf46128c3460b44255b601636cbd591a1cbe513b94e6454f265783045fa`.
+Alpha-to-one converted a shader alpha of 0.25 into 18,432 opaque-green pixels;
+its ELF SHA-256 is
+`7c07a902fd7a50cc158a2d5430100b3c5df5c3c25e3127b1805b9bee7b74143d`.
+Both exact PIDs self-terminated, websrv remained reachable, and each scoped
+klog contained only the established raw-ELF `amount=0x4000` warning. Evidence
+is retained in `examples/qualification-logs/20260731T072748Z-scalar-block-layout-run1.log`,
+`20260731T072748Z-scalar-block-layout-run1-target.klog`,
+`20260731T072824Z-alpha-to-one-run1.log`, and
+`20260731T072824Z-alpha-to-one-run1-target.klog`.
+
+Dynamic rendering produced exactly 18,432 green pixels on FW 5.500.008 from a
+render-pass-less pipeline; its ELF SHA-256 is
+`0bb13e7f34a45bf0b8a5cc06779cabc687e85bbb1b4ca6e358fb0c5cf58c26bd`.
+The final custom-border candidate sampled an out-of-range opaque-red table
+entry through an R/B-swizzled image view and returned exactly 18,432 blue
+pixels while using maintenance5 `vkCmdBindIndexBuffer2KHR`. Its ELF SHA-256 is
+`dbf161fbc8e77287cbdfb0254170c8275c9831ef4208e67b215cc38e7a7265d2`.
+Evidence is retained at timestamps `20260731T074115Z` and `20260731T075944Z`;
+both runs self-terminated with only the established raw-ELF warning.
+
+After rebuilding a stale Prospero PSBC archive against compiler API v15, the
+FW 5.500.008 rectangular-line gate passed exact width and center-color oracles,
+self-terminated, and left only the established raw-ELF `amount=0x4000`
+warning. Evidence is retained at `20260731T065623Z-wide-lines-run1.log` and
+`20260731T065623Z-wide-lines-run1-target.klog`; the ELF SHA-256 is
+`096ddfbc00ed6eab5c4f761ce6b506291736e97e800a8ed5703328d829acc2d5`.
+This closes the pinned capability gate, but does not yet qualify Zink or SDL
+accelerated OpenGL; the pinned Mesa EGL/WSI execution gate remains.
 
 ## Milestone 6: multiple viewports (2026-07-29)
 
@@ -820,24 +1089,25 @@ Implemented and verified:
   complete host suite passes 11/11.
 - The Prospero relocation run passes using the relocated
   `VulkanPS5::ICD` target. Its link audit proves the three relocated archives
-  plus transitive `-lkernel`, `-lSceAgcDriver`, `-lSceVideoOut`, `-lunwind`,
-  `-lc++abi`, `-lc++`, and `-lm`. `SceSystemService` remains an explicit
-  application lifecycle dependency rather than an ICD dependency.
+  plus transitive `-lkernel`, `-lSceVideoOut`, `-lunwind`, `-lc++abi`,
+  `-lc++`, and `-lm`, and rejects an installed `SceAgcDriver` dependency.
+  `SceSystemService` remains an explicit application lifecycle dependency
+  rather than an ICD dependency.
 - The normal Prospero driver/examples build remains clean after the package
   test was added. The retained installed-package ELF has SHA-256
-  `3da3698026eb62d5a97aedb8aa806ee0c6bc18469aa053ac32cc7caa16deb635`.
+  `1fd79429140e26884cc492761d8551cf7a2b8769c39066463d9f05f6c9fc5547`.
 - `run_fw550_package_consumer.sh` reuses the proven bounded raw-ELF lifecycle
   gate with a package-specific ELF and PASS oracle. Its simulation verifies
   exact-PID handling and acceptance of only the proven single `0x4000`
   baseline warning.
-- One bounded FW 5.500.008 execution after a fresh console-availability signal
-  passed without retry. PID 153 printed `package-consumer: PASS result=0`,
-  completed self-requested KillApp followed by `All processes exited`, was
-  absent in the exact-PID ps5debug-NG check, and left websrv responsive. The
-  scoped klog contained no fatal event or warning beyond the proven raw-ELF
-  `amount:0x4000` baseline. Evidence:
-  `20260728T070752Z-package-consumer.log` and
-  `20260728T070752Z-package-consumer-target.klog`.
+- The current consumer creates two devices/queues concurrently, exercises a
+  timeline semaphore, destroys one, and performs a survivor memory
+  allocation/free. Its exact FW 5.500.008 candidate passed once without retry.
+  PID 154 printed
+  `package-consumer: PASS result=0`, was absent in the exact-PID ps5debug-NG
+  check, and left no warning beyond the proven raw-ELF `amount:0x4000`
+  baseline. Evidence: `20260731T065637Z-package-consumer.log` and
+  `20260731T065637Z-package-consumer-target.klog`.
 
 This closes Milestone 5 at the reusable static SDK/package scope.
 

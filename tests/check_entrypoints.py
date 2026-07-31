@@ -11,7 +11,8 @@ def core_commands(registry_path: str) -> list[str]:
     commands: list[str] = []
     for feature in root.findall("./feature"):
         apis = feature.get("api", "").split(",")
-        if "vulkan" not in apis or feature.get("number") not in ("1.0", "1.1"):
+        if "vulkan" not in apis or feature.get("number") not in (
+                "1.0", "1.1", "1.2"):
             continue
         commands.extend(node.get("name") for node in feature.findall("./require/command"))
     return list(dict.fromkeys(commands))
@@ -43,7 +44,7 @@ def main() -> int:
         if missing_dispatch:
             print("Missing proc-table entries:", *missing_dispatch, sep="\n  ")
         return 1
-    print(f"Vulkan 1.0/1.1 core entrypoints covered: {len(required)}")
+    print(f"Vulkan 1.0-1.2 core entrypoints covered: {len(required)}")
     return 0
 
 

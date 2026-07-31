@@ -53,9 +53,49 @@ Migration proceeds by complete vertical slices rather than a flag-day rewrite:
    build on both FW 5.50 and FW 11.60. Existing FW 5.50 passes do not by
    themselves qualify the native-runtime migration or FW 11.60.
 
+Migration milestone 0 is complete and its checked inventory in
+`analysis/native_runtime_calls.tsv` assigns all 45 remaining direct hardware
+calls to a native owner and regression gate. The first milestone-1 slice is
+also active: every `VkDevice` owns an OpenAGC `AgcDevice` plus native graphics
+and compute queues. OpenAGC API 26 explicitly supports concurrent logical
+devices over the selected process backend, and the Vulkan lifecycle regression
+creates two devices concurrently. OpenAGC API 28 now backs `VkDeviceMemory`
+and bound `VkBuffer` objects with explicit `AgcMemory` and placed `AgcBuffer`
+handles, uses native image layouts and placed `AgcImage`, and gives compatible
+views and all samplers native `AgcImageView`/`AgcSampler` backing. Direct
+descriptor-table assembly, command recording, and submission remain on their
+audited paths until those native vertical slices preserve the same behavior.
+OpenAGC API 33/PSBC API 18 additionally give every compiled stage a native
+shader, every compute pipeline a native pipeline, and compatible point, line,
+triangle list/strip/fan, geometry—including adjacency—and tessellation
+graphics pipelines native ownership,
+including polygon modes, culling, rasterizer discard, strip/fan primitive
+restart, depth clamp/bias, logic operations, static/dynamic line width, and
+pipeline switching. Direct command emission remains the next migration
+boundary. Vulkan command buffers now also own paired queue-typed native
+command streams, with the graphics DCB serving as the ordered
+graphics-plus-compute stream. Pipeline binds, supported typed buffer/image
+barriers, and explicitly transitioned buffer copies are mirrored through
+native APIs. Compute descriptors with explicit compatible resource state and
+their dispatches are mirrored there as well. These streams are
+lifecycle-qualified but remain non-submittable until graphics descriptors and
+the remaining executable commands replace the complete legacy path.
+
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping
 must not be advertised until its host and exact-firmware gates pass.
+
+The SDL accelerated-OpenGL track is now measured by the pinned Mesa/Zink GL
+2.1 profile in `analysis/zink-compatibility.md`. This slice adds render-pass 2,
+descriptor update templates, timeline semaphores, mutable/incremental WSI, and
+rectangular line-rasterization contracts, dynamic rendering, custom border
+colors with image-view swizzle, maintenance5, and Vulkan 1.2. Scalar block
+layout is compiled by a real storage-buffer pipeline, and `alphaToOne` is baked
+into the gfx1013 pixel epilog. The live strict report is now
+`api=0 extensions=0 features=0 total=0`, with FW 5.500.008 readback evidence
+for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
+sampling. SDL must still retain OSMesa until pinned Mesa executes through the
+PS5 EGL/WSI bridge; a capability report alone is not a Zink runtime pass.
 
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
@@ -199,9 +239,9 @@ The consumer includes `<vulkan/vulkan.h>` and exercises an ordinary Vulkan
 consumer link commands containing a source-workspace path and verifies that
 the relocated `libvulkan_ps5.a`, `libopenagc.a`, and
 `libopenagc_psbc.a` archives are used. Its Prospero mode also verifies the
-transitive `kernel`, `SceAgcDriver`, `SceVideoOut`, `unwind`, `c++abi`, `c++`,
-and `m` links. The sample links `SceSystemService` itself solely for safe raw
-ELF termination.
+transitive `kernel`, `SceVideoOut`, `unwind`, `c++abi`, `c++`, and `m` links
+and rejects any installed `SceAgcDriver` dependency. The sample links
+`SceSystemService` itself solely for safe raw ELF termination.
 
 Run the host relocation check through CTest, or run the Prospero check
 directly:
@@ -232,12 +272,15 @@ and rejects fatal or unexpected PID-scoped kernel messages. It permits at most
 the single `amount:0x4000` warning already proven to be the FW 5.50 raw-ELF
 baseline.
 
-The retained FW 5.500.008 gate ran once on 2026-07-28. PID 153 printed the PASS
-oracle, completed self-KillApp and `All processes exited`, was absent from the
-ps5debug-NG process list, and left websrv responsive. Its scoped klog contained
-only the proven raw-ELF baseline warning. Evidence is retained in
-`examples/qualification-logs/20260728T070752Z-package-consumer.log` and
-`20260728T070752Z-package-consumer-target.klog`.
+The current consumer additionally creates two devices and queues concurrently,
+exercises a timeline semaphore, destroys one device, then allocates and frees
+memory through the surviving device. Its SHA-256 is
+`1fd79429140e26884cc492761d8551cf7a2b8769c39066463d9f05f6c9fc5547`.
+That exact candidate passed once on FW 5.500.008: PID 154 printed the PASS
+oracle, self-terminated, was absent from ps5debug-NG, and left only the accepted
+raw-ELF baseline warning. Evidence is retained in
+`examples/qualification-logs/20260731T065637Z-package-consumer.log` and
+`20260731T065637Z-package-consumer-target.klog`.
 
 ## Headless surface and swapchain sample
 
@@ -252,11 +295,11 @@ acquire/submit/present frames with binary semaphores and a fence. Its host run,
 the nine-test ICD suite, runner safety simulation, and Validation Layers pass;
 its Prospero ELF links with `-lSceSystemService -lunwind -lc++abi -lc++ -lm`.
 The current candidate SHA-256 is
-`d94722b2c9473b8407769b9b1fe044dd5796c6d5f78bbba7ccec15cfb6975c90`.
+`0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`.
 Run exactly one bounded FW 5.50 gate after an explicit console-availability
 signal:
 
-Finite image-acquisition timeouts use a monotonic deadline. The WSI regression
+Finite image-acquisition timeouts use a condition-variable deadline. The WSI regression
 also exhausts all three images, releases one from a delayed presentation
 thread, and verifies that the waiting acquire wakes without holding the
 swapchain lock across the VSYNC wait.
@@ -265,7 +308,8 @@ swapchain lock across the VSYNC wait.
 PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 ```
 
-The runner never retries automatically. It takes a bounded post-run klog
+The runner never retries automatically and requires the process-cleanup ELF
+immediately before launch. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,
 XO faults, duplicate or unrecognized kernel warnings, and any VM warning beyond
 the one proven FW 5.50/raw-ELF baseline line. It requires a self-requested kernel `KillApp()` event
@@ -699,8 +743,9 @@ sampled-image/sampler descriptors for linear RGBA8/BGRA8 images are encoded
 through OpenAGC and bound to compiler-selected graphics SGPRs. Linear image
 allocation and subresource layouts use the gfx1013-required 256-byte row pitch;
 the sampled-image path is repeatedly hardware-qualified. Dynamic buffer
-offsets and optional sparse, protected, external-handle, multiview, YCbCr, and
-timeline features remain unavailable.
+offsets and optional sparse, protected, external-handle, multiview, and YCbCr
+features remain unavailable. Timeline semaphores are available with finite
+host waits and completion-ordered queue values.
 
 On Prospero, `vkCreateDevice` reaches OpenAGC initialization, which now keeps
 the FW-specific GPU process-authorization preparation inside its `/dev/gc`
@@ -798,8 +843,9 @@ addresses, and restore host-readable cache state after drawing. Depth/stencil
 clears remain unavailable; the first hardware gate initializes mapped direct
 memory and uses `LOAD`.
 
-Occlusion query pools use GPU-visible storage and OpenAGC-owned gfx1013 ZPASS
-snapshots. Reset is command-ordered, end-query publishes a separate EOP
+Occlusion query pools use typed GPU-visible OpenAGC buffers and native query
+commands; Vulkan no longer records ZPASS or availability packets itself.
+Reset is command-ordered, end-query publishes a separate EOP
 availability label, and `vkGetQueryPoolResults` supports 32/64-bit values,
 availability, partial results, and bounded waits. Repeated FW 5.50 runs matched
 the exact 18,432-sample result to independent mapped color coverage, so

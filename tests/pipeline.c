@@ -1,5 +1,7 @@
 #include <vulkan/vulkan.h>
 
+#include "../src/vulkan_ps5_internal.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +33,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 9);
+    assert(argc == 10);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -46,11 +48,22 @@ int main(int argc, char **argv) {
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+    const VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+        .scalarBlockLayout = VK_TRUE,
+    };
+    const char *device_extensions[] = {
+        VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+    };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &scalar_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = device_extensions,
         .pEnabledFeatures = &(const VkPhysicalDeviceFeatures){
+            .alphaToOne = VK_TRUE,
             .imageCubeArray = VK_TRUE,
             .multiViewport = VK_TRUE,
         },
@@ -66,6 +79,7 @@ int main(int argc, char **argv) {
     VkShaderModule tess_evaluation = shader_module(device, argv[6]);
     VkShaderModule sample_fragment = shader_module(device, argv[7]);
     VkShaderModule cube_array_fragment = shader_module(device, argv[8]);
+    VkShaderModule scalar_compute = shader_module(device, argv[9]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -112,6 +126,17 @@ int main(int argc, char **argv) {
     VkPipeline compute_pipeline = VK_NULL_HANDLE;
     assert(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_info,
                                     NULL, &compute_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_shaders(compute_pipeline));
+    assert(vk_ps5_pipeline_has_native_compute_pipeline(compute_pipeline));
+    VkComputePipelineCreateInfo scalar_compute_info = compute_info;
+    scalar_compute_info.stage.module = scalar_compute;
+    VkPipeline scalar_compute_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1,
+                                    &scalar_compute_info, NULL,
+                                    &scalar_compute_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_shaders(scalar_compute_pipeline));
+    assert(vk_ps5_pipeline_has_native_compute_pipeline(
+        scalar_compute_pipeline));
 
     const VkDescriptorSetLayoutBinding sampled_binding = {
         .binding = 0,
@@ -239,6 +264,54 @@ int main(int argc, char **argv) {
     VkPipeline graphics_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &graphics_info,
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
+    VkPipelineRasterizationStateCreateInfo native_rasterization = rasterization;
+    native_rasterization.depthClampEnable = VK_FALSE;
+    native_rasterization.depthBiasEnable = VK_FALSE;
+    VkPipelineColorBlendStateCreateInfo native_blend = blend;
+    native_blend.logicOpEnable = VK_FALSE;
+    VkGraphicsPipelineCreateInfo native_graphics_info = graphics_info;
+    native_graphics_info.pRasterizationState = &native_rasterization;
+    native_graphics_info.pColorBlendState = &native_blend;
+    VkPipeline native_graphics_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &native_graphics_info, NULL, &native_graphics_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_shaders(native_graphics_pipeline));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        native_graphics_pipeline));
+    VkPipelineRasterizationStateCreateInfo clamp_rasterization =
+        native_rasterization;
+    clamp_rasterization.depthClampEnable = VK_TRUE;
+    VkGraphicsPipelineCreateInfo clamp_graphics_info = native_graphics_info;
+    clamp_graphics_info.pRasterizationState = &clamp_rasterization;
+    VkPipeline clamp_graphics_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &clamp_graphics_info, NULL, &clamp_graphics_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        clamp_graphics_pipeline));
+    VkPipelineMultisampleStateCreateInfo alpha_to_one_state = multisample;
+    alpha_to_one_state.alphaToOneEnable = VK_TRUE;
+    VkGraphicsPipelineCreateInfo alpha_to_one_info = graphics_info;
+    alpha_to_one_info.pMultisampleState = &alpha_to_one_state;
+    VkPipeline alpha_to_one_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &alpha_to_one_info, NULL,
+                                     &alpha_to_one_pipeline) == VK_SUCCESS);
+    const VkFormat dynamic_color_format = VK_FORMAT_R8G8B8A8_UNORM;
+    const VkPipelineRenderingCreateInfo rendering_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &dynamic_color_format,
+    };
+    VkGraphicsPipelineCreateInfo dynamic_rendering_info = graphics_info;
+    dynamic_rendering_info.pNext = &rendering_info;
+    dynamic_rendering_info.renderPass = VK_NULL_HANDLE;
+    dynamic_rendering_info.subpass = 0;
+    VkPipeline dynamic_rendering_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &dynamic_rendering_info, NULL, &dynamic_rendering_pipeline) ==
+        VK_SUCCESS);
     const VkViewport multi_viewports[] = {
         {0, 0, 128, 256, 0, 1},
         {128, 0, 128, 256, 0.25f, 0.75f},
@@ -332,21 +405,48 @@ int main(int argc, char **argv) {
     point_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
     VkGraphicsPipelineCreateInfo point_list_info = graphics_info;
     point_list_info.pInputAssemblyState = &point_input_assembly;
+    point_list_info.pRasterizationState = &native_rasterization;
+    point_list_info.pColorBlendState = &native_blend;
     VkPipeline point_list_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &point_list_info, NULL,
                                      &point_list_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        point_list_pipeline));
     VkPipelineInputAssemblyStateCreateInfo line_input_assembly = input_assembly;
     line_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    const VkPipelineRasterizationLineStateCreateInfo rectangular_line = {
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO,
+        .lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR,
+    };
     VkPipelineRasterizationStateCreateInfo wide_line_raster = rasterization;
+    wide_line_raster.pNext = &rectangular_line;
+    wide_line_raster.depthBiasEnable = VK_FALSE;
     wide_line_raster.lineWidth = 8.0f;
     VkGraphicsPipelineCreateInfo line_list_info = graphics_info;
     line_list_info.pInputAssemblyState = &line_input_assembly;
     line_list_info.pRasterizationState = &wide_line_raster;
+    line_list_info.pColorBlendState = &native_blend;
     VkPipeline line_list_pipeline = VK_NULL_HANDLE;
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &line_list_info, NULL,
                                      &line_list_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        line_list_pipeline));
+    VkPipelineRasterizationLineStateCreateInfo unsupported_bresenham =
+        rectangular_line;
+    unsupported_bresenham.lineRasterizationMode =
+        VK_LINE_RASTERIZATION_MODE_BRESENHAM;
+    VkPipelineRasterizationStateCreateInfo unsupported_line_raster =
+        wide_line_raster;
+    unsupported_line_raster.pNext = &unsupported_bresenham;
+    VkGraphicsPipelineCreateInfo unsupported_line_info = line_list_info;
+    unsupported_line_info.pRasterizationState = &unsupported_line_raster;
+    VkPipeline unsupported_line_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &unsupported_line_info, NULL, &unsupported_line_pipeline) ==
+        VK_ERROR_FEATURE_NOT_PRESENT);
     VkPipelineInputAssemblyStateCreateInfo line_strip_input_assembly =
         input_assembly;
     line_strip_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
@@ -356,6 +456,73 @@ int main(int argc, char **argv) {
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
                                      &line_strip_info, NULL,
                                      &line_strip_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        line_strip_pipeline));
+    VkPipelineInputAssemblyStateCreateInfo triangle_strip_input_assembly =
+        input_assembly;
+    triangle_strip_input_assembly.topology =
+        VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    VkGraphicsPipelineCreateInfo triangle_strip_info = graphics_info;
+    triangle_strip_info.pInputAssemblyState =
+        &triangle_strip_input_assembly;
+    triangle_strip_info.pRasterizationState = &native_rasterization;
+    triangle_strip_info.pColorBlendState = &native_blend;
+    VkPipeline triangle_strip_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &triangle_strip_info, NULL,
+                                     &triangle_strip_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        triangle_strip_pipeline));
+    VkPipelineInputAssemblyStateCreateInfo restart_input_assembly =
+        triangle_strip_input_assembly;
+    restart_input_assembly.primitiveRestartEnable = VK_TRUE;
+    VkGraphicsPipelineCreateInfo restart_info = triangle_strip_info;
+    restart_info.pInputAssemblyState = &restart_input_assembly;
+    VkPipeline restart_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &restart_info, NULL, &restart_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(restart_pipeline));
+    VkPipelineInputAssemblyStateCreateInfo invalid_list_restart =
+        input_assembly;
+    invalid_list_restart.primitiveRestartEnable = VK_TRUE;
+    VkGraphicsPipelineCreateInfo invalid_list_restart_info =
+        native_graphics_info;
+    invalid_list_restart_info.pInputAssemblyState = &invalid_list_restart;
+    VkPipeline invalid_list_restart_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &invalid_list_restart_info, NULL, &invalid_list_restart_pipeline) ==
+        VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_list_restart_pipeline == VK_NULL_HANDLE);
+    VkPipelineRasterizationStateCreateInfo culled_rasterization =
+        native_rasterization;
+    culled_rasterization.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+    culled_rasterization.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    VkGraphicsPipelineCreateInfo culled_info = native_graphics_info;
+    culled_info.pRasterizationState = &culled_rasterization;
+    VkPipeline culled_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &culled_info, NULL, &culled_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(culled_pipeline));
+    VkPipelineRasterizationStateCreateInfo discard_rasterization =
+        native_rasterization;
+    discard_rasterization.rasterizerDiscardEnable = VK_TRUE;
+    VkGraphicsPipelineCreateInfo discard_info = native_graphics_info;
+    discard_info.pRasterizationState = &discard_rasterization;
+    VkPipeline discard_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &discard_info, NULL, &discard_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(discard_pipeline));
+    VkPipelineInputAssemblyStateCreateInfo triangle_fan_input_assembly =
+        input_assembly;
+    triangle_fan_input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+    VkGraphicsPipelineCreateInfo triangle_fan_info = native_graphics_info;
+    triangle_fan_info.pInputAssemblyState = &triangle_fan_input_assembly;
+    VkPipeline triangle_fan_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+                                     &triangle_fan_info, NULL,
+                                     &triangle_fan_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        triangle_fan_pipeline));
     const VkDynamicState line_width_state = VK_DYNAMIC_STATE_LINE_WIDTH;
     const VkPipelineDynamicStateCreateInfo dynamic_line_width = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -511,10 +678,20 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, point_list_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_line_pipeline, NULL);
+    vkDestroyPipeline(device, triangle_fan_pipeline, NULL);
+    vkDestroyPipeline(device, discard_pipeline, NULL);
+    vkDestroyPipeline(device, culled_pipeline, NULL);
+    vkDestroyPipeline(device, restart_pipeline, NULL);
+    vkDestroyPipeline(device, triangle_strip_pipeline, NULL);
     vkDestroyPipeline(device, line_strip_pipeline, NULL);
     vkDestroyPipeline(device, line_list_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
+    vkDestroyPipeline(device, native_graphics_pipeline, NULL);
+    vkDestroyPipeline(device, clamp_graphics_pipeline, NULL);
+    vkDestroyPipeline(device, alpha_to_one_pipeline, NULL);
+    vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
+    vkDestroyPipeline(device, scalar_compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
     vkDestroyRenderPass(device, msaa_render_pass, NULL);
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
@@ -523,6 +700,7 @@ int main(int argc, char **argv) {
     vkDestroyDescriptorSetLayout(device, sampled_set, NULL);
     vkDestroyDescriptorSetLayout(device, empty_set, NULL);
     vkDestroyShaderModule(device, compute, NULL);
+    vkDestroyShaderModule(device, scalar_compute, NULL);
     vkDestroyShaderModule(device, sample_fragment, NULL);
     vkDestroyShaderModule(device, cube_array_fragment, NULL);
     vkDestroyShaderModule(device, tess_evaluation, NULL);
