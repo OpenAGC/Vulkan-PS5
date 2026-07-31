@@ -1406,8 +1406,9 @@ vkCmdEndRenderPass2(command, &subpass_end);
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = color_view,
             .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue.color = {{0.25f, 0.5f, 0.75f, 1.0f}},
         },
         {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,

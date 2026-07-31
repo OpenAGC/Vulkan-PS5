@@ -59,6 +59,6 @@ format	127	49664	49664	0
 format	128	49664	49664	0
 format	130	49664	49664	0
 wsi_support	1
-wsi_capabilities	3	3	1920	1080	1920	1080	1920	1080	1	1	19
+wsi_capabilities	3	3	1920	1080	1920	1080	1920	1080	1	1	23
 wsi_format	50	0
 wsi_present_mode	2
