@@ -1,0 +1,7 @@
+{
+  global:
+    vk[A-Z]*;
+    vk_icd*;
+  local:
+    *;
+};

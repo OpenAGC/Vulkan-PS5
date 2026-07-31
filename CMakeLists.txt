@@ -101,6 +101,14 @@ if(VULKAN_PS5_BUILD_SHARED)
       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
   target_link_libraries(vulkan_ps5_icd PRIVATE
     OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
+  if(PROSPERO)
+    target_link_options(vulkan_ps5_icd PRIVATE
+      "LINKER:-Bsymbolic"
+      "LINKER:--exclude-libs,ALL"
+      "LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan_ps5.exports")
+    set_property(TARGET vulkan_ps5_icd APPEND PROPERTY LINK_DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan_ps5.exports")
+  endif()
   set(VULKAN_PS5_ICD_LIBRARY_PATH
     "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}vulkan_ps5${CMAKE_SHARED_LIBRARY_SUFFIX}")
   configure_file(vulkan_ps5_icd.json.in vulkan_ps5_icd.json @ONLY)
@@ -1139,6 +1147,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(${example_target} PRIVATE vulkan_ps5_static)
   endforeach()
+
   if(PROSPERO)
     target_link_libraries(vulkan_ps5_storage_image_probe PRIVATE
       SceSystemService)
