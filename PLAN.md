@@ -59,7 +59,7 @@ Vulkan-PS5 owns:
 ### Migration milestone 0: freeze and audit the baseline
 
 Current progress: `analysis/native_runtime_calls.tsv` is the mechanically
-checked ownership inventory for all 34 remaining direct hardware-facing calls
+checked ownership inventory for all 26 remaining direct hardware-facing calls
 currently present in `src/`. The `vulkan_ps5.native_migration_audit` CTest gate requires
 each call to retain a migration category, native owner, and regression gate.
 The advertised capability/format snapshot and remaining duplicated-policy
@@ -172,9 +172,11 @@ strides. Clear, blit, depth/stencil-transfer, and resolve forms fail closed
 instead of silently succeeding. Typed native buffer update and fill remain
 complete in API 39. WSI uses dedicated native scanout images, `AgcPresentChain`,
 and the ordered queue's retained completion fence; this removes the three raw
-VideoOut symbols and reduces the audit to 34. Next move shader code/fusion,
-descriptor tables, and tessellation state behind native ownership, then delete
-legacy submission/fence handling and the other superseded encoders.
+VideoOut symbols and reduces the audit to 34. Shader code allocation/fusion
+and native-only direct draw/dispatch recording then reduce it to 26. Next move
+descriptor tables and remaining tessellation resources behind native
+ownership, then delete legacy submission/fence handling and the other
+superseded encoders.
 
 1. Back Vulkan command pools/buffers with native command allocators and
    `AgcCommandBuffer` state while retaining Vulkan reset and simultaneous-use

@@ -1,6 +1,6 @@
 # Vulkan-PS5 Native Migration Audit — 2026-07-31
 
-Living audit of the 34 remaining direct legacy OpenAGC calls in `src/`, with a
+Living audit of the 26 remaining direct legacy OpenAGC calls in `src/`, with a
 sequencing recommendation that measurably advances the exact-zero goal while
 preserving one ordered native Vulkan queue stream.
 
@@ -9,12 +9,14 @@ preserving one ordered native Vulkan queue stream.
 The active goal order is now:
 
 1. **WSI → `AgcPresentChain`** (complete, FW 5.50-qualified): the three raw
-   `agcVideoOut*` symbols are gone and the checked inventory is 34.
+   `agcVideoOut*` symbols are gone; the later shader slice reduces the checked
+   inventory to 26.
 2. **Transfer-image region/buffer forms** (complete host slice): OpenAGC API
    41 owns color/BC regions and buffer↔image copies; every remaining
    clear/blit/resolve form fails closed.
-3. **Shader ownership:** move code allocation, relocation, flush, and fused
-   shader halves fully behind `AgcShader`.
+3. **Shader ownership** (complete): code allocation, relocation, flush, and
+   fused shader halves are fully behind `AgcShader`; direct draw/dispatch
+   recording is native-only.
 4. **Descriptor/tessellation ownership and legacy submission deletion:** remove
    the duplicate encoder, raw auxiliary allocations, fence labels, and submit
    path, driving the audit to exactly zero.
@@ -36,7 +38,28 @@ clear/blit/resolve entry points now latch `VK_ERROR_FEATURE_NOT_PRESENT`; none
 can return a successful empty recording. This correctness slice intentionally
 does not change the 34-symbol low-level inventory.
 
-## 1. Inventory and how the 34 calls actually cluster
+## Current checkpoint: shader execution is native-only (34 → 26)
+
+The ICD no longer owns shader-code allocations, record relocation, cache flush,
+or front/back fusion. `agcCreateShader` copies and relocates complete PSBC
+records and owns their lifetime. `vkCmdDispatch`, direct/indexed draws, and the
+exercised geometry/tessellation forms now record only through typed native
+OpenAGC commands; missing typed state fails command recording closed.
+
+Eight audited symbols were removed: the compute default/dispatch pair, four
+legacy direct/tessellation draw helpers, the border-table draw helper, and the
+compatibility shader-fusion export. Pipeline-switch coverage also exposed and
+fixed stale native descriptor/vertex caches: a changed pipeline or descriptor
+set now rebinds rather than returning an incomplete stream. Command tests use
+native draw/dispatch counts as their active oracle.
+
+The mechanically enforced TSV is the exact **26-symbol** source of truth. The
+next slice removes direct descriptor-table encoders and remaining
+tessellation-resource allocation. The final slice deletes Vulkan's legacy
+cursor, frame encoder, raw flexible allocations, and submit/fence path so the
+audit reaches zero.
+
+## 1. Historical pre-shader inventory: how the 34 calls clustered
 
 The mechanically-checked gate is `tests/native_migration_audit.py`, which scans
 `src/*.c` for `sceAgc*|sce_agc_*|agcCb*|agcGfx1013*|agcGpuMemory*|agcVideoOut*`
@@ -292,10 +315,8 @@ missing-copy-contract statements are resolved historical context.
 
 ## 4. Bottom line
 
-The WSI migration is now host-complete at **34 audited direct symbols** and
-preserves the single ordered graphics stream. **Proceed with transfer-image region/buffer forms plus
-fail-closing the seven remaining silent no-op stubs** (0 count change but fixes a latent
-correctness defect and is the PLAN-documented prerequisite for legacy-
-submission deletion). Shader ownership and the legacy-submission/duplicate-
-encoder deletion come after, with descriptor encoding and tessellation-ring
-ownership as the two hard blockers inside that final slice.
+WSI and transfer-image migration are complete, and the shader-execution slice
+has reduced the authoritative inventory to **26 audited direct symbols** while
+preserving the single ordered graphics stream. Proceed with descriptor and
+tessellation-resource ownership, then delete the legacy encoder and submission
+path. The TSV audit must reach exactly zero before migration completion.

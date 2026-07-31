@@ -12,8 +12,8 @@ a separate standard-Vulkan consumer on both host and FW 5.50.
 ## Architecture Direction
 
 The existing direct integration is the hardware-qualified baseline, not the
-final ownership model. After OpenAGC's native device/resource/pipeline runtime
-is stable, Vulkan-PS5 will become a constrained translation layer above it.
+final ownership model. Vulkan-PS5 is actively becoming a constrained
+translation layer above OpenAGC's native device/resource/pipeline runtime.
 This migration must preserve the ordinary Vulkan API and current qualification
 evidence while removing duplicate hardware policy from the ICD.
 
@@ -54,7 +54,7 @@ Migration proceeds by complete vertical slices rather than a flag-day rewrite:
    themselves qualify the native-runtime migration or FW 11.60.
 
 Migration milestone 0 is complete and its checked inventory in
-`analysis/native_runtime_calls.tsv` assigns all 45 remaining direct hardware
+`analysis/native_runtime_calls.tsv` assigns all 26 remaining direct hardware
 calls to a native owner and regression gate. The first milestone-1 slice is
 also active: every `VkDevice` owns an OpenAGC `AgcDevice` plus native graphics
 and compute queues. OpenAGC API 26 explicitly supports concurrent logical
@@ -71,15 +71,16 @@ triangle list/strip/fan, geometry—including adjacency—and tessellation
 graphics pipelines native ownership,
 including polygon modes, culling, rasterizer discard, strip/fan primitive
 restart, depth clamp/bias, logic operations, static/dynamic line width, and
-pipeline switching. Direct command emission remains the next migration
-boundary. Vulkan command buffers now also own paired queue-typed native
-command streams, with the graphics DCB serving as the ordered
+pipeline switching. Shader allocation, relocation, cache flush, fusion, and
+lifetime now belong exclusively to `AgcShader`. Vulkan command buffers also
+own paired queue-typed native command streams, with the graphics DCB serving as the ordered
 graphics-plus-compute stream. Pipeline binds, supported typed buffer/image
 barriers, and explicitly transitioned buffer copies are mirrored through
-native APIs. Compute descriptors with explicit compatible resource state and
-their dispatches are mirrored there as well. These streams are
-lifecycle-qualified but remain non-submittable until graphics descriptors and
-the remaining executable commands replace the complete legacy path.
+native APIs. Compute dispatch plus direct, indexed, geometry, and tessellation
+draws now require the typed native path; pipeline changes rebind native
+descriptor and vertex state. The remaining migration boundary is direct
+descriptor/tessellation-resource ownership followed by deletion of the legacy
+encoder and submission path.
 
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping

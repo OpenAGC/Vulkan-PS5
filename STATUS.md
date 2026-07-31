@@ -17,7 +17,7 @@ native `AgcPresentChain` ownership.
 Migration status:
 
 - **Baseline freeze:** complete. `analysis/native_runtime_calls.tsv` owns all
-  34 remaining direct hardware-facing calls by migration category, native
+  26 remaining direct hardware-facing calls by migration category, native
   replacement, and named regression gate. `vulkan_ps5.native_migration_audit` fails when a
   new call is unowned or an inventory entry becomes stale. The advertised
   feature/extension/limit/queue/format snapshot is frozen and its strict
@@ -39,7 +39,10 @@ Migration status:
 - **Pipeline migration:** active. Every compiled Vulkan stage now owns an
   `AgcShader`; compute pipelines own `AgcComputePipeline`, and the qualified
   point/line/triangle, geometry, and tessellation graphics forms own
-`AgcGraphicsPipeline`. OpenAGC API 36 and PSBC API 18 carry an explicit
+  `AgcGraphicsPipeline`. Shader binary allocation, relocation, cache flush,
+  and front/back fusion are now wholly owned by `agcCreateShader`; Vulkan no
+  longer retains shader-code allocations or calls a compatibility fusion
+  export. OpenAGC API 36 and PSBC API 18 carry an explicit
   alpha-to-one reflection bit and prune
   descriptor sets that have no stage user-SGPR address, while retaining every
   binding in an addressable set. Native ownership now includes polygon modes,
@@ -63,9 +66,12 @@ Migration status:
   with explicit compatible native resource states bind through
   `agcCmdBindDescriptors`; compute dispatch and baseline graphics attachment,
   descriptor, vertex/index, viewport/scissor, and draw state are mirrored
-  natively. A complete native graphics stream now submits through
-  `agcQueueSubmit` with a finite native fence wait. Unsupported command mixtures
-  still use the legacy mirror until shader/descriptor ownership is complete,
+  natively. Direct, indexed, indirect, tessellation, geometry, and compute
+  dispatch recording now require the native path and fail closed when typed
+  state is missing. Pipeline switches invalidate and rebind native descriptor
+  and vertex state correctly. A complete native graphics stream now submits
+  through `agcQueueSubmit` with a finite native fence wait. Unsupported command mixtures
+  still use the legacy mirror until descriptor/resource ownership is complete,
   so the duplicate encoder has not yet been deleted. Image-region and
   buffer/image color transfers now record through OpenAGC API 41; unsupported
   clear, blit, depth/stencil transfer, and resolve forms fail closed. If a command
@@ -230,6 +236,17 @@ a strided buffer→image→buffer chain. Color clear, blit, depth/stencil clear,
 attachment clear, and resolve fail closed instead of silently succeeding. The
 direct-call audit remains 34 because these `agcCmd*` calls replace no audited
 low-level symbol.
+
+The shader-execution migration removes eight more audited symbols. Vulkan no
+longer allocates, relocates, flushes, frees, or fuses shader binaries itself;
+`AgcShader` owns those bytes through pipeline destruction. Compute dispatch and
+all exercised graphics forms—including geometry and tessellation—record only
+typed native commands. Command tests now validate native draw/dispatch counts
+instead of treating Vulkan's duplicate PM4 stream as the oracle, and cover
+pipeline-switch descriptor/vertex rebinding plus explicit tessellation storage
+state. The checked direct-call inventory is **26**. Remaining work is direct
+descriptor-table/image-layout ownership followed by deletion of the legacy
+cursor, frame encoder, raw allocator, and submit/fence path.
 
 OpenAGC API 39 adds typed buffer update and fill commands with complete-range
 CopyDestination validation, atomic command-capacity preflight, embedded data,

@@ -417,6 +417,22 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &begin_info));
+#if !defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
+    const VkBufferMemoryBarrier buffer_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = 0u,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                         VK_ACCESS_SHADER_WRITE_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = buffer,
+        .offset = 0u,
+        .size = VK_WHOLE_SIZE,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u, 0u, NULL, 1u,
+        &buffer_barrier, 0u, NULL);
+#endif
 #if defined(VULKAN_PS5_STORAGE_IMAGE_PROBE)
     const VkImageMemoryBarrier image_barrier = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

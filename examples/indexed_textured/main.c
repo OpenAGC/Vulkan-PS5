@@ -1044,9 +1044,32 @@ int main(void)
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, NULL, 2, native_buffer_barriers, 1, &texture_barrier);
 #else
+    const VkBufferMemoryBarrier native_buffer_barriers[2] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = 0u,
+            .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = vertex_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = 0u,
+            .dstAccessMask = VK_ACCESS_INDEX_READ_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = index_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+    };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
-        &texture_barrier);
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, NULL, 2, native_buffer_barriers, 1, &texture_barrier);
 #endif
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

@@ -1069,6 +1069,21 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
     VK_CHECK(vkBeginCommandBuffer(command, &command_begin));
+#if defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
+    const VkBufferMemoryBarrier robust_vertex_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = 0u,
+        .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = robust_vertex_buffer,
+        .offset = 0u,
+        .size = VK_WHOLE_SIZE,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0u, 0u, NULL, 1u,
+        &robust_vertex_barrier, 0u, NULL);
+#endif
 #if !defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

@@ -376,17 +376,6 @@ typedef struct VkPs5Framebuffer {
 
 typedef struct VkPs5RuntimeShader {
     AgcShader native_shader;
-    AgcShaderRecord record;
-    AgcShaderRecord front_record;
-    AgcShaderRecord fused_record;
-    AgcRegisterValue fused_registers[64];
-    AgcGpuMemory code_memory;
-    AgcGpuMemory front_code_memory;
-    void *code;
-    size_t code_size;
-    void *front_code;
-    size_t front_code_size;
-    AgcGfx1013ShaderBinding binding;
 } VkPs5RuntimeShader;
 
 typedef struct VkPs5Pipeline {
@@ -3033,8 +3022,6 @@ static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocato
     for (uint32_t i = 0; i < pipeline->stage_count; ++i) {
         if (pipeline->runtime[i].native_shader)
             agcDestroyShader(pipeline->runtime[i].native_shader);
-        agcGpuMemoryFreeFlexible(&pipeline->runtime[i].code_memory);
-        agcGpuMemoryFreeFlexible(&pipeline->runtime[i].front_code_memory);
         openagcPsbcFreeOutput(&pipeline->stages[i]);
     }
     vk_ps5_device_free(device, allocator, pipeline);
@@ -3059,85 +3046,8 @@ static VkResult finalize_runtime_shader(
         return native_result == AGC_ERROR_OUT_OF_MEMORY ?
             VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_INVALID_SHADER_NV;
     }
-    if (agcShaderRecordRelocateBinary(&runtime->record,
-            output->shader.data, output->shader.size) != AGC_OK ||
-        output->metadata.code_offset > output->shader.size ||
-        output->metadata.code_size >
-            output->shader.size - output->metadata.code_offset)
-        {
-            fprintf(stderr, "vulkan-ps5: shader relocation validation failed\n");
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
-    runtime->code_size = output->metadata.code_size;
     (void)device;
     (void)allocator;
-    if (agcGpuMemoryAllocateFlexible(&runtime->code_memory,
-            runtime->code_size, 256u, "vulkan_ps5_shader") != AGC_OK) {
-        fprintf(stderr, "vulkan-ps5: shader code allocation failed\n");
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
-    runtime->code = runtime->code_memory.cpu_address;
-    memcpy(runtime->code,
-        (const uint8_t *)output->shader.data + output->metadata.code_offset,
-        runtime->code_size);
-    if (agcGpuMemoryFlush(&runtime->code_memory, 0,
-            runtime->code_size) != AGC_OK) {
-        fprintf(stderr, "vulkan-ps5: shader code flush failed\n");
-        return VK_ERROR_DEVICE_LOST;
-    }
-    runtime->binding = (AgcGfx1013ShaderBinding){
-        .record = &runtime->record,
-        .sh_registers = (const AgcRegisterValue *)(uintptr_t)
-            runtime->record.sh_registers,
-        .num_sh_registers = runtime->record.num_sh_registers,
-        .cx_registers = (const AgcRegisterValue *)(uintptr_t)
-            runtime->record.cx_registers,
-        .num_cx_registers = runtime->record.num_cx_registers,
-        .code_address = runtime->code_memory.gpu_address,
-    };
-    if (output->front_shader.data) {
-        if (agcShaderRecordRelocateBinary(&runtime->front_record,
-                output->front_shader.data, output->front_shader.size) != AGC_OK ||
-            output->metadata.front_code_offset > output->front_shader.size ||
-            output->metadata.front_code_size >
-                output->front_shader.size - output->metadata.front_code_offset ||
-            (uint32_t)runtime->record.num_sh_registers +
-                runtime->front_record.num_sh_registers > 64u)
-            {
-                fprintf(stderr,
-                    "vulkan-ps5: front shader relocation validation failed\n");
-                return VK_ERROR_INITIALIZATION_FAILED;
-            }
-        runtime->front_code_size = output->metadata.front_code_size;
-        if (agcGpuMemoryAllocateFlexible(&runtime->front_code_memory,
-                runtime->front_code_size, 256u,
-                "vulkan_ps5_shader_front") != AGC_OK) {
-            fprintf(stderr, "vulkan-ps5: front shader allocation failed\n");
-            return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        }
-        runtime->front_code = runtime->front_code_memory.cpu_address;
-        memcpy(runtime->front_code,
-            (const uint8_t *)output->front_shader.data +
-                output->metadata.front_code_offset,
-            runtime->front_code_size);
-        if (agcGpuMemoryFlush(&runtime->front_code_memory, 0,
-                runtime->front_code_size) != AGC_OK) {
-            fprintf(stderr, "vulkan-ps5: front shader flush failed\n");
-            return VK_ERROR_DEVICE_LOST;
-        }
-        runtime->record.code = runtime->code_memory.gpu_address;
-        runtime->front_record.code = runtime->front_code_memory.gpu_address;
-        if (sceAgcFuseShaderHalves_0200(
-                &runtime->fused_record, &runtime->front_record,
-                &runtime->record, runtime->fused_registers) != AGC_OK) {
-            fprintf(stderr, "vulkan-ps5: shader-half fusion failed\n");
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
-        runtime->binding.record = &runtime->fused_record;
-        runtime->binding.sh_registers = runtime->fused_registers;
-        runtime->binding.num_sh_registers =
-            runtime->fused_record.num_sh_registers;
-    }
     return VK_SUCCESS;
 }
 
@@ -6177,79 +6087,6 @@ static VkResult encode_buffer_descriptor(
 static VkResult encode_image_descriptor(
     const VkPs5DescriptorValue *value, bool storage, void *destination);
 
-static VkResult prepare_compute_resource_tables(
-    VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
-    AgcGfx1013ResourceTableBinding *tables, uint32_t *table_count)
-{
-    const OpenAgcPsbcMetadata *metadata = &pipeline->stages[0].metadata;
-    bool used_sets[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS] = {false};
-    *table_count = 0u;
-    for (uint32_t i = 0; i < metadata->user_sgpr_count; ++i) {
-        if (metadata->user_sgprs[i].kind !=
-                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (metadata->user_sgprs[i].index >=
-                OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
-            !command->compute_sets[metadata->user_sgprs[i].index])
-            return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    for (uint32_t i = 0; i < metadata->descriptor_mapping_count; ++i) {
-        const OpenAgcPsbcDescriptorMapping *mapping =
-            &metadata->descriptor_mappings[i];
-        const uint32_t array_size =
-            AGC_SHADER_DESCRIPTOR_ARRAY_SIZE(mapping->array_size);
-        if (mapping->set >= OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
-            array_size == 0u ||
-            mapping->byte_offset > VK_PS5_DESCRIPTOR_TABLE_SIZE ||
-            mapping->byte_stride < sizeof(AgcGfx1013BufferDescriptor) ||
-            array_size >
-                (VK_PS5_DESCRIPTOR_TABLE_SIZE - mapping->byte_offset) /
-                    mapping->byte_stride)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (mapping->type != OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER &&
-            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
-            mapping->type != OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        VkPs5DescriptorSet *set = command->compute_sets[mapping->set];
-        if (!set) return VK_ERROR_INITIALIZATION_FAILED;
-        for (uint32_t array = 0; array < array_size; ++array) {
-            VkDescriptorType layout_type;
-            VkPs5DescriptorValue *value = descriptor_value(
-                set, mapping->binding, array, &layout_type);
-            OpenAgcPsbcDescriptorType psbc_type;
-            if (!value || !value->valid ||
-                !psbc_descriptor_type(layout_type, &psbc_type) ||
-                psbc_type != mapping->type ||
-                (mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE ?
-                    !value->image.imageView : !value->buffer.buffer))
-                return VK_ERROR_INITIALIZATION_FAILED;
-            size_t offset = mapping->byte_offset +
-                (size_t)array * mapping->byte_stride;
-            void *destination =
-                (uint8_t *)set->table_memory.cpu_address + offset;
-            VkResult encode_result =
-                mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE ?
-                encode_image_descriptor(value, true, destination) :
-                encode_buffer_descriptor(value, destination);
-            if (encode_result != VK_SUCCESS) return encode_result;
-        }
-        used_sets[mapping->set] = true;
-    }
-    for (uint32_t set_index = 0;
-         set_index < OPENAGC_PSBC_MAX_DESCRIPTOR_SETS; ++set_index) {
-        if (!used_sets[set_index]) continue;
-        VkPs5DescriptorSet *set = command->compute_sets[set_index];
-        if (agcGpuMemoryFlush(&set->table_memory, 0,
-                VK_PS5_DESCRIPTOR_TABLE_SIZE) != AGC_OK)
-            return VK_ERROR_DEVICE_LOST;
-        tables[*table_count].placeholder =
-            OPENAGC_DESCRIPTOR_SET_PLACEHOLDER(set_index);
-        tables[*table_count].address = descriptor_table_gpu_address(set);
-        (*table_count)++;
-    }
-    return VK_SUCCESS;
-}
-
 static VkResult prepare_native_compute_descriptors(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline,
     bool *ready)
@@ -6589,48 +6426,6 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
-    AgcGfx1013ResourceTableBinding
-        tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
-    uint32_t table_count;
-    VkResult prepare_result = prepare_compute_resource_tables(
-        command, pipeline, tables, &table_count);
-    if (prepare_result != VK_SUCCESS) {
-        command->record_error = prepare_result;
-        return;
-    }
-    const VkPs5RuntimeShader *shader = &pipeline->runtime[0];
-    if (!command->compute_defaults_emitted) {
-        int32_t defaults_result = agcGfx1013ApplyComputeDefaultsV8(
-            &command->dcb, NULL);
-        if (defaults_result != AGC_OK) {
-            command->record_error =
-                defaults_result == AGC_ERROR_BUFFER_TOO_SMALL ?
-                VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-            return;
-        }
-        command->compute_defaults_emitted = VK_TRUE;
-    }
-    const AgcGfx1013ComputeState state = {
-        .record = &shader->record,
-        .sh_registers = shader->binding.sh_registers,
-        .num_sh_registers = shader->binding.num_sh_registers,
-        .code_address = shader->binding.code_address,
-        .local_size_x = metadata->local_size_x,
-        .local_size_y = metadata->local_size_y,
-        .local_size_z = metadata->local_size_z,
-        .group_count_x = x,
-        .group_count_y = y,
-        .group_count_z = z,
-        .modifier = AGC_GFX1013_COMPUTE_DISPATCH_WAVE32,
-        .resource_tables = tables,
-        .num_resource_tables = table_count,
-    };
-    int32_t result = agcGfx1013DispatchCompute(&command->dcb, &state);
-    if (result != AGC_OK) {
-        command->record_error = result == AGC_ERROR_BUFFER_TOO_SMALL ?
-            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-        return;
-    }
     bool native_ready = false;
     VkResult native_prepare = prepare_native_compute_descriptors(
         command, pipeline, &native_ready);
@@ -6638,16 +6433,16 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
         command->record_error = native_prepare;
         return;
     }
-    if (native_ready) {
-        result = agcCmdDispatch(command->native_graphics_command_buffer,
-            x, y, z);
-        if (result != AGC_OK)
-            command->record_error = native_command_result(result);
-        else
-            command->native_dispatch_count++;
-    } else {
-        native_mark_stream_incomplete(command);
+    if (!native_ready) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
     }
+    int32_t result = agcCmdDispatch(command->native_graphics_command_buffer,
+        x, y, z);
+    if (result != AGC_OK)
+        command->record_error = native_command_result(result);
+    else
+        command->native_dispatch_count++;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatchIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o) {
@@ -7194,216 +6989,6 @@ static bool record_raster_state(
     return false;
 }
 
-static void record_tessellation_draw(
-    VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline,
-    uint32_t element_count, uint32_t instance_count,
-    uint32_t first_element, uint32_t first_instance, bool indexed)
-{
-    if (indexed || !pipeline->tessellation ||
-        !pipeline->tess_ring_descriptor_address) {
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-        return;
-    }
-    AgcRegisterValue user_data[3u * OPENAGC_PSBC_MAX_USER_SGPRS];
-    uint32_t user_data_count = 0u;
-    AgcGfx1013ResourceTableBinding
-        hull_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
-    AgcGfx1013ResourceTableBinding
-        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
-    AgcGfx1013ResourceTableBinding
-        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
-    uint32_t hull_table_count = 0u;
-    uint32_t primitive_table_count = 0u;
-    uint32_t pixel_table_count = 0u;
-    VkResult result = prepare_graphics_stage_user_data(
-        command, pipeline, 0u, true, false, first_element, 0,
-        first_instance, false, NULL, NULL, NULL,
-        hull_tables, &hull_table_count, user_data,
-        &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
-    if (result == VK_SUCCESS)
-        result = prepare_graphics_stage_user_data(
-            command, pipeline, 1u, true, false, first_element, 0,
-            first_instance, false, NULL, NULL, NULL,
-            primitive_tables, &primitive_table_count,
-            user_data, &user_data_count,
-            3u * OPENAGC_PSBC_MAX_USER_SGPRS);
-    if (result == VK_SUCCESS)
-        result = prepare_graphics_stage_user_data(
-            command, pipeline, 2u, false, false, first_element, 0,
-            first_instance, false, NULL, NULL, NULL,
-            pixel_tables, &pixel_table_count, user_data,
-            &user_data_count, 3u * OPENAGC_PSBC_MAX_USER_SGPRS);
-    uint32_t descriptor_count = 0u;
-    if (result == VK_SUCCESS)
-        result = prepare_graphics_descriptor_tables(command, pipeline, 0u,
-            &hull_tables[hull_table_count], &descriptor_count);
-    hull_table_count += descriptor_count;
-    descriptor_count = 0u;
-    if (result == VK_SUCCESS)
-        result = prepare_graphics_descriptor_tables(command, pipeline, 1u,
-            &primitive_tables[primitive_table_count], &descriptor_count);
-    primitive_table_count += descriptor_count;
-    descriptor_count = 0u;
-    if (result == VK_SUCCESS)
-        result = prepare_graphics_descriptor_tables(command, pipeline, 2u,
-            pixel_tables, &descriptor_count);
-    pixel_table_count = descriptor_count;
-    if (result != VK_SUCCESS) {
-        command->record_error = result;
-        return;
-    }
-    AgcGfx1013ViewportArrayState viewport_state;
-    result = resolve_viewport_state(command, pipeline, &viewport_state);
-    if (result != VK_SUCCESS) {
-        command->record_error = result;
-        return;
-    }
-    AgcGfx1013FrameState draw_frame = command->frame_state;
-    if (pipeline->depth_clamp_enable)
-        draw_frame.clip_control = AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
-    const VkPs5RuntimeShader *hull = &pipeline->runtime[0];
-    const VkPs5RuntimeShader *primitive = &pipeline->runtime[1];
-    const VkPs5RuntimeShader *pixel = &pipeline->runtime[2];
-    const AgcGfx1013TessDrawState draw = {
-        .shaders = {
-            .hull = hull->binding,
-            .primitive = primitive->binding,
-            .pixel = pixel->binding,
-            .hull_back_code_address = hull->binding.code_address,
-            .primitive_back_code_address = primitive->binding.code_address,
-            .ring_descriptor_address =
-                pipeline->tess_ring_descriptor_address,
-            .tcs_offchip_layout = pipeline->tcs_offchip_layout,
-            .tes_offchip_layout = pipeline->tes_offchip_layout,
-            .hull_lds_size =
-                pipeline->stages[0].metadata.tessellation_lds_size,
-            .primitive_type = pipeline->primitive_type,
-        },
-        .frame = &draw_frame,
-        .tessellation = pipeline->tessellation,
-        .depth_surface_state = pipeline->has_depth_stencil ?
-            &command->depth_surface_state : NULL,
-        .depth_stencil_state = pipeline->has_depth_stencil ?
-            &pipeline->depth_stencil : NULL,
-        .hull_resource_tables = hull_tables,
-        .num_hull_resource_tables = hull_table_count,
-        .primitive_resource_tables = primitive_tables,
-        .num_primitive_resource_tables = primitive_table_count,
-        .pixel_resource_tables = pixel_tables,
-        .num_pixel_resource_tables = pixel_table_count,
-        .post_bind_sh_registers = user_data,
-        .num_post_bind_sh_registers = user_data_count,
-        .sample_state = &pipeline->sample_state,
-        .viewport_array_state = &viewport_state,
-        .instance_count = instance_count,
-        .vertex_count = element_count,
-        .draw_modifier = 0x40000000u,
-    };
-    if (!record_color_blend(command, pipeline) ||
-        !record_raster_state(command, pipeline, &draw_frame))
-        return;
-    int32_t draw_result = agcGfx1013SetTessellationRings(
-        &command->dcb, pipeline->tessellation);
-    if (draw_result == AGC_OK)
-        draw_result = agcGfx1013DrawTessIndexAuto(&command->dcb, &draw);
-    if (draw_result != AGC_OK)
-        command->record_error = draw_result == AGC_ERROR_BUFFER_TOO_SMALL ?
-            VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-}
-
-typedef struct VkPs5PreparedBaselineDraw {
-    AgcRegisterValue user_data[OPENAGC_PSBC_MAX_USER_SGPRS];
-    AgcGfx1013ResourceTableBinding
-        primitive_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS + 1u];
-    AgcGfx1013ResourceTableBinding
-        pixel_tables[OPENAGC_PSBC_MAX_DESCRIPTOR_SETS];
-    AgcGfx1013FrameState frame;
-    AgcGfx1013ViewportArrayState viewport_state;
-    AgcGfx1013BaselineDrawState draw;
-    uint32_t base_vertex_location;
-    uint32_t start_instance_location;
-    uint32_t draw_index_location;
-} VkPs5PreparedBaselineDraw;
-
-static VkResult prepare_baseline_draw(
-    VkPs5CommandBuffer *command, VkPs5Pipeline *pipeline, bool indexed,
-    uint32_t element_count, uint32_t instance_count,
-    uint32_t first_element, int32_t vertex_offset, uint32_t first_instance,
-    bool indirect_draw, VkPs5PreparedBaselineDraw *prepared)
-{
-    memset(prepared, 0, sizeof(*prepared));
-    prepared->base_vertex_location = UINT32_MAX;
-    prepared->start_instance_location = UINT32_MAX;
-    prepared->draw_index_location = UINT32_MAX;
-    uint32_t primitive_table_count = 0u;
-    uint32_t pixel_table_count = 0u;
-    uint32_t user_data_count = 0u;
-    VkResult result = prepare_graphics_stage_user_data(
-        command, pipeline, 0u, true, indexed, first_element, vertex_offset,
-        first_instance, indirect_draw, &prepared->base_vertex_location,
-        &prepared->start_instance_location, &prepared->draw_index_location,
-        prepared->primitive_tables,
-        &primitive_table_count, prepared->user_data, &user_data_count,
-        OPENAGC_PSBC_MAX_USER_SGPRS);
-    if (result != VK_SUCCESS)
-        return result;
-    for (uint32_t n = 0;
-         n < pipeline->stages[1].metadata.user_sgpr_count; ++n) {
-        if (pipeline->stages[1].metadata.user_sgprs[n].kind !=
-                OPENAGC_PSBC_USER_SGPR_DESCRIPTOR_SET)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-    }
-    uint32_t descriptor_table_count = 0u;
-    result = prepare_graphics_descriptor_tables(command, pipeline, 0u,
-        &prepared->primitive_tables[primitive_table_count],
-        &descriptor_table_count);
-    if (result != VK_SUCCESS)
-        return result;
-    primitive_table_count += descriptor_table_count;
-    result = prepare_graphics_descriptor_tables(command, pipeline, 1u,
-        prepared->pixel_tables, &pixel_table_count);
-    if (result != VK_SUCCESS)
-        return result;
-    result = resolve_viewport_state(
-        command, pipeline, &prepared->viewport_state);
-    if (result != VK_SUCCESS)
-        return result;
-
-    prepared->frame = command->frame_state;
-    if (pipeline->depth_clamp_enable)
-        prepared->frame.clip_control =
-            AGC_GFX1013_DEPTH_CLAMP_CLIP_CONTROL;
-    const VkPs5RuntimeShader *primitive = &pipeline->runtime[0];
-    const VkPs5RuntimeShader *pixel = &pipeline->runtime[1];
-    prepared->draw = (AgcGfx1013BaselineDrawState){
-        .shaders = {
-            .primitive = primitive->binding,
-            .pixel = pixel->binding,
-            .primitive_back_code_address = primitive->binding.code_address,
-            .primitive_type = pipeline->primitive_type,
-        },
-        .frame = &prepared->frame,
-        .depth_surface_state = pipeline->has_depth_stencil ?
-            &command->depth_surface_state : NULL,
-        .depth_stencil_state = pipeline->has_depth_stencil ?
-            &pipeline->depth_stencil : NULL,
-        .primitive_resource_tables = prepared->primitive_tables,
-        .num_primitive_resource_tables = primitive_table_count,
-        .pixel_resource_tables = prepared->pixel_tables,
-        .num_pixel_resource_tables = pixel_table_count,
-        .post_bind_sh_registers = prepared->user_data,
-        .num_post_bind_sh_registers = user_data_count,
-        .index_type = indexed && command->index_type == VK_INDEX_TYPE_UINT32 ?
-            kAgcIndexSize32 : kAgcIndexSize16,
-        .instance_count = indirect_draw ? 1u : instance_count,
-        .vertex_count = indirect_draw ? 1u : element_count,
-        .draw_modifier = 0x40000000u,
-        .sample_state = &pipeline->sample_state,
-        .viewport_array_state = &prepared->viewport_state,
-    };
-    return VK_SUCCESS;
-}
-
 static VkResult native_bind_graphics_attachments(
     VkPs5CommandBuffer *command)
 {
@@ -7474,14 +7059,15 @@ static VkResult native_bind_graphics_descriptors(
     uint32_t write_count = 0u;
 
     *ready = false;
-    if (command->native_descriptor_bind_count) {
+    if (command->native_descriptor_graphics_pipeline) {
         if (command->native_descriptor_graphics_pipeline ==
                 pipeline->native_graphics_pipeline &&
             memcmp(command->native_descriptor_graphics_sets,
                    command->graphics_sets,
-                   sizeof(command->graphics_sets)) == 0)
+                   sizeof(command->graphics_sets)) == 0) {
             *ready = true;
-        return VK_SUCCESS;
+            return VK_SUCCESS;
+        }
     }
     for (uint32_t stage_index = 0u; stage_index < pipeline->stage_count;
          ++stage_index) {
@@ -7617,11 +7203,11 @@ static VkResult native_bind_graphics_descriptors(
         if (result != AGC_OK)
             return native_command_result(result);
         command->native_descriptor_bind_count++;
-        command->native_descriptor_graphics_pipeline =
-            pipeline->native_graphics_pipeline;
-        memcpy(command->native_descriptor_graphics_sets,
-               command->graphics_sets, sizeof(command->graphics_sets));
     }
+    command->native_descriptor_graphics_pipeline =
+        pipeline->native_graphics_pipeline;
+    memcpy(command->native_descriptor_graphics_sets,
+           command->graphics_sets, sizeof(command->graphics_sets));
     *ready = true;
     return VK_SUCCESS;
 }
@@ -7640,9 +7226,10 @@ static VkResult native_bind_graphics_vertex_buffers(
                    sizeof(command->vertex_buffers)) == 0 &&
             memcmp(command->native_vertex_offsets,
                    command->vertex_offsets,
-                   sizeof(command->vertex_offsets)) == 0)
+                   sizeof(command->vertex_offsets)) == 0) {
             *ready = true;
-        return VK_SUCCESS;
+            return VK_SUCCESS;
+        }
     }
     for (uint32_t binding = 0u; binding < VK_PS5_MAX_VERTEX_BINDINGS;
          ++binding) {
@@ -7668,13 +7255,13 @@ static VkResult native_bind_graphics_vertex_buffers(
             binding_count, bindings);
         if (result != AGC_OK)
             return native_command_result(result);
-        command->native_vertex_graphics_pipeline =
-            pipeline->native_graphics_pipeline;
-        memcpy(command->native_vertex_buffers, command->vertex_buffers,
-               sizeof(command->vertex_buffers));
-        memcpy(command->native_vertex_offsets, command->vertex_offsets,
-               sizeof(command->vertex_offsets));
     }
+    command->native_vertex_graphics_pipeline =
+        pipeline->native_graphics_pipeline;
+    memcpy(command->native_vertex_buffers, command->vertex_buffers,
+           sizeof(command->vertex_buffers));
+    memcpy(command->native_vertex_offsets, command->vertex_offsets,
+           sizeof(command->vertex_offsets));
     *ready = true;
     return VK_SUCCESS;
 }
@@ -7771,82 +7358,17 @@ static void record_graphics_draw(
             return;
         }
     }
-    uint64_t border_color_table =
-        vk_ps5_device_border_color_table(command->device);
-    if (border_color_table && agcGfx1013SetBorderColorTable(
-            &command->dcb, border_color_table) != AGC_OK) {
-        command->record_error = VK_ERROR_OUT_OF_HOST_MEMORY;
-        return;
-    }
     AgcGfx1013ViewportArrayState native_viewport_state;
-    if (tessellation) {
-        record_tessellation_draw(command, pipeline, element_count,
-            instance_count, first_element, first_instance, indexed);
-        if (command->record_error != VK_SUCCESS)
-            return;
-        VkResult viewport_result = resolve_viewport_state(
-            command, pipeline, &native_viewport_state);
-        if (viewport_result != VK_SUCCESS) {
-            command->record_error = viewport_result;
-            return;
-        }
-    } else {
-        VkPs5PreparedBaselineDraw prepared;
-        VkResult prepare_result = prepare_baseline_draw(
-            command, pipeline, indexed, element_count, instance_count,
-            first_element, vertex_offset, first_instance, false, &prepared);
-        if (prepare_result != VK_SUCCESS) {
-            command->record_error = prepare_result;
-            return;
-        }
-        if (!record_color_blend(command, pipeline) ||
-            !record_raster_state(command, pipeline, &prepared.frame)) {
-            return;
-        }
-        int32_t legacy_result;
-        if (indexed) {
-            VkPs5Buffer *index = command->index_buffer;
-            uint32_t element_size = command->index_type == VK_INDEX_TYPE_UINT32 ?
-                4u : 2u;
-            if (!index || !index->memory ||
-                command->index_offset >= index->size ||
-                index->memory_offset > UINT64_MAX - command->index_offset) {
-                command->record_error = VK_ERROR_INITIALIZATION_FAILED;
-                return;
-            }
-            VkDeviceSize available = command->index_size;
-            if (available / element_size > UINT32_MAX) {
-                command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-                return;
-            }
-            const AgcGfx1013IndexedDrawState indexed_draw = {
-                .draw = prepared.draw,
-                .index_buffer_address = vk_ps5_memory_gpu_address(
-                    index->memory,
-                    index->memory_offset + command->index_offset),
-                .index_buffer_count = (uint32_t)(available / element_size),
-                .first_index = first_element,
-                .index_count = element_count,
-                .draw_initiator = 0u,
-            };
-            legacy_result = agcGfx1013DrawBaselineIndexed(
-                &command->dcb, &indexed_draw);
-        } else {
-            legacy_result = agcGfx1013DrawBaselineIndexAuto(
-                &command->dcb, &prepared.draw);
-        }
-        if (legacy_result != AGC_OK) {
-            command->record_error =
-                legacy_result == AGC_ERROR_BUFFER_TOO_SMALL ?
-                VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-            return;
-        }
-        native_viewport_state = prepared.viewport_state;
+    VkResult viewport_result = resolve_viewport_state(
+        command, pipeline, &native_viewport_state);
+    if (viewport_result != VK_SUCCESS) {
+        command->record_error = viewport_result;
+        return;
     }
     if (!pipeline->native_graphics_pipeline ||
         command->native_bound_graphics !=
             pipeline->native_graphics_pipeline) {
-        native_mark_stream_incomplete(command);
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
 
@@ -7871,7 +7393,7 @@ static void record_graphics_draw(
         return;
     }
     if (!descriptors_ready || !vertex_buffers_ready) {
-        native_mark_stream_incomplete(command);
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
 
@@ -7879,12 +7401,12 @@ static void record_graphics_draw(
     if (indexed) {
         VkPs5Buffer *index = command->index_buffer;
         if (!index || !index->native_buffer) {
-            native_mark_stream_incomplete(command);
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
         if (native_buffer_recorded_usage(command, index) !=
                 kAgcResourceUsageShaderRead) {
-            native_mark_stream_incomplete(command);
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
         AgcIndexSize index_size = command->index_type ==
