@@ -128,7 +128,7 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-assert(extension_count == 20);
+    assert(extension_count == 21);
 VkExtensionProperties extensions[20];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
@@ -447,6 +447,15 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D,
         VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT, 0u,
         &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+        VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+        VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
+        &image_format_properties) == VK_SUCCESS);
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures == 0);

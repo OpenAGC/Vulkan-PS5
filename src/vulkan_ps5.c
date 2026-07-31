@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +51,7 @@ struct VkPs5Device {
     AgcQueue native_compute_queue;
     VkPs5Queue queue;
     VkBool32 robust_buffer_access;
+    VkBool32 null_descriptor;
     atomic_uint memory_allocation_count;
 };
 
@@ -95,6 +97,7 @@ static int ps5_color_format(VkFormat format) {
     case VK_FORMAT_R8_UNORM: return AGC_GFX1013_RT_FORMAT_R8_UNORM;
     case VK_FORMAT_R8G8_UNORM: return AGC_GFX1013_RT_FORMAT_RG8_UNORM;
     case VK_FORMAT_R8G8B8A8_UNORM: return AGC_GFX1013_RT_FORMAT_RGBA8_UNORM;
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32: return AGC_GFX1013_RT_FORMAT_RGBA8_UNORM;
     case VK_FORMAT_B8G8R8A8_UNORM: return AGC_GFX1013_RT_FORMAT_BGRA8_UNORM;
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return AGC_GFX1013_RT_FORMAT_RGB10A2_UNORM;
     case VK_FORMAT_R16_SFLOAT: return AGC_GFX1013_RT_FORMAT_R16_FLOAT;
@@ -105,6 +108,7 @@ static int ps5_color_format(VkFormat format) {
     case VK_FORMAT_R32G32B32A32_SFLOAT: return AGC_GFX1013_RT_FORMAT_RGBA32_FLOAT;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32: return AGC_GFX1013_RT_FORMAT_R11G11B10_FLOAT;
     case VK_FORMAT_R8G8B8A8_SRGB: return AGC_GFX1013_RT_FORMAT_RGBA8_SRGB;
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32: return AGC_GFX1013_RT_FORMAT_RGBA8_SRGB;
     case VK_FORMAT_B8G8R8A8_SRGB: return AGC_GFX1013_RT_FORMAT_BGRA8_SRGB;
     default: return -1;
     }
@@ -346,6 +350,11 @@ uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory_handle) {
     return memory ? memory->memory_type_index : UINT32_MAX;
 }
 
+VkBool32 vk_ps5_device_null_descriptor(VkDevice device_handle) {
+    const VkPs5Device *device = (const VkPs5Device *)device_handle;
+    return device ? device->null_descriptor : VK_FALSE;
+}
+
 static VkResult enumerate_items(uint32_t total, size_t item_size, const void *items,
                                 uint32_t *count, void *properties) {
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
@@ -398,6 +407,7 @@ VK_EXT_BORDER_COLOR_SWIZZLE_SPEC_VERSION },
 { VK_KHR_MAINTENANCE_5_EXTENSION_NAME, VK_KHR_MAINTENANCE_5_SPEC_VERSION },
 { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
 VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
+{ VK_EXT_ROBUSTNESS_2_EXTENSION_NAME, VK_EXT_ROBUSTNESS_2_SPEC_VERSION },
     { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
       VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_SPEC_VERSION },
     { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
@@ -762,6 +772,7 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         break;
     case VK_FORMAT_R8_UNORM:
     case VK_FORMAT_R8G8_UNORM:
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
     case VK_FORMAT_B8G8R8A8_UNORM:
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
     case VK_FORMAT_R16_SFLOAT:
@@ -778,6 +789,7 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
             VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
         break;
     case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
     case VK_FORMAT_B8G8R8A8_SRGB:
         pFormatProperties->linearTilingFeatures = color;
         pFormatProperties->optimalTilingFeatures = color;
@@ -826,8 +838,6 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
         !(supported & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if (usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
         !(supported & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
@@ -1130,6 +1140,14 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceMaintenance5Features *)next)->maintenance5 =
                 VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT: {
+            VkPhysicalDeviceRobustness2FeaturesEXT *robustness2 =
+                (VkPhysicalDeviceRobustness2FeaturesEXT *)next;
+            robustness2->robustBufferAccess2 = VK_FALSE;
+            robustness2->robustImageAccess2 = VK_FALSE;
+            robustness2->nullDescriptor = VK_TRUE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
             VkPhysicalDeviceLineRasterizationFeatures *line =
                 (VkPhysicalDeviceLineRasterizationFeatures *)next;
@@ -1360,6 +1378,14 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES:
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT: {
+            const VkPhysicalDeviceRobustness2FeaturesEXT *robustness2 =
+                (const VkPhysicalDeviceRobustness2FeaturesEXT *)next;
+            if (robustness2->robustBufferAccess2 ||
+                robustness2->robustImageAccess2)
+                return VK_TRUE;
+            break;
+        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
             const VkPhysicalDeviceLineRasterizationFeatures *line =
                 (const VkPhysicalDeviceLineRasterizationFeatures *)next;
@@ -1446,6 +1472,20 @@ static VkBool32 robust_buffer_access_requested(
     return VK_FALSE;
 }
 
+static VkBool32 null_descriptor_requested(
+    const VkDeviceCreateInfo *create_info)
+{
+    for (const VkBaseInStructure *next =
+             (const VkBaseInStructure *)create_info->pNext;
+         next; next = next->pNext) {
+        if (next->sType ==
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT)
+            return ((const VkPhysicalDeviceRobustness2FeaturesEXT *)next)
+                ->nullDescriptor;
+    }
+    return VK_FALSE;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                const VkAllocationCallbacks *pAllocator, VkDevice *pDevice) {
@@ -1481,6 +1521,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     }
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
     device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
+    device->null_descriptor = null_descriptor_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
     atomic_flag_clear(&device->queue.submit_lock);

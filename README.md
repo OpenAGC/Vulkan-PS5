@@ -93,6 +93,13 @@ for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
 sampling. SDL must still retain OSMesa until pinned Mesa executes through the
 PS5 EGL/WSI bridge; a capability report alone is not a Zink runtime pass.
 
+The current integration candidate reaches a real Zink EGL context and renderer
+string on FW 5.500.008. It also records reflected push constants, dynamic
+rendering RGBA8/BGRA8 clears, global color-to-transfer dependencies, and Mesa's
+mutable RGBA/A8B8G8R8 readback format class. Pixel-readback qualification is
+still pending a clean reboot and guarded rerun; a retired constant-source DMA
+clear candidate timed out and is not part of the current source.
+
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
 had 30 hard gaps; the live ICD profile now reports

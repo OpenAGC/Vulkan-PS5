@@ -6,7 +6,12 @@ layout(set = 0, binding = 0, std430) buffer Output {
     uint values[];
 } output_buffer;
 
+layout(push_constant) uniform PushConstants {
+    uint addend;
+} push_constants;
+
 void main()
 {
-    output_buffer.values[gl_GlobalInvocationID.x] = gl_GlobalInvocationID.x;
+    output_buffer.values[gl_GlobalInvocationID.x] =
+        gl_GlobalInvocationID.x + push_constants.addend;
 }

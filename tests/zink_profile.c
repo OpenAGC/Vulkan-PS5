@@ -72,6 +72,7 @@ int main(int argc, char **argv)
         VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME,
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+        VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
     };
     unsigned extension_gaps = 0;
     for (uint32_t i = 0; i < sizeof(required_extensions) /
@@ -99,8 +100,12 @@ int main(int argc, char **argv)
     REQUIRE_CORE_FEATURE(shaderClipDistance);
 #undef REQUIRE_CORE_FEATURE
 
+    VkPhysicalDeviceRobustness2FeaturesEXT robustness2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
+    };
     VkPhysicalDeviceScalarBlockLayoutFeatures scalar = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+        .pNext = &robustness2,
     };
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
@@ -153,7 +158,42 @@ int main(int argc, char **argv)
     REQUIRE_EXTENSION_FEATURE(timeline.timelineSemaphore,
                               "timelineSemaphore");
     REQUIRE_EXTENSION_FEATURE(scalar.scalarBlockLayout, "scalarBlockLayout");
+    REQUIRE_EXTENSION_FEATURE(robustness2.nullDescriptor, "nullDescriptor");
 #undef REQUIRE_EXTENSION_FEATURE
+
+    if (robustness2.nullDescriptor && has_extension(
+            extensions, written, VK_EXT_ROBUSTNESS_2_EXTENSION_NAME)) {
+        const float priority = 1.0f;
+        const VkDeviceQueueCreateInfo queue = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = 0u,
+            .queueCount = 1u,
+            .pQueuePriorities = &priority,
+        };
+        VkPhysicalDeviceRobustness2FeaturesEXT requested = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
+            .nullDescriptor = VK_TRUE,
+        };
+        const char *const requested_extension =
+            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME;
+        const VkDeviceCreateInfo device_info = {
+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = &requested,
+            .queueCreateInfoCount = 1u,
+            .pQueueCreateInfos = &queue,
+            .enabledExtensionCount = 1u,
+            .ppEnabledExtensionNames = &requested_extension,
+        };
+        VkDevice device = VK_NULL_HANDLE;
+        if (vkCreateDevice(physical, &device_info, NULL, &device) !=
+                VK_SUCCESS) {
+            printf("zink-profile: failed to enable nullDescriptor\n");
+            ++feature_gaps;
+        } else {
+            vkDestroyDevice(device, NULL);
+        }
+    }
 
     const unsigned total = api_gaps + extension_gaps + feature_gaps;
     printf("zink-profile: mesa=%s api=%u extensions=%u features=%u total=%u\n",

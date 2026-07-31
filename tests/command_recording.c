@@ -237,10 +237,18 @@ int main(int argc, char **argv)
     assert(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL,
                                        &set_layout) == VK_SUCCESS);
     VkShaderModule module = shader_module(device, argv[1]);
+    const VkPushConstantRange compute_push_range = {
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset = 0u,
+        .size = sizeof(uint32_t),
+    };
+    const uint32_t push_addend = 7u;
     const VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 1,
         .pSetLayouts = &set_layout,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &compute_push_range,
     };
     VkPipelineLayout layout;
     assert(vkCreatePipelineLayout(device, &layout_info, NULL, &layout) == VK_SUCCESS);
@@ -1094,6 +1102,8 @@ int main(int argc, char **argv)
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
                          0u, NULL, 2u, compute_barriers, 0u, NULL);
+    vkCmdPushConstants(command, layout, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0u, sizeof(push_addend), &push_addend);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
                             0, 1, &descriptor_sets[1], 0, NULL);
@@ -1108,6 +1118,8 @@ int main(int argc, char **argv)
                              VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
                          0u, 0u, NULL, 2u, compute_barriers, 0u, NULL);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdPushConstants(command, layout, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0u, sizeof(push_addend), &push_addend);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
                             0, 1, &descriptor_sets[1], 0, NULL);
     vkCmdDispatchIndirect(command, indirect_buffer, 0u);

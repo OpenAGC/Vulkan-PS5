@@ -101,8 +101,13 @@
 #endif
 #endif
 
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#define TARGET_WIDTH 64u
+#define TARGET_HEIGHT 64u
+#else
 #define TARGET_WIDTH 256u
 #define TARGET_HEIGHT 256u
+#endif
 #define GREEN_RGBA8 0xff00ff00u
 #define RED_RGBA8 0xff0000ffu
 #define LOGIC_BACKGROUND_RGBA8 0x55aa33ccu
@@ -1100,8 +1105,9 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = image_view,
         .imageLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = {.color = {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}}},
     };
     const VkRenderingInfo dynamic_rendering = {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,

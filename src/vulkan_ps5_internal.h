@@ -35,6 +35,7 @@ uint64_t vk_ps5_memory_gpu_address(VkDeviceMemory memory, VkDeviceSize offset);
 AgcDevice vk_ps5_native_device(VkDevice device);
 AgcMemory vk_ps5_native_memory(VkDeviceMemory memory);
 uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory);
+VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
 VkResult vk_ps5_queue_submit_native(VkQueue queue,
     uint32_t command_buffer_count,
     const AgcCommandBuffer *command_buffers);

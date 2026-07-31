@@ -26,6 +26,7 @@ device_extension	VK_EXT_custom_border_color	12
 device_extension	VK_EXT_border_color_swizzle	1
 device_extension	VK_KHR_maintenance5	1
 device_extension	VK_EXT_host_query_reset	1
+device_extension	VK_EXT_robustness2	1
 device_extension	VK_EXT_vertex_attribute_divisor	3
 device_extension	VK_EXT_shader_demote_to_helper_invocation	1
 device_extension	VK_KHR_driver_properties	1
@@ -42,6 +43,8 @@ format	37	53379	53377	72
 format	43	53377	53377	0
 format	44	53377	53377	72
 format	50	53377	53377	0
+format	51	53377	53377	72
+format	57	53377	53377	0
 format	64	53377	53377	72
 format	76	53377	53377	72
 format	83	53377	53377	72
