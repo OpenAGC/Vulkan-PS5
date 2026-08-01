@@ -787,6 +787,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_GEOMETRY_HEADER}")
   target_compile_definitions(vulkan_ps5_vertex_pipeline_stores_atomics_probe
     PRIVATE VULKAN_PS5_VERTEX_PIPELINE_STORES_ATOMICS_PROBE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.vertex_pipeline_stores_atomics_command_recording
+      COMMAND vulkan_ps5_vertex_pipeline_stores_atomics_probe)
+    set_tests_properties(
+      vulkan_ps5.vertex_pipeline_stores_atomics_command_recording PROPERTIES
+      PASS_REGULAR_EXPRESSION
+        "vertex_pipeline_stores_atomics: PASS command-recording" TIMEOUT 30)
+  endif()
   add_executable(vulkan_ps5_query_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
@@ -1014,6 +1022,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_FRAGMENT_STORES_ATOMICS_HEADER}")
   target_compile_definitions(vulkan_ps5_fragment_stores_atomics_probe PRIVATE
     VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.fragment_stores_atomics_command_recording
+      COMMAND vulkan_ps5_fragment_stores_atomics_probe)
+    set_tests_properties(
+      vulkan_ps5.fragment_stores_atomics_command_recording PROPERTIES
+      PASS_REGULAR_EXPRESSION
+        "fragment_stores_atomics: PASS command-recording" TIMEOUT 30)
+  endif()
   add_executable(vulkan_ps5_image_cube_array_probe
     examples/indexed_textured/main.c
     "${VULKAN_PS5_INDEXED_TEXTURED_VERTEX_HEADER}"

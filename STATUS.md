@@ -531,6 +531,20 @@ image/render-pass fixture and sample-builtin pipeline compilation. Repeated FW
 untouched guard words. Every gate queried and requested the public feature,
 self-exited, and left only the known single `amount=0x4000` warning.
 
+The 2026-08-01 current-commit regression replay also covered pipeline-forced
+partial shading when the fragment shader does not read a sample builtin.
+openagc-psbc commit `6161ff7` now reflects the effective compiled iteration
+count, including that forced rate. The full-rate artifact
+`b13ed0d108709c7e05504cb0dba4c3f93b72d1d26bbe6adc83e452ac81187ac6`
+passed with the same sample-count multiset (the first two sample IDs were
+reported in the opposite compiler-dependent order), and the partial-rate
+artifact `05bf567935e60ef56988474840b19cfcc3c1191df62bb293ad88a4c7624d3cda`
+passed with exactly 36,960 invocations and zeroed guards. Both exited cleanly;
+evidence is in `20260801T125913Z-sample-rate-shading-run1.log` and
+`20260801T130420Z-partial-sample-rate-shading-run1.log`. The sample probe now
+also releases its result buffer for every fragment-result variant, preventing
+the native child-object leak seen during the first replay.
+
 ## Milestone 6: robust buffer access (2026-07-28)
 
 `robustBufferAccess` is advertised and accepted through legacy and Features2

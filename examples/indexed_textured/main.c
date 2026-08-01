@@ -1013,10 +1013,11 @@ int main(void)
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = texture,
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0,
+            texture_info.arrayLayers},
     };
 #ifdef VULKAN_PS5_ANY_INDIRECT_PROBE
-    const VkBufferMemoryBarrier native_buffer_barriers[2] = {
+    const VkBufferMemoryBarrier native_buffer_barriers[] = {
         {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = 0u,
@@ -1037,14 +1038,29 @@ int main(void)
             .offset = 0u,
             .size = VK_WHOLE_SIZE,
         },
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = fragment_result_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+#endif
     };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
             VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 0, NULL, 2, native_buffer_barriers, 1, &texture_barrier);
+        0, 0, NULL,
+        (uint32_t)(sizeof(native_buffer_barriers) /
+            sizeof(native_buffer_barriers[0])),
+        native_buffer_barriers, 1, &texture_barrier);
 #else
-    const VkBufferMemoryBarrier native_buffer_barriers[2] = {
+    const VkBufferMemoryBarrier native_buffer_barriers[] = {
         {
             .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
             .srcAccessMask = 0u,
@@ -1065,11 +1081,26 @@ int main(void)
             .offset = 0u,
             .size = VK_WHOLE_SIZE,
         },
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
+        {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = fragment_result_buffer,
+            .offset = 0u,
+            .size = VK_WHOLE_SIZE,
+        },
+#endif
     };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 0, NULL, 2, native_buffer_barriers, 1, &texture_barrier);
+        0, 0, NULL,
+        (uint32_t)(sizeof(native_buffer_barriers) /
+            sizeof(native_buffer_barriers[0])),
+        native_buffer_barriers, 1, &texture_barrier);
 #endif
     const VkRenderPassBeginInfo render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -1239,6 +1270,7 @@ int main(void)
             covered, red, green);
     }
 #elif defined(VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE)
+#if defined(OPENAGC_PROSPERO)
     uint32_t storage_writes = 0u;
     for (uint32_t i = 1u; i < FRAGMENT_RESULT_WORDS; ++i)
         storage_writes += fragment_results[i] == 0x51a7c0deu;
@@ -1253,6 +1285,13 @@ int main(void)
         printf("fragment_stores_atomics: PASS covered=%u atomic=%u stores=%u marker=51a7c0de\n",
             covered, fragment_results[0], storage_writes);
     }
+#else
+    (void)center;
+    (void)covered;
+    (void)opaque;
+    (void)distinct_count;
+    printf("fragment_stores_atomics: PASS command-recording\n");
+#endif
 #elif defined(VULKAN_PS5_DUAL_SRC_BLEND_PROBE)
     if (covered != 18432u || opaque != covered || distinct_count != 2u ||
         center != 0xff00ff00u || pixels[0] != 0u ||
@@ -1433,7 +1472,7 @@ int main(void)
     vkDestroyBuffer(device, indirect_buffer, NULL);
     vkFreeMemory(device, indirect_memory, NULL);
 #endif
-#ifdef VULKAN_PS5_FRAGMENT_STORES_ATOMICS_PROBE
+#ifdef VULKAN_PS5_FRAGMENT_RESULT_PROBE
     vkUnmapMemory(device, fragment_result_memory);
     vkDestroyBuffer(device, fragment_result_buffer, NULL);
     vkFreeMemory(device, fragment_result_memory, NULL);
