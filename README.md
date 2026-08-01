@@ -94,7 +94,14 @@ or `tools/regenerate_bc_probe_assets.sh --check`. The guarded FW 5.50 runner is
 `examples/run_fw550_bc_sampling.sh`; its twice-passed ELF is pinned at SHA-256
 `601d0d2694c819e48140b429bb9e16b473ea91b5c9ad9eaac69bb8ae8624b639`.
 This qualifies direct-upload linear-image sampling with nearest filtering;
-BC image-copy/mip-copy execution and the final FW 11.60 replay remain pending.
+filtered/cube sampling and the final FW 11.60 replay remain pending.
+
+`vulkan_ps5_bc_copy_probe` separately copies exact compressed bytes for every
+advertised BC format from source mip 0/1 into destination mip 1/2, verifies all
+28 regions, and checks that destination mip 0 remains untouched. Run its
+cleanup-first FW 5.50 gate with `examples/run_fw550_bc_copy.sh`. The twice-
+passed ELF is pinned at SHA-256
+`0c97df8a72c21577c543dd64649d3f3fc5e0e7f74190adf4ab2ba235bd3b74d4`.
 
 `vkCmdClearColorImage` has an application-neutral, range-aware implementation
 for every advertised uncompressed color format. A committed, reproducible meta

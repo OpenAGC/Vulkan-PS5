@@ -789,8 +789,9 @@ ordering.
   A deterministic compute gate now samples all fourteen encodings through
   native sampler and combined-image-sampler descriptors and passes twice on
   FW 5.50 with one pinned ELF. Preserve its absent-channel regression and
-  reproducible Mesa-codec assets. Exact BC image-copy and mip-copy hardware
-  gates remain pending; the next format slice expands Eden-required
+  reproducible Mesa-codec assets. Exact BC image-copy and cross-mip-copy gates
+  now also pass twice on FW 5.50 through the public OpenAGC region-copy path;
+  preserve their untouched-mip oracle. The next format slice expands Eden-required
   uncompressed formats without introducing application-specific aliases. The
   first RGBA16/32 signed/unsigned integer
   slice now passes exact clear/readback twice on FW 5.50 with bounded waits and

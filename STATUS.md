@@ -412,9 +412,18 @@ twice back-to-back on FW 5.500.008. The pinned ELF SHA-256 is
 `601d0d2694c819e48140b429bb9e16b473ea91b5c9ad9eaac69bb8ae8624b639`;
 see `analysis/fw550_bc_sampling_20260801.md`. These runs were bounded, tore
 down normally, left no matching process, and immediately relaunched. They do
-not yet qualify BC image copies or mip copies, or the final FW 11.60 replay.
-The complete normal and ASAN/UBSAN suites now pass 54/54, including full and
-smoke command recording plus deterministic asset regeneration.
+not qualify filtered or cube sampling, or the final FW 11.60 replay.
+
+BC image copies and cross-mip copies are now independently qualified through
+the typed `vkCmdCopyImage` to `agcCmdCopyImageRegions` path. One pinned ELF
+copies two regions for every advertised BC format: source mip 0 to destination
+mip 1 and source mip 1 to destination mip 2. It checks all 28 regions byte for
+byte plus an untouched destination mip. SHA-256
+`0c97df8a72c21577c543dd64649d3f3fc5e0e7f74190adf4ab2ba235bd3b74d4`
+passed twice back-to-back on FW 5.500.008 with cleanup-first lifecycle gates,
+bounded waits, exact-PID removal, immediate relaunch, and only the accepted
+raw-loader `0x4000` warning; see `analysis/fw550_bc_copy_20260801.md`. The
+complete normal and ASAN/UBSAN suites now pass 55/55.
 
 ## SDL/Zink capability slice (2026-07-31)
 

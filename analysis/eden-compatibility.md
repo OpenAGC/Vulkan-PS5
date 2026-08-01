@@ -406,8 +406,10 @@ After its smoke stage exposed and drove a firmware-neutral OpenAGC BC5
 absent-channel fix, one pinned ELF passed the complete format set twice on FW
 5.500.008 with bounded waits, teardown, and immediate relaunch; see
 `analysis/fw550_bc_sampling_20260801.md`. Direct-upload linear sampling is
-therefore qualified on FW 5.50. BC image copies/mip copies and final FW 11.60
-replay remain pending.
+therefore qualified on FW 5.50. A second pinned ELF copies source mip 0/1 into
+destination mip 1/2 for all fourteen formats, verifies all 28 regions and an
+untouched destination mip, and passes twice under the same lifecycle gate; see
+`analysis/fw550_bc_copy_20260801.md`. Final FW 11.60 replay remains pending.
 
 The native `vkCmdClearColorImage` path now covers every advertised
 uncompressed color format, including the RGBA16F present-effect format. It
@@ -505,9 +507,9 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    evidence, both root causes, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
 3. Continue the general format matrix after the FW 5.50-qualified 14-format BC
-   sampling slice: expand required uncompressed formats and run exact BC
-   image-copy/mip-copy gates on FW 5.50, then replay the final identical
-   candidate on both firmware endpoints. Keep D24 fail-closed until a correct
+   sampling and cross-mip copy slices: expand required uncompressed formats,
+   then replay the final identical candidate on both firmware endpoints. Keep
+   D24 fail-closed until a correct
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
 4. Complete the remaining native command forms in dependency order. General
