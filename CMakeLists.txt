@@ -392,6 +392,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
   set(VULKAN_PS5_STORAGE_IMAGE_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_storage_image_spv.h")
+  set(VULKAN_PS5_BC_SAMPLING_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_bc_sampling_spv.h")
   set(VULKAN_PS5_ROBUST_BUFFER_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_robust_buffer_spv.h")
   set(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER
@@ -409,6 +411,30 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VERBATIM)
   add_executable(vulkan_ps5_compute_example
     examples/compute/main.c "${VULKAN_PS5_COMPUTE_HEADER}")
+  add_custom_command(OUTPUT "${VULKAN_PS5_BC_SAMPLING_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_bc_sampling_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/bc_sampling/bc_sampling.comp"
+      -o "${VULKAN_PS5_BC_SAMPLING_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/bc_sampling/bc_sampling.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_bc_sampling_probe
+    examples/bc_sampling/main.c "${VULKAN_PS5_BC_SAMPLING_HEADER}")
+  add_executable(vulkan_ps5_bc_sampling_smoke_probe
+    examples/bc_sampling/main.c "${VULKAN_PS5_BC_SAMPLING_HEADER}")
+  target_compile_definitions(vulkan_ps5_bc_sampling_smoke_probe PRIVATE
+    VULKAN_PS5_BC_SAMPLING_SMOKE=1)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.bc_sampling_command_recording
+      COMMAND vulkan_ps5_bc_sampling_probe)
+    add_test(NAME vulkan_ps5.bc_sampling_smoke_command_recording
+      COMMAND vulkan_ps5_bc_sampling_smoke_probe)
+    add_test(NAME vulkan_ps5.bc_sampling_assets_reproducible
+      COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/regenerate_bc_probe_assets.sh"
+        --check)
+    set_tests_properties(vulkan_ps5.bc_sampling_assets_reproducible
+      PROPERTIES ENVIRONMENT "OPENAGC_PSBC_ROOT=${OPENAGC_PSBC_ROOT}")
+  endif()
   add_custom_command(OUTPUT "${VULKAN_PS5_STORAGE_IMAGE_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
       --vn vulkan_ps5_storage_image_spv
@@ -1148,6 +1174,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
       vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe
+      vulkan_ps5_bc_sampling_probe vulkan_ps5_bc_sampling_smoke_probe
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
@@ -1188,7 +1215,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
-      vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe)
+      vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe
+      vulkan_ps5_bc_sampling_probe vulkan_ps5_bc_sampling_smoke_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE
@@ -1278,6 +1306,10 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_resolve_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_integer_formats_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_bc_sampling_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_bc_sampling_smoke_probe PRIVATE
       SceSystemService)
     add_executable(vulkan_ps5_process_cleanup examples/process_cleanup/main.c)
     set_target_properties(vulkan_ps5_process_cleanup PROPERTIES SUFFIX ".elf")

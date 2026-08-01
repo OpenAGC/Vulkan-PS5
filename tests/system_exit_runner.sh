@@ -65,6 +65,7 @@ run_probe() {
     mode=$1
     output=$2
     openagc_failure=${3:-0}
+    expected_sha256=${4:-}
     PATH="$test_root/bin:$PATH" \
     PS5_HOST=127.0.0.1 \
     PYPS4DEBUG_DIR="$test_root/pyps4debug" \
@@ -73,6 +74,7 @@ run_probe() {
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_KLOG_MODE="$mode" \
     FAKE_OPENAGC_FAILURE="$openagc_failure" \
+    VULKAN_PS5_EXIT_EXPECTED_SHA256="$expected_sha256" \
         sh "$runner" >"$output" 2>&1
 }
 
@@ -101,6 +103,13 @@ if run_probe clean "$test_root/openagc-failure.out" 1; then
 fi
 grep -F 'did not reach its self-kill oracle' \
     "$test_root/openagc-failure.out" >/dev/null
+if run_probe clean "$test_root/hash-failure.out" 0 \
+    0000000000000000000000000000000000000000000000000000000000000000; then
+    echo "wrong local ELF hash unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'system-exit probe SHA-256 mismatch' \
+    "$test_root/hash-failure.out" >/dev/null
 if run_probe crash "$test_root/crash.out"; then
     echo "fatal baseline probe unexpectedly passed" >&2
     exit 1

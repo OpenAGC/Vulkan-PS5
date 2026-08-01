@@ -1,0 +1,18 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D sampled_image;
+layout(set = 0, binding = 1, std430) buffer Results {
+    uvec4 values[];
+} results;
+
+layout(push_constant) uniform PushConstants {
+    uint output_index;
+} push_constants;
+
+void main()
+{
+    vec4 value = textureLod(sampled_image, vec2(0.375, 0.625), 0.0);
+    results.values[push_constants.output_index] = floatBitsToUint(value);
+}

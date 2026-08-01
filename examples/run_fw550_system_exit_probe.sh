@@ -22,6 +22,8 @@ file_stem=${VULKAN_PS5_EXIT_FILE_STEM:-system-exit-probe}
 display_name=${VULKAN_PS5_EXIT_DISPLAY_NAME:-system-exit probe}
 success_regex=${VULKAN_PS5_EXIT_SUCCESS_REGEX:-'^system-exit-probe: ready app=0x[0-9a-f]+$'}
 failure_pattern=${VULKAN_PS5_EXIT_FAILURE_PATTERN:-'system-exit-probe: unexpected return'}
+expected_sha256=${VULKAN_PS5_EXIT_EXPECTED_SHA256:-}
+expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 
 case "$live_klog" in
     0|1) ;;
@@ -41,9 +43,48 @@ if [ "$require_cleanup" = 1 ] && [ ! -f "$cleanup_elf" ]; then
     exit 2
 fi
 if ! command -v nc >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1 || \
+   ! command -v shasum >/dev/null 2>&1 || \
    [ ! -d "$pyps4debug_dir" ]; then
-    echo "nc and ps5debug-NG/PyPS4debug are required" >&2
+    echo "nc, shasum, and ps5debug-NG/PyPS4debug are required" >&2
     exit 2
+fi
+
+verify_local_sha256() {
+    file=$1
+    expected=$2
+    label=$3
+    [ -z "$expected" ] && return 0
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        echo "$label SHA-256 mismatch: expected=$expected actual=$actual" >&2
+        return 1
+    fi
+}
+
+verify_remote_sha256() {
+    remote_url=$1
+    expected=$2
+    label=$3
+    [ -z "$expected" ] && return 0
+    downloaded=$(mktemp "${TMPDIR:-/tmp}/vulkan-ps5-upload.XXXXXX")
+    if ! curl -sS --connect-timeout 3 --max-time 30 \
+        -o "$downloaded" "$remote_url"; then
+        rm -f "$downloaded"
+        echo "$label remote SHA-256 download failed" >&2
+        return 1
+    fi
+    actual=$(shasum -a 256 "$downloaded" | awk '{print $1}')
+    rm -f "$downloaded"
+    if [ "$actual" != "$expected" ]; then
+        echo "$label remote SHA-256 mismatch: expected=$expected actual=$actual" >&2
+        return 1
+    fi
+}
+
+verify_local_sha256 "$elf" "$expected_sha256" "$display_name"
+if [ "$require_cleanup" = 1 ]; then
+    verify_local_sha256 "$cleanup_elf" "$expected_cleanup_sha256" \
+        'cleanup prerequisite'
 fi
 if ! curl -sS --connect-timeout 3 --max-time 5 \
     "http://${PS5_HOST}:8080/" >/dev/null; then
@@ -58,6 +99,9 @@ if [ "$require_cleanup" = 1 ]; then
         >/dev/null 2>&1 || true
     curl -sS --connect-timeout 3 --max-time 30 -T "$cleanup_elf" \
         "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" >/dev/null
+    verify_remote_sha256 \
+        "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" \
+        "$expected_cleanup_sha256" 'cleanup prerequisite'
     curl -sS --connect-timeout 3 --max-time 10 \
         "http://${PS5_HOST}:8080/hbldr?pipe=0&daemon=1&path=${cleanup_dir}/eboot.elf" \
         >/dev/null
@@ -124,8 +168,17 @@ if [ "$live_klog" = 1 ]; then
 fi
 
 echo "${endpoint_label} ${display_name} 1/1"
-if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
-    "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
+remote_dir="/data/homebrew/$remote_name"
+curl -sS --connect-timeout 3 --max-time 30 \
+    "ftp://${PS5_HOST}:2121/" --quote "MKD $remote_dir" \
+    >/dev/null 2>&1 || true
+curl -sS --connect-timeout 3 --max-time 30 -T "$elf" \
+    "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf" >/dev/null
+verify_remote_sha256 "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf" \
+    "$expected_sha256" "$display_name"
+if ! curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
+    "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf" \
+    >"$log" 2>&1; then
     sleep "$klog_settle_delay"
     if [ "$live_klog" = 1 ]; then
         stop_live_klog

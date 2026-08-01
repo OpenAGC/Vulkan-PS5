@@ -7752,27 +7752,59 @@ static VkResult prepare_native_compute_descriptors(
                 write->buffer_offset = value->buffer.offset;
                 write->buffer_range = range;
             } else if (mapping->type ==
-                       OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE) {
-                VkPs5ImageView *view =
-                    (VkPs5ImageView *)value->image.imageView;
-                if (!view) {
+                       OPENAGC_PSBC_DESCRIPTOR_SAMPLER) {
+                VkPs5Sampler *sampler =
+                    (VkPs5Sampler *)value->image.sampler;
+                if (!sampler) {
                     if (!vk_ps5_device_null_descriptor(command->device))
                         return VK_ERROR_INITIALIZATION_FAILED;
                     write_count++;
                     continue;
                 }
+                if (!sampler->native_sampler)
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                write->sampler = sampler->native_sampler;
+            } else if (mapping->type ==
+                           OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER ||
+                       mapping->type ==
+                           OPENAGC_PSBC_DESCRIPTOR_SAMPLED_IMAGE ||
+                       mapping->type ==
+                           OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE ||
+                       mapping->type ==
+                           OPENAGC_PSBC_DESCRIPTOR_INPUT_ATTACHMENT) {
+                VkPs5ImageView *view =
+                    (VkPs5ImageView *)value->image.imageView;
                 VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
                 AgcResourceUsage usage = image ?
                     native_image_recorded_usage(command, image) :
                     kAgcResourceUsageUndefined;
-                VkResult view_result = ensure_native_image_view(view);
-                if (view_result != VK_SUCCESS)
-                    return view_result;
-                if (!view || !view->native_view ||
-                    (usage != kAgcResourceUsageShaderRead &&
-                     usage != kAgcResourceUsageShaderWrite))
-                    return VK_SUCCESS;
-                write->image_view = view->native_view;
+                if (view) {
+                    VkResult view_result = ensure_native_image_view(view);
+                    if (view_result != VK_SUCCESS)
+                        return view_result;
+                    if (!view->native_view)
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                    if (usage != kAgcResourceUsageShaderRead &&
+                        !(mapping->type ==
+                              OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
+                          usage == kAgcResourceUsageShaderWrite))
+                        return VK_SUCCESS;
+                    write->image_view = view->native_view;
+                } else if (!vk_ps5_device_null_descriptor(command->device)) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (mapping->type ==
+                    OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER) {
+                    VkPs5Sampler *sampler =
+                        (VkPs5Sampler *)value->image.sampler;
+                    if (sampler && !sampler->native_sampler)
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                    if (sampler)
+                        write->sampler = sampler->native_sampler;
+                    else if (!vk_ps5_device_null_descriptor(
+                                 command->device))
+                        return VK_ERROR_INITIALIZATION_FAILED;
+                }
             } else {
                 return VK_ERROR_FEATURE_NOT_PRESENT;
             }
