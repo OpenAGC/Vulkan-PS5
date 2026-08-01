@@ -57,7 +57,7 @@ static void test_clear_pattern_packing(void)
     assert(words == 1u && pattern[0] == 0xc00ffe00u);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_A8B8G8R8_SNORM_PACK32, &clear, pattern, &words));
-    assert(words == 1u && pattern[0] == 0x7f807f40u);
+    assert(words == 1u && pattern[0] == 0x7f817f40u);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_A2R10G10B10_UNORM_PACK32, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xe00ffc00u);
@@ -101,7 +101,7 @@ static void test_clear_pattern_packing(void)
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_SNORM, &clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0x7fff4000u &&
-        pattern[1] == 0x7fff8000u);
+        pattern[1] == 0x7fff8001u);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_SFLOAT, &clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0x3c003800u &&

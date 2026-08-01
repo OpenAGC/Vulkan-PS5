@@ -117,12 +117,14 @@ bytes. Compressed and depth/stencil formats are rejected by this color path.
 The Eden-required scalar/vector normalized and integer images expose sampled,
 storage, color-attachment, and transfer use with filtering and blit restricted
 to normalized classes. They are included in the expanded bounded FW 5.50
-gate, which creates 31 native views, clears and reads back 1,984 exact
+gate, which creates 38 native views, clears and reads back 2,432 exact
 component patterns, tears down, and immediately relaunches the identical ELF.
 Run it with
 `PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1
-examples/run_fw550_integer_formats.sh`. Shader sampling/storage and integer
-attachment exports remain separate hardware gates.
+examples/run_fw550_integer_formats.sh`. A separate formatless-storage gate
+writes all 30 storage-capable audited formats through float, unsigned, and
+signed compute shaders and verifies 480 exact pixels. Sampled-image execution
+and integer attachment exports remain separate hardware gates.
 
 OpenAGC API 48 adds the related R/RG 16-bit normalized and integer, RGBA16
 normalized, and R/RG 32-bit integer image forms. Their Vulkan queries preserve
@@ -131,8 +133,8 @@ integer images may not—and do not advertise unimplemented texel buffers. The
 host and Prospero gates cover exact native descriptors, scalar/vector render
 exports, image/view creation, and clear packing. The expanded bounded FW 5.50
 probe passes all eighteen new formats and 1,152 exact clear/readback pixels
-twice with immediate relaunch. Shader sampling/storage and attachment exports
-remain the next qualification gates.
+twice with immediate relaunch. Storage-image execution is now qualified as
+part of the 30-format gate; sampled-image and attachment exports remain next.
 
 OpenAGC API 49 adds exact native R8/RG8 SNORM, UINT, and SINT layouts,
 descriptors, color targets, and pipeline compatibility. Vulkan advertises
@@ -162,6 +164,15 @@ The pinned FW 5.50 probe passed all 38 formats and 2,432 exact pixels twice.
 `VK_FORMAT_R32G32B32_SFLOAT` remains intentionally image-unsupported because
 gfx10.3 defines that encoding as buffer-only. See
 `analysis/fw550_rgb9e5_format_20260801.md`.
+
+The scalar/vector storage-image gate uses formatless float, unsigned, and
+signed compute shaders, one immutable descriptor set per target image, and
+reflected push constants. It writes every one of the 30 storage-capable
+formats above and passed twice on FW 5.500.008 with 480 bit-exact pixels,
+bounded synchronization, teardown, and immediate relaunch. The first run also
+exposed and corrected the clear packer's Vulkan-invalid SNORM endpoint: -1.0
+now converts to -127/-32767 instead of the reserved -128/-32768 encodings.
+See `analysis/fw550_format_storage_20260802.md`.
 
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary

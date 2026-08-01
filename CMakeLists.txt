@@ -392,6 +392,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_compute_spv.h")
   set(VULKAN_PS5_STORAGE_IMAGE_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_storage_image_spv.h")
+  set(VULKAN_PS5_FORMAT_STORAGE_FLOAT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_storage_float_spv.h")
+  set(VULKAN_PS5_FORMAT_STORAGE_UINT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_storage_uint_spv.h")
+  set(VULKAN_PS5_FORMAT_STORAGE_SINT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_storage_sint_spv.h")
   set(VULKAN_PS5_BC_SAMPLING_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_bc_sampling_spv.h")
   set(VULKAN_PS5_ROBUST_BUFFER_HEADER
@@ -446,6 +452,35 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/compute/main.c "${VULKAN_PS5_STORAGE_IMAGE_HEADER}")
   target_compile_definitions(vulkan_ps5_storage_image_probe PRIVATE
     VULKAN_PS5_STORAGE_IMAGE_PROBE=1)
+  add_custom_command(OUTPUT "${VULKAN_PS5_FORMAT_STORAGE_FLOAT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_format_storage_float_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_float.comp"
+      -o "${VULKAN_PS5_FORMAT_STORAGE_FLOAT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_float.comp"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_FORMAT_STORAGE_UINT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_format_storage_uint_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_uint.comp"
+      -o "${VULKAN_PS5_FORMAT_STORAGE_UINT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_uint.comp"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_FORMAT_STORAGE_SINT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_format_storage_sint_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_sint.comp"
+      -o "${VULKAN_PS5_FORMAT_STORAGE_SINT_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_storage/storage_sint.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_format_storage_probe
+    examples/format_storage/main.c
+    "${VULKAN_PS5_FORMAT_STORAGE_FLOAT_HEADER}"
+    "${VULKAN_PS5_FORMAT_STORAGE_UINT_HEADER}"
+    "${VULKAN_PS5_FORMAT_STORAGE_SINT_HEADER}")
   add_custom_command(OUTPUT "${VULKAN_PS5_ROBUST_BUFFER_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
       --vn vulkan_ps5_robust_buffer_spv
@@ -473,6 +508,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME vulkan_ps5.storage_image_command_recording
       COMMAND vulkan_ps5_storage_image_probe)
+    add_test(NAME vulkan_ps5.format_storage_command_recording
+      COMMAND vulkan_ps5_format_storage_probe)
     add_test(NAME vulkan_ps5.robust_buffer_command_recording
       COMMAND vulkan_ps5_robust_buffer_probe)
     add_test(NAME vulkan_ps5.scalar_block_layout_command_recording
@@ -1146,6 +1183,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_storage_image_probe
+      vulkan_ps5_format_storage_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
       vulkan_ps5_variable_pointers_probe
@@ -1189,6 +1227,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endif()
   foreach(example_target IN ITEMS
       vulkan_ps5_compute_example vulkan_ps5_storage_image_probe
+      vulkan_ps5_format_storage_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
       vulkan_ps5_variable_pointers_probe
@@ -1238,6 +1277,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
 
   if(PROSPERO)
     target_link_libraries(vulkan_ps5_storage_image_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_format_storage_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_robust_buffer_probe PRIVATE
       SceSystemService)

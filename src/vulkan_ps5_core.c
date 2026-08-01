@@ -6275,7 +6275,7 @@ static uint32_t native_unorm(float value, uint32_t maximum)
 static uint32_t native_snorm16(float value)
 {
     if (value <= -1.0f)
-        return 0x8000u;
+        return 0x8001u;
     if (value >= 1.0f)
         return 0x7fffu;
     const float scaled = value * 32767.0f;
@@ -6287,7 +6287,7 @@ static uint32_t native_snorm16(float value)
 static uint32_t native_snorm8(float value)
 {
     if (value <= -1.0f)
-        return 0x80u;
+        return 0x81u;
     if (value >= 1.0f)
         return 0x7fu;
     const float scaled = value * 127.0f;

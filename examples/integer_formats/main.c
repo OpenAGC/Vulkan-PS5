@@ -88,7 +88,7 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
     {
         VK_FORMAT_A8B8G8R8_SNORM_PACK32, "rgba8_snorm",
         {.float32 = {0.5f, -0.5f, 1.0f, -1.0f}},
-        {UINT32_C(0x807fc040), 0u, 0u, 0u}, 4u, NORMALIZED_FEATURES,
+        {UINT32_C(0x817fc040), 0u, 0u, 0u}, 4u, NORMALIZED_FEATURES,
     },
     {
         VK_FORMAT_A8B8G8R8_UINT_PACK32, "rgba8_uint",
@@ -202,7 +202,7 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
     {
         VK_FORMAT_R16G16B16A16_SNORM, "rgba16_snorm",
         {.float32 = {-1.0f, -0.5f, 0.5f, 1.0f}},
-        {UINT32_C(0xc0008000), UINT32_C(0x7fff4000), 0u, 0u},
+        {UINT32_C(0xc0008001), UINT32_C(0x7fff4000), 0u, 0u},
         8u, NORMALIZED_FEATURES,
     },
     {

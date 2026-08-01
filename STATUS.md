@@ -389,9 +389,10 @@ signed/unsigned pixels, and passed twice back-to-back on FW 5.500.008 with one
 two-second fence bound, normal teardown, exact-PID removal, immediate relaunch,
 and only the accepted raw-ELF `0x4000` warning. The identical probe ELF is
 `85ed7b3d39f36573cf64f34498bcc4bdaa472c3cc3a8c63c6c3f1789b8c96fff`;
-evidence is recorded in `analysis/fw550_integer_formats_20260801.md`. Shader
-sampling/storage and integer attachment exports remain separate hardware
-gates, as does the final FW 11.60 replay.
+evidence is recorded in `analysis/fw550_integer_formats_20260801.md`. Storage
+image writes are now covered by the 30-format execution gate below; sampled
+images and integer attachment exports remain separate hardware gates, as does
+the final FW 11.60 replay.
 
 The next fourteen Eden formats are host/Prospero qualified through OpenAGC
 API 48: R/RG 16-bit UNORM, SNORM, UINT, and SINT; RGBA16 UNORM and SNORM; and
@@ -406,8 +407,9 @@ created all eighteen new image/view forms and passed 1,152 exact clear/readback
 pixels twice back-to-back on FW 5.500.008 with teardown, exact-PID removal, and
 immediate relaunch. Its SHA-256 is
 `ec8527214b1681525ec7eb92ab5c24f4f05dfa1fbe027c1f9781415f0853a827`;
-see `analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling,
-storage-image operations, attachment exports, and FW 11.60 remain pending.
+see `analysis/fw550_scalar_vector_formats_20260801.md`. Storage-image execution
+is now qualified by the 30-format gate below; sampled-image execution,
+attachment exports, and FW 11.60 remain pending.
 
 OpenAGC API 49 and Vulkan now directly map R8/RG8 SNORM, UINT, and SINT with
 exact native layouts, sampled descriptors, color-target classes, clear
@@ -418,8 +420,9 @@ Prospero build pass. Pinned ELF
 `73783127fb59f8a31e6c5cdc7500d5d45da5b78ce3d694cd767d92dd72b9f3ed`
 passed twice on FW 5.500.008 with all 26 formats and 1,664 pixels bit-exact,
 bounded waits, cleanup-first execution, clean teardown, PID absence, and
-immediate relaunch. See `analysis/fw550_r8_rg8_formats_20260801.md`; shader
-sampling/storage and attachment-export gates remain pending.
+immediate relaunch. See `analysis/fw550_r8_rg8_formats_20260801.md`; storage
+execution is now qualified while sampled-image and attachment-export gates
+remain pending.
 
 OpenAGC API 50 and Vulkan now directly map packed RGBA8 SNORM/UINT/SINT,
 RGB10A2 UINT, and BGR10A2 UNORM images with exact component selection,
@@ -431,7 +434,8 @@ library/example build pass. Pinned ELF
 passed twice on FW 5.500.008 with all 31 formats and 1,984 pixels bit-exact,
 bounded waits, cleanup-first execution, teardown, PID absence, immediate
 relaunch, and no panic. See `analysis/fw550_packed_formats_20260801.md`;
-shader sampling/storage, attachment exports, and FW 11.60 remain pending.
+storage-image execution is now qualified; sampled-image execution, attachment
+exports, and FW 11.60 remain pending.
 
 OpenAGC API 51 and Vulkan now directly map R5G6B5, B5G6R5, R5G5B5A1,
 A1R5G5B5, A4B4G4R4, and R4G4 UNORM images. Exact format properties preserve
@@ -446,13 +450,27 @@ relaunch, and no panic. See `analysis/fw550_packed16_formats_20260801.md`.
 OpenAGC API 52 and Vulkan now directly map RGB9E5 shared-exponent images for
 sampling, filtering, transfers, and source blits. Color-attachment and storage
 features remain disabled while the gfx10.3 RB+ partial-mask erratum lacks a
-qualified runtime workaround. Clean normal and ASAN/UBSAN suites pass 55/55,
+qualified runtime workaround. Clean normal and ASAN/UBSAN suites pass 57/57,
 and the complete Prospero library/example build passes. Pinned ELF
-`28905a561a4fea0f61e02bb33180b5208d941bd533155ff0ad39d4775c3498bd`
+`29a2cd389a895e29275a3c527a6668c217dc53cd897748f02625ad3dc34b60d3`
 passed twice on FW 5.500.008 with all 38 formats and 2,432 pixels bit-exact,
 bounded waits, cleanup-first execution, teardown, PID absence, immediate
 relaunch, and no panic, reset, timeout, or GPU fault in target-attributed
 logs. See `analysis/fw550_rgb9e5_format_20260801.md`.
+
+All 30 storage-capable formats in the refreshed scalar/vector inventory now
+have direct shader execution evidence. Three formatless compute shaders cover
+float, unsigned, and signed image classes; each target uses a distinct
+descriptor set and reflected 16-byte push constant, and exact linear-layout
+readback checks all 480 pixels. The first FW 5.50 run exposed the clear
+packer's incorrect SNORM -1 endpoint. Vulkan's fixed-point rule reserves the
+most-negative encoding, so `native_snorm8`/`native_snorm16` now emit
+-127/-32767 and their clear tests/oracles match hardware shader conversion.
+Clean normal and ASAN/UBSAN suites pass 57/57, the clean Prospero build passes,
+and pinned ELF
+`8b15a1053c9f7bdfb57f419f10f0b761563009a8d0056bb3c07d8b9e24d379b2`
+passed twice on FW 5.500.008 with bounded waits, teardown, PID absence, and
+immediate relaunch. See `analysis/fw550_format_storage_20260802.md`.
 
 The BC slice now has a real shader-execution gate rather than format-query-only
 coverage. Compute descriptor preparation realizes Vulkan samplers, combined

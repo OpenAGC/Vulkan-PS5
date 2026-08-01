@@ -374,9 +374,10 @@ buffer features false because typed buffer-view descriptors are not yet
 implemented. The identical bounded probe ELF created all four native image
 views and passed two back-to-back FW 5.50 runs with 256 exact signed/unsigned
 clear/readback pixels, clean teardown, and immediate relaunch; see
-`analysis/fw550_integer_formats_20260801.md`. Shader sampling/storage, integer
-attachment exports, BC hardware execution, and FW 11.60 replay remain before
-the format profile is endpoint-qualified.
+`analysis/fw550_integer_formats_20260801.md`. Storage-image execution is now
+qualified by the 30-format gate below. Sampled-image and integer attachment
+exports plus FW 11.60 replay remain before the format profile is endpoint-
+qualified.
 
 The second refreshed uncompressed slice consumes OpenAGC API 48 for fourteen
 formats already represented by its qualified gfx1013 target table: R/RG
@@ -389,8 +390,9 @@ clear-packing tests pass. The full normal and sanitizer suites pass 51/51 and
 the complete Prospero build is clean. An expanded identical ELF then passed
 all eighteen new formats and 1,152 exact clear/readback pixels twice on FW
 5.500.008 with bounded waits and immediate relaunch; see
-`analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling/storage,
-attachment exports, and the FW 11.60 endpoint replay remain pending.
+`analysis/fw550_scalar_vector_formats_20260801.md`. Storage-image execution is
+now qualified by the 30-format gate below; sampled-image execution, attachment
+exports, and the FW 11.60 endpoint replay remain pending.
 
 The third refreshed uncompressed slice consumes OpenAGC API 49 for R8/RG8
 SNORM, UINT, and SINT, and corrects R8/RG8 UNORM storage-image creation. The
@@ -429,13 +431,27 @@ The sixth refreshed uncompressed slice consumes OpenAGC API 52 for RGB9E5
 shared-exponent images. `VK_FORMAT_E5B9G9R9_UFLOAT_PACK32` is sampled,
 filterable, transferable, and source-blit capable without false attachment,
 storage, or texel-buffer claims. Clean normal and ASAN/UBSAN suites pass
-55/55, the complete Prospero build passes, and pinned ELF
-`28905a561a4fea0f61e02bb33180b5208d941bd533155ff0ad39d4775c3498bd`
+57/57, the complete Prospero build passes, and pinned ELF
+`29a2cd389a895e29275a3c527a6668c217dc53cd897748f02625ad3dc34b60d3`
 passed all 38 formats and 2,432 exact pixels twice on FW 5.500.008. The only
 remaining inventory entry formerly classified as an uncompressed image gap,
 `VK_FORMAT_R32G32B32_SFLOAT`, is now explicitly classified buffer-only because
 the gfx10.3 format table rejects it for images. See
 `analysis/fw550_rgb9e5_format_20260801.md`.
+
+The refreshed formats now also have real storage-image shader execution rather
+than capability-query and clear-only evidence. Three formatless compute
+pipelines write the float, unsigned, and signed classes across all 30 formats
+that advertise storage support. Every target has its own descriptor set and
+receives a reflected 16-byte push constant; exact linear-layout readback
+checks 480 pixels. The first FW 5.50 run exposed the driver's incorrect SNORM
+-1 clear packing. Vulkan reserves -128/-32768 during float-to-SNORM conversion,
+so the packer now emits -127/-32767 and the corrected 38-format clear oracle
+also passes twice. Pinned storage ELF
+`8b15a1053c9f7bdfb57f419f10f0b761563009a8d0056bb3c07d8b9e24d379b2`
+passed twice on FW 5.500.008 with bounded waits, teardown, and immediate
+relaunch. See `analysis/fw550_format_storage_20260802.md`. Sampled-image
+execution and scalar/vector attachment exports remain pending.
 
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer

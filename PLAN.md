@@ -785,6 +785,12 @@ ordering.
   11.60. Preserve those results; qualify subsequent development slices on FW
   5.50 and defer the next identical-byte FW 11.60 replay to the final release
   candidate.
+- After the remaining sampled-image, attachment-export, and Eden integration
+  slices stabilize, rebuild every guarded hardware probe from one current
+  commit and replay the complete prior regression sequence on FW 5.50. Require
+  cleanup-first execution, pinned local/remote hashes, bounded waits, exact
+  verdicts, target-attributed logs, teardown, PID absence, and immediate
+  relaunch. Only then pin the final artifacts for the FW 11.60 endpoint replay.
 - The graphics-pipeline translator now accepts valid depth-only dynamic
   rendering with zero color formats and zero blend attachments. A D32 pipeline
   exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;
@@ -815,10 +821,13 @@ ordering.
   twice on FW 5.50 with one pinned ELF. API 52 adds sampled-only RGB9E5; its
   expanded 38-format, 2,432-pixel gate passes twice on FW 5.50 with one pinned
   ELF. RGB32 remains image-unsupported because gfx10.3 defines it as a
-  buffer-only encoding. Qualify shader sampling/storage and scalar/vector attachment
-  exports next.
-  Integer shader execution and the final identical FW 11.60 replay remain
-  before endpoint qualification.
+  buffer-only encoding. A second pinned ELF now writes all 30 storage-capable
+  formats through formatless float, unsigned, and signed compute shaders and
+  passes 480 exact pixels twice on FW 5.50. That gate corrected the clear
+  packer's SNORM -1 endpoint to Vulkan's -127/-32767 rule and the revised
+  38-format clear oracle passes twice. Qualify sampled-image execution and
+  scalar/vector attachment exports next. The final identical FW 11.60 replay
+  remains before endpoint qualification.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined
   VS/TCS/TES/GS pipeline. The fused primitive recorder now permits and
   preserves its vertex resource table before descriptor-set tables. Both
