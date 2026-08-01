@@ -375,7 +375,15 @@ fail-closed D24 forms. The four new integer formats expose sampled, storage,
 color-attachment, and transfer use without unsupported filtering, blit, or
 texel-buffer claims. Exact format queries, image/view creation, signed and
 unsigned clear packing, the frozen capability snapshot, both 50/50 host
-suites, and the Prospero build pass. Hardware pixels remain pending.
+suites, and the Prospero build pass. A dedicated linear-image gate then
+created native views for all four formats, cleared and read back all 256 exact
+signed/unsigned pixels, and passed twice back-to-back on FW 5.500.008 with one
+two-second fence bound, normal teardown, exact-PID removal, immediate relaunch,
+and only the accepted raw-ELF `0x4000` warning. The identical probe ELF is
+`85ed7b3d39f36573cf64f34498bcc4bdaa472c3cc3a8c63c6c3f1789b8c96fff`;
+evidence is recorded in `analysis/fw550_integer_formats_20260801.md`. Shader
+sampling/storage and integer attachment exports remain separate hardware
+gates, as does the final FW 11.60 replay.
 
 ## SDL/Zink capability slice (2026-07-31)
 

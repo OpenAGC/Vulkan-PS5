@@ -788,7 +788,10 @@ ordering.
   40/40 normal and ASAN/UBSAN suites plus a clean Prospero library build.
   Exact hardware BC sampling/copy qualification remains pending; the next
   format slice expands Eden-required uncompressed formats without introducing
-  application-specific aliases.
+  application-specific aliases. The first RGBA16/32 signed/unsigned integer
+  slice now passes exact clear/readback twice on FW 5.50 with bounded waits and
+  immediate relaunch; shader sampling/storage, integer attachment exports, and
+  the final identical FW 11.60 replay remain before endpoint qualification.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined
   VS/TCS/TES/GS pipeline. The fused primitive recorder now permits and
   preserves its vertex resource table before descriptor-set tables. Both

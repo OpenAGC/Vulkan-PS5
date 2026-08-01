@@ -97,6 +97,15 @@ or TRANSFER_DST layouts using only public OpenAGC APIs. Regenerate the embedded
 SPIR-V with `tools/regenerate_meta_shaders.sh`; `--check` verifies committed
 bytes. Compressed and depth/stencil formats are rejected by this color path.
 
+The Eden-required RGBA16/32 signed and unsigned integer images expose sampled,
+storage, color-attachment, and transfer use without unsupported filtering,
+blit, or texel-buffer claims. A bounded FW 5.50 gate creates all four native
+views, clears and reads back 256 exact component patterns, tears down, and
+immediately relaunches the identical ELF. Run it with
+`PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1
+examples/run_fw550_integer_formats.sh`. Shader sampling/storage and integer
+attachment exports remain separate hardware gates.
+
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary
 validated rectangles for every advertised color attachment format and the

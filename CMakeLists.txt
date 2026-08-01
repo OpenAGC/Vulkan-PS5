@@ -1103,6 +1103,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/blit3d/main.c)
   add_executable(vulkan_ps5_resolve_probe
     examples/resolve/main.c)
+  add_executable(vulkan_ps5_integer_formats_probe
+    examples/integer_formats/main.c)
+  if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME vulkan_ps5.integer_formats_command_recording
+      COMMAND vulkan_ps5_integer_formats_probe)
+  endif()
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_storage_image_probe
@@ -1141,7 +1147,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
-      vulkan_ps5_resolve_probe
+      vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
@@ -1182,7 +1188,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
-      vulkan_ps5_resolve_probe)
+      vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE
@@ -1270,6 +1276,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_blit3d_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_resolve_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_integer_formats_probe PRIVATE
       SceSystemService)
     add_executable(vulkan_ps5_process_cleanup examples/process_cleanup/main.c)
     set_target_properties(vulkan_ps5_process_cleanup PROPERTIES SUFFIX ".elf")

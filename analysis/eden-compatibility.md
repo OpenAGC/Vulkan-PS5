@@ -348,7 +348,7 @@ warning. The public Prospero ELF SHA-256 is
 | Area | Current evidence | State |
 | --- | --- | --- |
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
-| Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 36 of those Vulkan formats after the RGBA16/32 integer slice, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified. The remaining unique set is 33 uncompressed gaps, 28 ASTC and 10 ETC2/EAC formats that Eden can transcode, and two D24 forms that remain fail-closed | Partial; broader uncompressed coverage and hardware integer/BC sampling remain |
+| Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 36 of those Vulkan formats after the RGBA16/32 integer slice, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified; all four new integer formats pass exact FW 5.50 clear/readback twice. The remaining unique set is 33 uncompressed gaps, 28 ASTC and 10 ETC2/EAC formats that Eden can transcode, and two D24 forms that remain fail-closed | Partial; broader uncompressed coverage plus hardware integer shader/attachment and BC sampling remain |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
@@ -371,8 +371,12 @@ not expose linear filtering or blit features. OpenAGC translates their public
 format values to exact gfx1013 SQ resource encodings; Vulkan creates optimal
 images and native views, preserves signed/unsigned clear bits, and keeps texel-
 buffer features false because typed buffer-view descriptors are not yet
-implemented. Hardware pixels remain required before this slice is called
-endpoint-qualified.
+implemented. The identical bounded probe ELF created all four native image
+views and passed two back-to-back FW 5.50 runs with 256 exact signed/unsigned
+clear/readback pixels, clean teardown, and immediate relaunch; see
+`analysis/fw550_integer_formats_20260801.md`. Shader sampling/storage, integer
+attachment exports, BC hardware execution, and FW 11.60 replay remain before
+the format profile is endpoint-qualified.
 
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer
