@@ -48,19 +48,26 @@ int main(int argc, char **argv) {
         .queueCount = 1,
         .pQueuePriorities = &priority,
     };
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT depth_clip_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+        .depthClipEnable = VK_TRUE,
+    };
     const VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
+        .pNext = &depth_clip_features,
         .scalarBlockLayout = VK_TRUE,
     };
     const char *device_extensions[] = {
         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+        VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
     };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &scalar_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = 2,
         .ppEnabledExtensionNames = device_extensions,
         .pEnabledFeatures = &(const VkPhysicalDeviceFeatures){
             .alphaToOne = VK_TRUE,
@@ -290,6 +297,52 @@ int main(int argc, char **argv) {
         &clamp_graphics_info, NULL, &clamp_graphics_pipeline) == VK_SUCCESS);
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(
         clamp_graphics_pipeline));
+    const VkPipelineRasterizationDepthClipStateCreateInfoEXT depth_clip_off = {
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT,
+        .depthClipEnable = VK_FALSE,
+    };
+    VkPipelineRasterizationStateCreateInfo unclipped_rasterization =
+        native_rasterization;
+    unclipped_rasterization.pNext = &depth_clip_off;
+    VkGraphicsPipelineCreateInfo unclipped_graphics_info =
+        native_graphics_info;
+    unclipped_graphics_info.pRasterizationState = &unclipped_rasterization;
+    VkPipeline unclipped_graphics_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &unclipped_graphics_info, NULL, &unclipped_graphics_pipeline) ==
+        VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(
+        unclipped_graphics_pipeline));
+    assert(vk_ps5_pipeline_native_rasterization_flags(
+        unclipped_graphics_pipeline) ==
+        AGC_RASTERIZATION_DEPTH_CLIP_DISABLE_BIT);
+    VkPipelineRasterizationDepthClipStateCreateInfoEXT depth_clip_on =
+        depth_clip_off;
+    depth_clip_on.depthClipEnable = VK_TRUE;
+    VkPipelineRasterizationStateCreateInfo clipped_clamp_rasterization =
+        clamp_rasterization;
+    clipped_clamp_rasterization.pNext = &depth_clip_on;
+    VkGraphicsPipelineCreateInfo clipped_clamp_graphics_info =
+        native_graphics_info;
+    clipped_clamp_graphics_info.pRasterizationState =
+        &clipped_clamp_rasterization;
+    VkPipeline clipped_clamp_graphics_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &clipped_clamp_graphics_info, NULL,
+        &clipped_clamp_graphics_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_native_rasterization_flags(
+        clipped_clamp_graphics_pipeline) ==
+        AGC_RASTERIZATION_DEPTH_CLIP_ENABLE_BIT);
+    VkPipelineRasterizationDepthClipStateCreateInfoEXT bad_depth_clip =
+        depth_clip_off;
+    bad_depth_clip.flags = 1u;
+    unclipped_rasterization.pNext = &bad_depth_clip;
+    VkPipeline bad_depth_clip_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &unclipped_graphics_info, NULL, &bad_depth_clip_pipeline) ==
+        VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(bad_depth_clip_pipeline == VK_NULL_HANDLE);
     VkPipelineMultisampleStateCreateInfo alpha_to_one_state = multisample;
     alpha_to_one_state.alphaToOneEnable = VK_TRUE;
     VkGraphicsPipelineCreateInfo alpha_to_one_info = graphics_info;
@@ -687,7 +740,9 @@ int main(int argc, char **argv) {
     vkDestroyPipeline(device, line_list_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, native_graphics_pipeline, NULL);
-    vkDestroyPipeline(device, clamp_graphics_pipeline, NULL);
+vkDestroyPipeline(device, clamp_graphics_pipeline, NULL);
+vkDestroyPipeline(device, unclipped_graphics_pipeline, NULL);
+vkDestroyPipeline(device, clipped_clamp_graphics_pipeline, NULL);
     vkDestroyPipeline(device, alpha_to_one_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);

@@ -220,6 +220,12 @@ if(VULKAN_PS5_BUILD_TESTS)
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/depth_clamp_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
     set_tests_properties(vulkan_ps5.depth_clamp_runner PROPERTIES TIMEOUT 15)
+    add_test(NAME vulkan_ps5.depth_clip_enable_runner
+      COMMAND sh
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/depth_clip_enable_runner.sh"
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    set_tests_properties(vulkan_ps5.depth_clip_enable_runner PROPERTIES
+      TIMEOUT 15)
     add_test(NAME vulkan_ps5.logic_op_runner
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/logic_op_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -844,6 +850,12 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_DEPTH_FRAGMENT_HEADER}")
   target_compile_definitions(vulkan_ps5_depth_clamp_probe PRIVATE
     VULKAN_PS5_DEPTH_CLAMP_PROBE=1)
+  add_executable(vulkan_ps5_depth_clip_enable_probe
+    examples/depth/main.c
+    "${VULKAN_PS5_DEPTH_CLAMP_VERTEX_HEADER}"
+    "${VULKAN_PS5_DEPTH_FRAGMENT_HEADER}")
+  target_compile_definitions(vulkan_ps5_depth_clip_enable_probe PRIVATE
+    VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE=1)
   set(VULKAN_PS5_MRT_VERTEX_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_mrt_vert_spv.h")
   set(VULKAN_PS5_MRT_FRAGMENT_HEADER
@@ -1085,7 +1097,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_tessellation_example
       vulkan_ps5_vertex_pipeline_stores_atomics_probe
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
-      vulkan_ps5_depth_clamp_probe
+      vulkan_ps5_depth_clamp_probe vulkan_ps5_depth_clip_enable_probe
       vulkan_ps5_swapchain_example
       vulkan_ps5_mrt_example vulkan_ps5_independent_blend_probe
       vulkan_ps5_query_example
@@ -1124,7 +1136,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_tessellation_example
       vulkan_ps5_vertex_pipeline_stores_atomics_probe
       vulkan_ps5_depth_example vulkan_ps5_depth_bias_clamp_probe
-      vulkan_ps5_depth_clamp_probe
+      vulkan_ps5_depth_clamp_probe vulkan_ps5_depth_clip_enable_probe
       vulkan_ps5_mrt_example
       vulkan_ps5_independent_blend_probe
       vulkan_ps5_swapchain_example
@@ -1163,6 +1175,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_depth_bias_clamp_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_depth_clamp_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_depth_clip_enable_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_logic_op_probe PRIVATE
       SceSystemService)

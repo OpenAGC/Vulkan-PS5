@@ -440,6 +440,7 @@ typedef struct VkPs5Pipeline {
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
     VkBool32 depth_clamp_enable;
+    AgcRasterizationStateFlags native_rasterization_flags;
     VkBool32 rasterizer_discard_enable;
     AgcCullModeFlags cull_mode;
     AgcFrontFace front_face;
@@ -477,6 +478,13 @@ VkBool32 vk_ps5_pipeline_has_native_graphics_pipeline(
 {
     const VkPs5Pipeline *pipeline = (const VkPs5Pipeline *)pipeline_handle;
     return pipeline && pipeline->native_graphics_pipeline ? VK_TRUE : VK_FALSE;
+}
+
+AgcRasterizationStateFlags vk_ps5_pipeline_native_rasterization_flags(
+    VkPipeline pipeline_handle)
+{
+    const VkPs5Pipeline *pipeline = (const VkPs5Pipeline *)pipeline_handle;
+    return pipeline ? pipeline->native_rasterization_flags : 0u;
 }
 
 typedef struct VkPs5QueryPool {
@@ -3202,13 +3210,24 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPipelineColorBlendStateCreateInfo *blend =
             create->pColorBlendState;
         const VkPipelineRasterizationLineStateCreateInfo *line_state = NULL;
+        const VkPipelineRasterizationDepthClipStateCreateInfoEXT *
+            depth_clip_state = NULL;
         for (const VkBaseInStructure *next =
                  (const VkBaseInStructure *)raster->pNext;
              next; next = next->pNext) {
             if (next->sType ==
-                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO)
+                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO) {
+                if (line_state)
+                    return VK_ERROR_INITIALIZATION_FAILED;
                 line_state =
                     (const VkPipelineRasterizationLineStateCreateInfo *)next;
+            } else if (next->sType ==
+                    VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT) {
+                if (depth_clip_state)
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                depth_clip_state =
+                    (const VkPipelineRasterizationDepthClipStateCreateInfoEXT *)next;
+            }
         }
         if (line_state &&
             ((line_state->lineRasterizationMode !=
@@ -3216,6 +3235,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
               line_state->lineRasterizationMode !=
                   VK_LINE_RASTERIZATION_MODE_RECTANGULAR) ||
              line_state->stippledLineEnable))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (depth_clip_state &&
+            (!vk_ps5_device_depth_clip_enable(device) ||
+             depth_clip_state->flags != 0u))
             return VK_ERROR_FEATURE_NOT_PRESENT;
         AgcGfx1013PolygonMode translated_polygon_mode;
         if (!polygon_mode(raster->polygonMode, &translated_polygon_mode) ||
@@ -3520,6 +3543,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->depth_bias_enable = raster->depthBiasEnable;
         pipeline->depth_bias_dynamic = dynamic_depth_bias;
         pipeline->depth_clamp_enable = raster->depthClampEnable;
+        pipeline->native_rasterization_flags = depth_clip_state ?
+            (depth_clip_state->depthClipEnable ?
+                AGC_RASTERIZATION_DEPTH_CLIP_ENABLE_BIT :
+                AGC_RASTERIZATION_DEPTH_CLIP_DISABLE_BIT) : 0u;
         pipeline->rasterizer_discard_enable =
             raster->rasterizerDiscardEnable;
         pipeline->cull_mode = (AgcCullModeFlags)raster->cullMode;
@@ -3809,6 +3836,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     VK_FRONT_FACE_CLOCKWISE ? AGC_FRONT_FACE_CLOCKWISE :
                     AGC_FRONT_FACE_COUNTER_CLOCKWISE;
             native_raster.depth_clamp_enable = raster->depthClampEnable;
+            native_raster.flags = pipeline->native_rasterization_flags;
             native_raster.rasterizer_discard_enable =
                 raster->rasterizerDiscardEnable;
             native_raster.depth_bias_enable = raster->depthBiasEnable;

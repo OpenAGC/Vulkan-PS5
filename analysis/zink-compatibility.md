@@ -37,6 +37,14 @@ The completed closure adds `VK_EXT_scalar_block_layout`, core `alphaToOne`,
 maintenance5 entry points, and Vulkan 1.2 advertisement. The pinned strict
 capability probe has no remaining gaps.
 
+`VK_EXT_depth_clip_enable` is now part of that live host contract as well. The
+ICD reports and accepts its feature structure, consumes the static graphics
+pipeline state, and translates explicit enable/disable to OpenAGC API 45 while
+keeping `depthClampEnable` independent. Host tests cover extension enumeration,
+feature-chain enablement, reserved-flag rejection, and the exact native flags.
+The cleanup-guarded depth probe and warning-free Mesa/Zink FW 5.50 replay are
+still required before this addition is hardware-qualified.
+
 FW 5.500.008 qualification for this slice used the refreshed Prospero PSBC
 archive. The earlier pipeline failure was an API-version mismatch in a stale
 archive and occurred before command submission. The rebuilt candidate passed

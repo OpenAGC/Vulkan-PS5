@@ -23,6 +23,7 @@ void *vk_ps5_device_alloc(VkDevice device, const VkAllocationCallbacks *allocato
                           size_t size, size_t alignment, VkSystemAllocationScope scope);
 void vk_ps5_device_free(VkDevice device, const VkAllocationCallbacks *allocator, void *ptr);
 VkBool32 vk_ps5_device_robust_buffer_access(VkDevice device);
+VkBool32 vk_ps5_device_depth_clip_enable(VkDevice device);
 void *vk_ps5_instance_alloc(VkInstance instance,
     const VkAllocationCallbacks *allocator, size_t size, size_t alignment,
     VkSystemAllocationScope scope);
@@ -76,6 +77,8 @@ VkBool32 vk_ps5_command_buffer_push_constant_word(
 VkBool32 vk_ps5_pipeline_has_native_shaders(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_compute_pipeline(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_graphics_pipeline(VkPipeline pipeline);
+AgcRasterizationStateFlags vk_ps5_pipeline_native_rasterization_flags(
+    VkPipeline pipeline);
 VkResult vk_ps5_enable_image_scanout(VkImage image);
 AgcImage vk_ps5_native_image(VkImage image);
 void vk_ps5_set_image_native_usage(VkImage image, AgcResourceUsage usage);

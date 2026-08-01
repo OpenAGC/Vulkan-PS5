@@ -5,7 +5,8 @@
 #include <string.h>
 
 #include "vulkan_ps5_depth_frag_spv.h"
-#if defined(VULKAN_PS5_DEPTH_CLAMP_PROBE)
+#if defined(VULKAN_PS5_DEPTH_CLAMP_PROBE) || \
+    defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
 #include "vulkan_ps5_depth_clamp_vert_spv.h"
 #define DEPTH_VERTEX_SPV vulkan_ps5_depth_clamp_vert_spv
 #else
@@ -22,6 +23,11 @@
 #include "../system_service_exit.h"
 #define SAMPLE_NAME "depth_clamp"
 #define NEAR_DEPTH_BITS 0x00000000u
+#define FAR_DEPTH_BITS 0x3e800000u
+#elif defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+#include "../system_service_exit.h"
+#define SAMPLE_NAME "depth_clip_enable"
+#define NEAR_DEPTH_BITS 0xbe800000u
 #define FAR_DEPTH_BITS 0x3e800000u
 #else
 #define SAMPLE_NAME "depth"
@@ -79,6 +85,28 @@ int main(void)
         .depthBiasClamp = VK_TRUE,
     };
 #endif
+#if defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT supported_depth_clip = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 supported_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &supported_depth_clip,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &supported_features2);
+    if (!supported_depth_clip.depthClipEnable) {
+        printf("depth_clip_enable: feature is not supported\n");
+        return 1;
+    }
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT enabled_depth_clip = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+        .depthClipEnable = VK_TRUE,
+    };
+    const char *depth_clip_extension =
+        VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME;
+#endif
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -88,8 +116,15 @@ int main(void)
     };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+#if defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+        .pNext = &enabled_depth_clip,
+#endif
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
+#if defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+        .enabledExtensionCount = 1u,
+        .ppEnabledExtensionNames = &depth_clip_extension,
+#endif
 #if defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE)
         .pEnabledFeatures = &enabled_features,
 #endif
@@ -271,6 +306,13 @@ int main(void)
     };
     const VkPipelineRasterizationStateCreateInfo raster = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+#if defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+        .pNext = &(const VkPipelineRasterizationDepthClipStateCreateInfoEXT){
+            .sType =
+                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT,
+            .depthClipEnable = VK_FALSE,
+        },
+#endif
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_NONE,
 #if defined(VULKAN_PS5_DEPTH_CLAMP_PROBE)
@@ -440,7 +482,8 @@ int main(void)
     vkDestroyInstance(instance, NULL);
 #if defined(OPENAGC_PROSPERO) && \
     (defined(VULKAN_PS5_DEPTH_BIAS_CLAMP_PROBE) || \
-     defined(VULKAN_PS5_DEPTH_CLAMP_PROBE))
+     defined(VULKAN_PS5_DEPTH_CLAMP_PROBE) || \
+     defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE))
     vulkan_ps5_system_service_exit(SAMPLE_NAME);
 #endif
     return status;

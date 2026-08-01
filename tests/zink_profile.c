@@ -73,6 +73,7 @@ int main(int argc, char **argv)
         VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
         VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
+        VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
     };
     unsigned extension_gaps = 0;
     for (uint32_t i = 0; i < sizeof(required_extensions) /
@@ -103,9 +104,14 @@ int main(int argc, char **argv)
     VkPhysicalDeviceRobustness2FeaturesEXT robustness2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
     };
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT depth_clip = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+        .pNext = &robustness2,
+    };
     VkPhysicalDeviceScalarBlockLayoutFeatures scalar = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
-        .pNext = &robustness2,
+        .pNext = &depth_clip,
     };
     VkPhysicalDeviceTimelineSemaphoreFeatures timeline = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
@@ -159,6 +165,7 @@ int main(int argc, char **argv)
                               "timelineSemaphore");
     REQUIRE_EXTENSION_FEATURE(scalar.scalarBlockLayout, "scalarBlockLayout");
     REQUIRE_EXTENSION_FEATURE(robustness2.nullDescriptor, "nullDescriptor");
+    REQUIRE_EXTENSION_FEATURE(depth_clip.depthClipEnable, "depthClipEnable");
 #undef REQUIRE_EXTENSION_FEATURE
 
     if (robustness2.nullDescriptor && has_extension(
@@ -175,15 +182,23 @@ int main(int argc, char **argv)
                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT,
             .nullDescriptor = VK_TRUE,
         };
-        const char *const requested_extension =
-            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME;
+        VkPhysicalDeviceDepthClipEnableFeaturesEXT requested_depth_clip = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+            .pNext = &requested,
+            .depthClipEnable = VK_TRUE,
+        };
+        const char *const requested_extensions[] = {
+            VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
+            VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
+        };
         const VkDeviceCreateInfo device_info = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            .pNext = &requested,
+            .pNext = &requested_depth_clip,
             .queueCreateInfoCount = 1u,
             .pQueueCreateInfos = &queue,
-            .enabledExtensionCount = 1u,
-            .ppEnabledExtensionNames = &requested_extension,
+            .enabledExtensionCount = 2u,
+            .ppEnabledExtensionNames = requested_extensions,
         };
         VkDevice device = VK_NULL_HANDLE;
         if (vkCreateDevice(physical, &device_info, NULL, &device) !=

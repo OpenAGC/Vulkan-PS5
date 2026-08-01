@@ -128,8 +128,8 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     uint32_t extension_count = 0;
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, NULL) == VK_SUCCESS);
-    assert(extension_count == 21);
-    VkExtensionProperties extensions[21];
+    assert(extension_count == 22);
+    VkExtensionProperties extensions[22];
     assert(vkEnumerateDeviceExtensionProperties(
         physical, NULL, &extension_count, extensions) == VK_SUCCESS);
     VkBool32 has_host_query_reset = VK_FALSE;
@@ -148,6 +148,7 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     VkBool32 has_custom_border_color = VK_FALSE;
     VkBool32 has_border_color_swizzle = VK_FALSE;
     VkBool32 has_maintenance5 = VK_FALSE;
+    VkBool32 has_depth_clip_enable = VK_FALSE;
     for (uint32_t i = 0; i < extension_count; ++i) {
         has_host_query_reset |= strcmp(extensions[i].extensionName,
             VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME) == 0;
@@ -181,6 +182,8 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
             VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME) == 0;
         has_maintenance5 |= strcmp(extensions[i].extensionName,
             VK_KHR_MAINTENANCE_5_EXTENSION_NAME) == 0;
+        has_depth_clip_enable |= strcmp(extensions[i].extensionName,
+            VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME) == 0;
     }
     assert(has_host_query_reset && has_vertex_divisor && has_swapchain &&
            has_driver_properties && has_sampler_mirror_clamp &&
@@ -188,7 +191,7 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
            has_maintenance1 && has_renderpass2 && has_descriptor_template);
     assert(has_timeline && has_scalar_layout && has_dynamic_rendering &&
            has_custom_border_color && has_border_color_swizzle);
-    assert(has_maintenance5);
+    assert(has_maintenance5 && has_depth_clip_enable);
 
     VkPhysicalDeviceVulkan11Features features11 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -325,6 +328,16 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &maintenance5_features2);
     assert(maintenance5_features.maintenance5 == VK_TRUE);
+    VkPhysicalDeviceDepthClipEnableFeaturesEXT depth_clip_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+    };
+    VkPhysicalDeviceFeatures2 depth_clip_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &depth_clip_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &depth_clip_features2);
+    assert(depth_clip_features.depthClipEnable == VK_TRUE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -479,7 +492,7 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
-.enabledExtensionCount = 11,
+.enabledExtensionCount = 12,
         .ppEnabledExtensionNames =
             (const char *const[]){
                 VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
@@ -493,18 +506,24 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
                 VK_KHR_DESCRIPTOR_UPDATE_TEMPLATE_EXTENSION_NAME,
 VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
 VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
+VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
 },
 };
 VkPhysicalDeviceLineRasterizationFeatures enabled_line = {
 .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES,
 .rectangularLines = VK_TRUE,
 };
+VkPhysicalDeviceDepthClipEnableFeaturesEXT enabled_depth_clip = {
+.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
+.pNext = &enabled_line,
+.depthClipEnable = VK_TRUE,
+};
 VkPhysicalDeviceTimelineSemaphoreFeatures enabled_timeline = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
 .timelineSemaphore = VK_TRUE,
 };
-enabled_timeline.pNext = &enabled_line;
+enabled_timeline.pNext = &enabled_depth_clip;
     VkPhysicalDeviceHostQueryResetFeatures enabled_host_query_reset = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES,
         .pNext = &enabled_timeline,

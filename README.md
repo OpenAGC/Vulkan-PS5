@@ -87,7 +87,10 @@ descriptor update templates, timeline semaphores, mutable/incremental WSI, and
 rectangular line-rasterization contracts, dynamic rendering, custom border
 colors with image-view swizzle, maintenance5, and Vulkan 1.2. Scalar block
 layout is compiled by a real storage-buffer pipeline, and `alphaToOne` is baked
-into the gfx1013 pixel epilog. The live strict report is now
+into the gfx1013 pixel epilog. `VK_EXT_depth_clip_enable` is also enumerated,
+feature-enabled, and translated to OpenAGC's explicit depth-clip state; its
+depth-sensitive FW 5.50 and warning-free Zink replay remain the current gate.
+The live strict report is now
 `api=0 extensions=0 features=0 total=0`, with FW 5.500.008 readback evidence
 for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
 sampling. SDL must still retain OSMesa until pinned Mesa executes through the

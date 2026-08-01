@@ -383,6 +383,17 @@ normal self-exit, and immediate relaunch without reboot. Final tested hashes:
 - `libEGL.so.1.0.0`: `0d2922b30b3dbbe25f060331043bb4a4732272d0813023568381306528913fc1`
 - `libgallium-26.3.0-devel.so`: `9da905ef314e3362631406b1d85e013071b7fc80661cb663c7c40920d23eef85`
 
+The subsequent `VK_EXT_depth_clip_enable` closure is host-qualified but not
+yet hardware-qualified. The ICD enumerates the extension, reports and accepts
+`VkPhysicalDeviceDepthClipEnableFeaturesEXT`, rejects use without feature
+enablement or with nonzero reserved flags, parses the static rasterization
+state, and maps its independent Boolean to OpenAGC API 45. Pipeline inspection
+proves both explicit disable and explicit enable while depth clamp is active.
+A cleanup-guarded runner now covers a depth-sensitive FW 5.50 probe whose near
+triangle is outside the Vulkan Z frustum; the hardware run and rebuilt
+warning-free Mesa/Zink replay remain pending, so no replacement hashes are
+claimed yet.
+
 FW 11.60 qualification remains deferred until that endpoint is available.
 
 ## Milestone 6: multiple viewports (2026-07-29)

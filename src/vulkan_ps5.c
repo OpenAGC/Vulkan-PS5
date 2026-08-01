@@ -59,6 +59,7 @@ struct VkPs5Device {
     VkPs5Queue queue;
     VkBool32 robust_buffer_access;
     VkBool32 null_descriptor;
+    VkBool32 depth_clip_enable;
     atomic_uint memory_allocation_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
@@ -196,6 +197,11 @@ void vk_ps5_device_free(VkDevice device_handle, const VkAllocationCallbacks *all
 VkBool32 vk_ps5_device_robust_buffer_access(VkDevice device_handle) {
     const VkPs5Device *device = (const VkPs5Device *)device_handle;
     return device ? device->robust_buffer_access : VK_FALSE;
+}
+
+VkBool32 vk_ps5_device_depth_clip_enable(VkDevice device_handle) {
+    const VkPs5Device *device = (const VkPs5Device *)device_handle;
+    return device ? device->depth_clip_enable : VK_FALSE;
 }
 
 void *vk_ps5_instance_alloc(VkInstance instance_handle,
@@ -545,6 +551,8 @@ VK_EXT_BORDER_COLOR_SWIZZLE_SPEC_VERSION },
 { VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
 VK_EXT_HOST_QUERY_RESET_SPEC_VERSION },
 { VK_EXT_ROBUSTNESS_2_EXTENSION_NAME, VK_EXT_ROBUSTNESS_2_SPEC_VERSION },
+{ VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME,
+VK_EXT_DEPTH_CLIP_ENABLE_SPEC_VERSION },
     { VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME,
       VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_SPEC_VERSION },
     { VK_EXT_SHADER_DEMOTE_TO_HELPER_INVOCATION_EXTENSION_NAME,
@@ -1285,6 +1293,10 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             robustness2->nullDescriptor = VK_TRUE;
             break;
         }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
+            ((VkPhysicalDeviceDepthClipEnableFeaturesEXT *)next)
+                ->depthClipEnable = VK_TRUE;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
             VkPhysicalDeviceLineRasterizationFeatures *line =
                 (VkPhysicalDeviceLineRasterizationFeatures *)next;
@@ -1523,6 +1535,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
                 return VK_TRUE;
             break;
         }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES: {
             const VkPhysicalDeviceLineRasterizationFeatures *line =
                 (const VkPhysicalDeviceLineRasterizationFeatures *)next;
@@ -1623,6 +1637,20 @@ static VkBool32 null_descriptor_requested(
     return VK_FALSE;
 }
 
+static VkBool32 depth_clip_enable_requested(
+    const VkDeviceCreateInfo *create_info)
+{
+    for (const VkBaseInStructure *next =
+             (const VkBaseInStructure *)create_info->pNext;
+         next; next = next->pNext) {
+        if (next->sType ==
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT)
+            return ((const VkPhysicalDeviceDepthClipEnableFeaturesEXT *)next)
+                ->depthClipEnable;
+    }
+    return VK_FALSE;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                const VkAllocationCallbacks *pAllocator, VkDevice *pDevice) {
@@ -1659,6 +1687,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
     device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
     device->null_descriptor = null_descriptor_requested(pCreateInfo);
+    device->depth_clip_enable = depth_clip_enable_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
     atomic_flag_clear(&device->deferred_native_lock);

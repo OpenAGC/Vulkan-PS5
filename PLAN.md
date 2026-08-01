@@ -521,14 +521,14 @@ the native-runtime migration.
   complete native teardown, and immediate relaunch. Preserve those hashes and
   defer the FW 11.60 replay until that endpoint is available.
   The remaining Mesa runtime warning is `VK_EXT_depth_clip_enable`; treat the
-  SDL/Zink track as functionally qualified for the current probe, but not
-  warning-free or generally depth-correct until this extension is complete.
-  Next, advertise and enable `VkPhysicalDeviceDepthClipEnableFeaturesEXT`,
-  consume `VkPipelineRasterizationDepthClipStateCreateInfoEXT` during graphics
-  pipeline creation, and translate `depthClipEnable` through the public
-  OpenAGC rasterization contract without exposing PM4 state. Add feature-chain,
-  device-enablement, pipeline-validation, and depth-sensitive rendering tests,
-  then require a cleanup-guarded FW 5.50 Zink run with exact pixels,
+  SDL/Zink track as functionally qualified for the prior probe, but not yet
+  warning-free or generally depth-correct. Extension enumeration, feature
+  query/enablement, rasterization-chain parsing, fail-closed validation, and
+  translation through OpenAGC API 45 are now host-tested. The dedicated probe
+  places geometry beyond the near Z plane and requires its exact color and
+  negative depth readback with clipping disabled. Next, run that probe and the
+  rebuilt Mesa/Zink integration through cleanup-guarded FW 5.50 gates with
+  exact pixels,
   presentation, teardown, immediate relaunch, and no depth-clip warning before
   recording new pinned ELF/library hashes. Replay the identical final bytes on
   FW 11.60 when that endpoint becomes available.
