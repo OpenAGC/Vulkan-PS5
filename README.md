@@ -423,10 +423,13 @@ deqp-vk \
 
 The first direct run exposed and now regression-tests
 `vkGetDeviceProcAddr(device, "vkGetDeviceProcAddr")` self-lookup. The current
-information group reaches completion: 17 pass, two correctly report
-`NotSupported`, and two fail on advertised sample-count limits and mandatory
-Vulkan 1.2 features. This is targeted discovery evidence, not a conformance
-claim; `conformanceVersion` remains `0.0.0.0`.
+information group reaches completion: 18 pass, two correctly report
+`NotSupported`, and one fails on mandatory Vulkan 1.2 features. The
+sample-count failure is closed by capability-derived 4x color/depth/stencil
+limits plus sampled RGBA8, D16, D32, and S8 image support. The sampled 4x depth
+descriptor path is host-tested through public OpenAGC APIs; hardware pixel
+execution is still pending. This is targeted discovery evidence, not a
+conformance claim; `conformanceVersion` remains `0.0.0.0`.
 
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its

@@ -39,6 +39,18 @@ int main(void) {
     assert(properties.limits.lineWidthRange[0] == 1.0f);
     assert(properties.limits.lineWidthRange[1] == 64.0f);
     assert(properties.limits.lineWidthGranularity == 0.125f);
+    assert((properties.limits.framebufferDepthSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
+    assert((properties.limits.framebufferStencilSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
+    assert((properties.limits.framebufferNoAttachmentsSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
+    assert((properties.limits.sampledImageColorSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
+    assert((properties.limits.sampledImageDepthSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
+    assert((properties.limits.sampledImageStencilSampleCounts &
+            VK_SAMPLE_COUNT_4_BIT) != 0u);
 
     VkPhysicalDeviceSubgroupProperties subgroup = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES,
@@ -472,6 +484,22 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
         VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
         &image_format_properties) == VK_SUCCESS);
+    const VkFormat sampled_msaa_formats[] = {
+        VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_D16_UNORM,
+        VK_FORMAT_D32_SFLOAT, VK_FORMAT_S8_UINT,
+    };
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            sampled_msaa_formats[i], VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, 0u,
+            &image_format_properties) == VK_SUCCESS);
+        assert((image_format_properties.sampleCounts &
+                VK_SAMPLE_COUNT_4_BIT) != 0u);
+    }
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, 0u,
+        &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
     const VkFormat integer_color_formats[] = {
         VK_FORMAT_R16_UINT,
         VK_FORMAT_R16_SINT,

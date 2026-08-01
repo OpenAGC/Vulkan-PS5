@@ -1,6 +1,6 @@
 # Implementation Status
 
-## Current architecture status (2026-07-31)
+## Current architecture status (2026-08-02)
 
 The current ICD is a host-qualified native-runtime consumer of OpenAGC and
 `openagc-psbc`. Its earlier direct-backend host, loader/VVL, sanitizer,
@@ -18,10 +18,14 @@ Migration status:
   `5c8aae22885448d70a2873e94a93b24b49505c32` now loads the host ICD directly
   and completes `dEQP-VK.info.*` without a crash. A missing
   `vkGetDeviceProcAddr` self-query caused the initial null dispatch and is now
-  lifecycle-tested. The current result is 17 pass, two `NotSupported`, and
-  two fail. Remaining failures identify required sample-count limit bits and
-  mandatory Vulkan 1.2 features; this is discovery evidence only and does not
-  change the non-conformant `0.0.0.0` report.
+  lifecycle-tested. The current result is 18 pass, two `NotSupported`, and
+  one fail. OpenAGC commit `cb77512` and the ICD now expose the native 4x color,
+  D16, D32, and S8 limits and sampled-image forms, closing the CTS
+  `device_properties` failure. The remaining failure is the mandatory Vulkan
+  1.2 feature set; this is discovery evidence only and does not change the
+  non-conformant `0.0.0.0` report. A fresh Debug build passes all 59 host tests,
+  including loader/VVL creation of sampled 4x D32 and S8 images and views.
+  Sampled-pixel execution remains pending FW 5.50 qualification.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised

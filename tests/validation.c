@@ -205,6 +205,45 @@ int main(void) {
     VkImageView view = VK_NULL_HANDLE;
     assert(vkCreateImageView(device, &view_info, NULL, &view) == VK_SUCCESS);
 
+    const VkFormat sampled_depth_formats[2] = {
+        VK_FORMAT_D32_SFLOAT, VK_FORMAT_S8_UINT,
+    };
+    const VkImageAspectFlags sampled_depth_aspects[2] = {
+        VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT,
+    };
+    VkImage sampled_depth_images[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkDeviceMemory sampled_depth_memory[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkImageView sampled_depth_views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    for (uint32_t i = 0u; i < 2u; ++i) {
+        VkImageCreateInfo sampled_depth_info = image_info;
+        sampled_depth_info.format = sampled_depth_formats[i];
+        sampled_depth_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT;
+        assert(vkCreateImage(device, &sampled_depth_info, NULL,
+            &sampled_depth_images[i]) == VK_SUCCESS);
+        VkMemoryRequirements sampled_depth_requirements;
+        vkGetImageMemoryRequirements(device, sampled_depth_images[i],
+            &sampled_depth_requirements);
+        VkMemoryAllocateInfo sampled_depth_allocation = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = sampled_depth_requirements.size,
+            .memoryTypeIndex = find_memory_type(physical,
+                sampled_depth_requirements.memoryTypeBits,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+        };
+        assert(vkAllocateMemory(device, &sampled_depth_allocation, NULL,
+            &sampled_depth_memory[i]) == VK_SUCCESS);
+        assert(vkBindImageMemory(device, sampled_depth_images[i],
+            sampled_depth_memory[i], 0u) == VK_SUCCESS);
+        VkImageViewCreateInfo sampled_depth_view_info = view_info;
+        sampled_depth_view_info.image = sampled_depth_images[i];
+        sampled_depth_view_info.format = sampled_depth_formats[i];
+        sampled_depth_view_info.subresourceRange.aspectMask =
+            sampled_depth_aspects[i];
+        assert(vkCreateImageView(device, &sampled_depth_view_info, NULL,
+            &sampled_depth_views[i]) == VK_SUCCESS);
+    }
+
     VkImageCreateInfo cube_info = image_info;
     cube_info.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     cube_info.extent = (VkExtent3D){8u, 8u, 1u};
@@ -402,6 +441,11 @@ int main(void) {
     vkDestroyImageView(device, view, NULL);
     vkDestroyImage(device, image, NULL);
     vkFreeMemory(device, image_memory, NULL);
+    for (uint32_t i = 0u; i < 2u; ++i) {
+        vkDestroyImageView(device, sampled_depth_views[i], NULL);
+        vkDestroyImage(device, sampled_depth_images[i], NULL);
+        vkFreeMemory(device, sampled_depth_memory[i], NULL);
+    }
     vkDestroyBuffer(device, buffer, NULL);
     vkFreeMemory(device, buffer_memory, NULL);
     vkDestroySwapchainKHR(device, swapchain, NULL);

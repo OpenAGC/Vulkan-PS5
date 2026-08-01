@@ -2009,6 +2009,16 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         }
         if (!includes_image_format) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
+    if (pCreateInfo->samples == VK_SAMPLE_COUNT_4_BIT) {
+        VkImageFormatProperties properties;
+        VkResult result = vkGetPhysicalDeviceImageFormatProperties(
+            VK_NULL_HANDLE, pCreateInfo->format, pCreateInfo->imageType,
+            pCreateInfo->tiling, pCreateInfo->usage, pCreateInfo->flags,
+            &properties);
+        if (result != VK_SUCCESS ||
+            !(properties.sampleCounts & VK_SAMPLE_COUNT_4_BIT))
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     if (pCreateInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
         if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
             pCreateInfo->extent.width != pCreateInfo->extent.height ||
@@ -2041,22 +2051,24 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         pCreateInfo->format, &depth_format);
     if (pCreateInfo->samples == VK_SAMPLE_COUNT_4_BIT) {
         AgcGfx1013ColorTargetFormat target_format;
+        const bool msaa_color = pCreateInfo->format ==
+            VK_FORMAT_R8G8B8A8_UNORM;
+        const bool msaa_depth =
+            pCreateInfo->format == VK_FORMAT_D16_UNORM ||
+            pCreateInfo->format == VK_FORMAT_D32_SFLOAT ||
+            pCreateInfo->format == VK_FORMAT_S8_UINT;
         if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
             pCreateInfo->extent.depth != 1u ||
             pCreateInfo->arrayLayers != 1u ||
             pCreateInfo->tiling != VK_IMAGE_TILING_OPTIMAL ||
-            pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
-            !(pCreateInfo->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) ||
-            (pCreateInfo->usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
-                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) ||
-            is_depth_format ||
-            !color_target_format(pCreateInfo->format, &target_format)) {
+            (!msaa_color && !msaa_depth) ||
+            (msaa_color && (is_depth_format ||
+             !color_target_format(pCreateInfo->format, &target_format)))) {
             vk_ps5_device_free(device, pAllocator, image);
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
-        image->is_msaa_color_surface = VK_TRUE;
+        image->is_msaa_color_surface = msaa_color ? VK_TRUE : VK_FALSE;
+        image->is_depth_surface = msaa_depth ? VK_TRUE : VK_FALSE;
         VkResult native_result = initialize_native_image_layout(device, image);
         if (native_result != VK_SUCCESS) {
             vk_ps5_device_free(device, pAllocator, image);

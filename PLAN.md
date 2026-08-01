@@ -220,8 +220,10 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    path. Preserve fail-closed behavior for unqualified formats or operations.
 2. Continue the focused CTS/deqp gate from the official
    `vulkan-cts-1.4.6.1` discovery baseline. Its information group now completes
-   without a dispatcher crash (17 pass, two `NotSupported`, two fail). Resolve
-   the sample-count limit and mandatory Vulkan 1.2 feature failures before
+   without a dispatcher crash (18 pass, two `NotSupported`, one fail). The
+   sample-count property gap is host-closed with public OpenAGC 4x color,
+   D16, D32, and S8 sampled-image support. Qualify sampled pixels on FW 5.50,
+   then resolve the remaining mandatory Vulkan 1.2 feature failure before
    broadening the case list. Keep the conformance version non-conformant until
    the required suite supports a stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a

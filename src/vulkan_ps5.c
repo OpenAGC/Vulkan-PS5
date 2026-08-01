@@ -1008,13 +1008,14 @@ static void fill_properties(VkPhysicalDeviceProperties *properties) {
     limits->maxFramebufferLayers = capabilities.max_image_array_layers;
     limits->framebufferColorSampleCounts = capabilities.color_sample_counts;
     limits->framebufferDepthSampleCounts = capabilities.depth_sample_counts;
-    limits->framebufferStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-    limits->framebufferNoAttachmentsSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+    limits->framebufferStencilSampleCounts = capabilities.depth_sample_counts;
+    limits->framebufferNoAttachmentsSampleCounts =
+        capabilities.color_sample_counts | capabilities.depth_sample_counts;
     limits->maxColorAttachments = capabilities.max_color_targets;
-    limits->sampledImageColorSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+    limits->sampledImageColorSampleCounts = capabilities.color_sample_counts;
     limits->sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-    limits->sampledImageDepthSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-    limits->sampledImageStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
+    limits->sampledImageDepthSampleCounts = capabilities.depth_sample_counts;
+    limits->sampledImageStencilSampleCounts = capabilities.depth_sample_counts;
     limits->storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT;
     limits->maxSampleMaskWords = 1;
     limits->timestampComputeAndGraphics = VK_FALSE;
@@ -1150,7 +1151,9 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     const VkFormatFeatureFlags integer_color = sampled_nearest | transfer |
         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
         VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
-    const VkFormatFeatureFlags depth = transfer |
+    const VkFormatFeatureFlags sampled_depth = sampled_nearest | transfer |
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    const VkFormatFeatureFlags attachment_depth = transfer |
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
     switch (format) {
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
@@ -1262,10 +1265,13 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:
     case VK_FORMAT_S8_UINT:
+        pFormatProperties->linearTilingFeatures = sampled_depth;
+        pFormatProperties->optimalTilingFeatures = sampled_depth;
+        break;
     case VK_FORMAT_D16_UNORM_S8_UINT:
     case VK_FORMAT_D32_SFLOAT_S8_UINT:
-        pFormatProperties->linearTilingFeatures = depth;
-        pFormatProperties->optimalTilingFeatures = depth;
+        pFormatProperties->linearTilingFeatures = attachment_depth;
+        pFormatProperties->optimalTilingFeatures = attachment_depth;
         break;
     default:
         break;
@@ -1339,12 +1345,28 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     pImageFormatProperties->maxArrayLayers = type == VK_IMAGE_TYPE_3D ? 1 :
         capabilities.max_image_array_layers;
     pImageFormatProperties->sampleCounts = VK_SAMPLE_COUNT_1_BIT;
-    if (format == VK_FORMAT_R8G8B8A8_UNORM && type == VK_IMAGE_TYPE_2D &&
-        tiling == VK_IMAGE_TILING_OPTIMAL &&
-        (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
-        !(usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)))
-        pImageFormatProperties->sampleCounts |= VK_SAMPLE_COUNT_4_BIT;
+    if (type == VK_IMAGE_TYPE_2D && tiling == VK_IMAGE_TILING_OPTIMAL) {
+        const VkImageUsageFlags color_msaa_usage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT |
+            VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        const VkImageUsageFlags depth_msaa_usage =
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT |
+            VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+        const VkBool32 color_msaa = format == VK_FORMAT_R8G8B8A8_UNORM &&
+            !(usage & ~color_msaa_usage);
+        const VkBool32 depth_msaa =
+            (format == VK_FORMAT_D16_UNORM ||
+             format == VK_FORMAT_D32_SFLOAT ||
+             format == VK_FORMAT_S8_UINT) &&
+            !(usage & ~depth_msaa_usage);
+        if (color_msaa || depth_msaa)
+            pImageFormatProperties->sampleCounts |= VK_SAMPLE_COUNT_4_BIT;
+    }
     pImageFormatProperties->maxResourceSize = capabilities.memory_heaps[0].size;
     return VK_SUCCESS;
 }
