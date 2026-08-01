@@ -8155,10 +8155,18 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
     }
     int32_t result = agcCmdDispatch(command->native_graphics_command_buffer,
         x, y, z);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        AgcDebugMessage debug_message = AGC_DEBUG_MESSAGE_INIT;
+        int32_t debug_result = agcGetLastDebugMessage(
+            vk_ps5_native_device(command->device), &debug_message);
+        fprintf(stderr,
+            "vulkan-ps5: agcCmdDispatch failed result=0x%x%s%s\n",
+            (unsigned int)result, debug_result == AGC_OK ? ": " : "",
+            debug_result == AGC_OK ? debug_message.message : "");
         command->record_error = native_command_result(result);
-    else
+    } else {
         command->native_dispatch_count++;
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatchIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o) {

@@ -390,9 +390,15 @@ two-second fence bound, normal teardown, exact-PID removal, immediate relaunch,
 and only the accepted raw-ELF `0x4000` warning. The identical probe ELF is
 `85ed7b3d39f36573cf64f34498bcc4bdaa472c3cc3a8c63c6c3f1789b8c96fff`;
 evidence is recorded in `analysis/fw550_integer_formats_20260801.md`. Storage
-image writes are now covered by the 30-format execution gate below; sampled
-images and integer attachment exports remain separate hardware gates, as does
-the final FW 11.60 replay.
+image writes are now covered by the 30-format execution gate below. Nearest
+sampled-image execution is covered by pinned ELF
+`e4e5dc18fd53933a7d810e5f123a30e5c2249e9c75e24b922f9d8169bc38ad19`,
+which passed all 38 formats and 152 exact result components twice on FW
+5.500.008 with bounded waits and clean teardown. The unsafe, Mesa-inferred
+`CS_PARTIAL_FLUSH` event experiment is retired after a user-observed kernel
+panic; it is not part of the runtime. See
+`analysis/fw550_format_sampling_20260802.md`. Integer attachment exports and
+the final FW 11.60 replay remain separate gates.
 
 The next fourteen Eden formats are host/Prospero qualified through OpenAGC
 API 48: R/RG 16-bit UNORM, SNORM, UINT, and SINT; RGBA16 UNORM and SNORM; and
@@ -408,8 +414,8 @@ pixels twice back-to-back on FW 5.500.008 with teardown, exact-PID removal, and
 immediate relaunch. Its SHA-256 is
 `ec8527214b1681525ec7eb92ab5c24f4f05dfa1fbe027c1f9781415f0853a827`;
 see `analysis/fw550_scalar_vector_formats_20260801.md`. Storage-image execution
-is now qualified by the 30-format gate below; sampled-image execution,
-attachment exports, and FW 11.60 remain pending.
+is now qualified by the 30-format gate below and sampled-image execution by
+the 38-format gate. Attachment exports and FW 11.60 remain pending.
 
 OpenAGC API 49 and Vulkan now directly map R8/RG8 SNORM, UINT, and SINT with
 exact native layouts, sampled descriptors, color-target classes, clear

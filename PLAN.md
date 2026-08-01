@@ -268,6 +268,14 @@ the native-runtime migration.
   image stores, host/sanitizer coverage, and two bounded FW 5.50 exact-readback
   runs all pass. Four Eden feature gaps remain.
 
+- The scalar/vector sampled-image execution gate is FW 5.500.008-qualified.
+  A pinned ELF samples all 38 uncompressed scalar/vector/packed formats and
+  returns 152 exact components twice with bounded waits, clean teardown, and
+  immediate relaunch. The attempted Mesa-inferred `CS_PARTIAL_FLUSH` event
+  sequence is permanently retired after a user-observed kernel panic; the
+  runtime must not emit that unqualified packet. Scalar/vector attachment
+  exports remain the next format execution gate.
+
 - Milestone 1 is complete: host lifecycle, dispatch, conservative gfx1013
   capabilities, memory/resources, packaging, and loader/VVL tests.
 - Milestone 2 compiler-library integration is complete: reusable host/Prospero
