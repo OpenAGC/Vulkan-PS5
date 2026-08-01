@@ -82,6 +82,12 @@ Migration status:
   The three raw `agcVideoOut*` calls are absent. Linked candidate
   `0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`
   passed 1,800 frames and clean teardown on FW 5.500.008.
+  The first Eden-owned Release O3 executable now also passes two identical-hash
+  600-frame lifecycle runs, including immediate relaunch. During that gate the
+  hidden meta-clear alias was fixed to restore its record-time native state,
+  making pre-recorded color and depth/stencil clear command buffers safely
+  resubmittable. Evidence and the final ELF digest are recorded in
+  `analysis/fw550_eden_bootstrap_20260802.md`.
 - **Endpoint qualification:** the native lifecycle slice is FW 5.50 qualified
   by the concurrent-device installed-package consumer. Remaining native slices
   and the complete FW 11.60 endpoint qualification are pending.

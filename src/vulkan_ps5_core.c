@@ -6951,6 +6951,22 @@ static VkResult native_clear_color_image(
         kAgcResourceUsageCopyDestination);
     if (transition_result != VK_SUCCESS)
         return transition_result;
+    /* The clear buffer aliases the image allocation but is an internal
+     * OpenAGC resource with its own state. Restore the state observed before
+     * recording so a reusable Vulkan command buffer has identical native
+     * transition preconditions on every submission. */
+    compute_transition.before = kAgcResourceUsageCopySource;
+    compute_transition.after = state.usage;
+    compute_transition.before_owner = kAgcResourceOwnerGraphics;
+    compute_transition.after_owner = state.owner;
+    if (compute_transition.before != compute_transition.after ||
+        compute_transition.before_owner != compute_transition.after_owner) {
+        native_result = agcCmdTransitionResources(
+            command->native_graphics_command_buffer, 1u,
+            &compute_transition);
+        if (native_result != AGC_OK)
+            return native_command_result(native_result);
+    }
     if (command->bound_graphics) {
         vkCmdBindPipeline((VkCommandBuffer)command,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -7098,6 +7114,20 @@ static VkResult native_clear_depth_stencil_image(
         kAgcResourceUsageCopyDestination);
     if (transition_result != VK_SUCCESS)
         return transition_result;
+    /* Match the color-clear path: leave the hidden alias buffer in the state
+     * captured at record time so this command buffer can be resubmitted. */
+    compute_transition.before = kAgcResourceUsageCopySource;
+    compute_transition.after = state.usage;
+    compute_transition.before_owner = kAgcResourceOwnerGraphics;
+    compute_transition.after_owner = state.owner;
+    if (compute_transition.before != compute_transition.after ||
+        compute_transition.before_owner != compute_transition.after_owner) {
+        native_result = agcCmdTransitionResources(
+            command->native_graphics_command_buffer, 1u,
+            &compute_transition);
+        if (native_result != AGC_OK)
+            return native_command_result(native_result);
+    }
     if (command->bound_graphics) {
         vkCmdBindPipeline((VkCommandBuffer)command,
             VK_PIPELINE_BIND_POINT_GRAPHICS,

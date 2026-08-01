@@ -395,6 +395,17 @@ static void test_multidword_clear_recording(void)
         &clear, 1u, &range);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_dispatch_count(command) == 1u);
+    VkQueue graphics_queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(device, 0u, 0u, &graphics_queue);
+    const VkSubmitInfo submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &command,
+    };
+    assert(vkQueueSubmit(graphics_queue, 1u, &submit, VK_NULL_HANDLE) ==
+        VK_SUCCESS);
+    assert(vkQueueSubmit(graphics_queue, 1u, &submit, VK_NULL_HANDLE) ==
+        VK_SUCCESS);
 
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyImage(device, image, NULL);
@@ -487,6 +498,17 @@ static void test_depth_stencil_clear_recording(void)
         &clear, 1u, &range);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_dispatch_count(command) == 2u);
+    VkQueue graphics_queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(device, 0u, 0u, &graphics_queue);
+    const VkSubmitInfo submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &command,
+    };
+    assert(vkQueueSubmit(graphics_queue, 1u, &submit, VK_NULL_HANDLE) ==
+        VK_SUCCESS);
+    assert(vkQueueSubmit(graphics_queue, 1u, &submit, VK_NULL_HANDLE) ==
+        VK_SUCCESS);
 
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyImage(device, image, NULL);
