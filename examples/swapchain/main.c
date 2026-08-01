@@ -89,10 +89,19 @@ int main(void) {
     VkSurfaceCapabilitiesKHR capabilities;
     REQUIRE(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         physical, surface, &capabilities));
-    uint32_t format_count = 1;
-    VkSurfaceFormatKHR format;
+    uint32_t format_count = 0;
     REQUIRE(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        physical, surface, &format_count, &format));
+        physical, surface, &format_count, NULL));
+    VkSurfaceFormatKHR formats[2];
+    if (!format_count || format_count >
+            (uint32_t)(sizeof(formats) / sizeof(formats[0]))) {
+        printf("swapchain: unsupported surface-format count %u\n",
+            format_count);
+        goto cleanup;
+    }
+    REQUIRE(vkGetPhysicalDeviceSurfaceFormatsKHR(
+        physical, surface, &format_count, formats));
+    const VkSurfaceFormatKHR format = formats[0];
     uint32_t present_mode_count = 1;
     VkPresentModeKHR present_mode;
     REQUIRE(vkGetPhysicalDeviceSurfacePresentModesKHR(

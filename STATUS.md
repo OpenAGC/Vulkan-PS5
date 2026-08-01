@@ -347,6 +347,18 @@ apart from the established raw-ELF `amount=0x4000` warning. Evidence:
 `examples/qualification-logs/20260731T142327Z-swapchain-run1.log` and its
 matching target klog.
 
+The 2026-08-01 current-commit WSI replay initially failed before device and
+swapchain creation because the sample requested one of the two advertised
+surface formats and incorrectly treated Vulkan's required `VK_INCOMPLETE`
+enumeration result as fatal. The sample now uses the standard count-then-fill
+enumeration pattern already covered by the direct WSI test. Rebuilt artifact
+`becaf8bccafb29f9ce155de486698162f35fd5eb02fcbf447870a971a45aa84f`
+then completed all 1,800 acquire/submit/present frames, full teardown,
+self-exit, exact-PID absence, and the scoped kernel-log gate with only the
+established raw-ELF `amount=0x4000` warning. Evidence is in
+`examples/qualification-logs/20260801T131758Z-swapchain-run1.log` and its
+matching target klog.
+
 The completed Eden profile and all hardware-qualified Vulkan features remain
 supported by the current implementation. Migration must not silently drop an
 advertised feature. Conversely, a native OpenAGC capability is not advertised
