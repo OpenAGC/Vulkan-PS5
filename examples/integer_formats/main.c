@@ -9,7 +9,7 @@
 
 #define IMAGE_WIDTH 8u
 #define IMAGE_HEIGHT 8u
-#define FORMAT_COUNT 31u
+#define FORMAT_COUNT 37u
 #define INTEGER_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | \
     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
@@ -20,6 +20,10 @@
     VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT)
 #define NORMALIZED_NO_STORAGE_FEATURES (NORMALIZED_FEATURES & \
     ~VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
+#define SAMPLED_ONLY_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
+    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | \
+    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT | \
+    VK_FORMAT_FEATURE_BLIT_SRC_BIT)
 
 typedef struct FormatCase {
     VkFormat format;
@@ -106,6 +110,42 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
         {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}},
         {UINT32_C(0xd00802ff), 0u, 0u, 0u}, 4u,
         NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_R5G6B5_UNORM_PACK16, "r5g6b5_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x000087e0), 0u, 0u, 0u}, 2u,
+        NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_B5G6R5_UNORM_PACK16, "b5g6r5_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x000007f0), 0u, 0u, 0u}, 2u,
+        NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_R5G5B5A1_UNORM_PACK16, "r5g5b5a1_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x000087c1), 0u, 0u, 0u}, 2u,
+        NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_A1R5G5B5_UNORM_PACK16, "a1r5g5b5_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x0000c3e0), 0u, 0u, 0u}, 2u,
+        NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT, "a4b4g4r4_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x0000f0f8), 0u, 0u, 0u}, 2u,
+        NORMALIZED_NO_STORAGE_FEATURES,
+    },
+    {
+        VK_FORMAT_R4G4_UNORM_PACK8, "r4g4_unorm",
+        {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
+        {UINT32_C(0x000000f8), 0u, 0u, 0u}, 1u,
+        SAMPLED_ONLY_FEATURES,
     },
     {
         VK_FORMAT_R16_UNORM, "r16_unorm",
@@ -250,7 +290,8 @@ static VkResult create_image(VkPhysicalDevice physical, VkDevice device,
         .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
             ((format_case->features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ?
                 VK_IMAGE_USAGE_STORAGE_BIT : 0u) |
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            ((format_case->features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ?
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0u) |
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,

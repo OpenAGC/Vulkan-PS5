@@ -142,6 +142,19 @@ static int snapshot(void)
                    format_properties.optimalTilingFeatures,
                    format_properties.bufferFeatures);
     }
+    {
+        const VkFormat format = VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT;
+        VkFormatProperties format_properties = {0};
+        vkGetPhysicalDeviceFormatProperties(
+            physical, format, &format_properties);
+        if (format_properties.linearTilingFeatures ||
+            format_properties.optimalTilingFeatures ||
+            format_properties.bufferFeatures)
+            printf("format\t%u\t%u\t%u\t%u\n", (uint32_t)format,
+                   format_properties.linearTilingFeatures,
+                   format_properties.optimalTilingFeatures,
+                   format_properties.bufferFeatures);
+    }
 
     const VkHeadlessSurfaceCreateInfoEXT surface_info = {
         .sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT,

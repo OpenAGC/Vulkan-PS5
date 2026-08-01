@@ -173,6 +173,11 @@ static int ps5_color_format(VkFormat format) {
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return AGC_GFX1013_RT_FORMAT_RGB10A2_UNORM;
     case VK_FORMAT_A2B10G10R10_UINT_PACK32: return AGC_GFX1013_RT_FORMAT_RGB10A2_UINT;
     case VK_FORMAT_A2R10G10B10_UNORM_PACK32: return AGC_GFX1013_RT_FORMAT_BGR10A2_UNORM;
+    case VK_FORMAT_R5G6B5_UNORM_PACK16: return AGC_GFX1013_RT_FORMAT_R5G6B5_UNORM;
+    case VK_FORMAT_B5G6R5_UNORM_PACK16: return AGC_GFX1013_RT_FORMAT_B5G6R5_UNORM;
+    case VK_FORMAT_R5G5B5A1_UNORM_PACK16: return AGC_GFX1013_RT_FORMAT_R5G5B5A1_UNORM;
+    case VK_FORMAT_A1R5G5B5_UNORM_PACK16: return AGC_GFX1013_RT_FORMAT_A1R5G5B5_UNORM;
+    case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT: return AGC_GFX1013_RT_FORMAT_A4B4G4R4_UNORM;
     case VK_FORMAT_R16_UNORM: return AGC_GFX1013_RT_FORMAT_R16_UNORM;
     case VK_FORMAT_R16_SNORM: return AGC_GFX1013_RT_FORMAT_R16_SNORM;
     case VK_FORMAT_R16_UINT: return AGC_GFX1013_RT_FORMAT_R16_UINT;
@@ -1119,10 +1124,11 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     int color_index = ps5_color_format(format);
     int depth_index = ps5_depth_format(format);
     int bc_format = ps5_bc_format(format);
+    const int sampled_only = format == VK_FORMAT_R4G4_UNORM_PACK8;
     (void)physicalDevice;
     if (!pFormatProperties) return;
     memset(pFormatProperties, 0, sizeof(*pFormatProperties));
-    if (!bc_format &&
+    if (!bc_format && !sampled_only &&
         (color_index < 0 || !(capabilities.color_target_format_mask &
                               (1ull << (uint32_t)color_index))) &&
         (depth_index < 0 || !(capabilities.depth_stencil_format_mask &
@@ -1196,6 +1202,20 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         pFormatProperties->bufferFeatures =
             VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT |
             VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
+        break;
+    case VK_FORMAT_R5G6B5_UNORM_PACK16:
+    case VK_FORMAT_B5G6R5_UNORM_PACK16:
+    case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+    case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+    case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+        pFormatProperties->linearTilingFeatures = color;
+        pFormatProperties->optimalTilingFeatures = color;
+        break;
+    case VK_FORMAT_R4G4_UNORM_PACK8:
+        pFormatProperties->linearTilingFeatures = sampled | transfer |
+            blit_source;
+        pFormatProperties->optimalTilingFeatures = sampled | transfer |
+            blit_source;
         break;
     case VK_FORMAT_R16_UNORM:
     case VK_FORMAT_R16_SNORM:

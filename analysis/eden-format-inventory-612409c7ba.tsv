@@ -1,19 +1,19 @@
 # Frozen from Eden source revision 612409c7ba.
 # Source: src/video_core/renderer_vulkan/maxwell_to_vk.cpp SURFACE_FORMAT_LIST
-# State is evaluated against Vulkan-PS5 native_image_format after the API 49 R8/RG8 format slice.
+# State is evaluated against Vulkan-PS5 native_image_format after the API 51 packed 8/16-bit format slice.
 eden_pixel_format	vk_format	eden_usage	vulkan_ps5_state
 A8B8G8R8_UNORM	VK_FORMAT_A8B8G8R8_UNORM_PACK32	usage_attachable | usage_storage	direct
 A8B8G8R8_SNORM	VK_FORMAT_A8B8G8R8_SNORM_PACK32	usage_attachable | usage_storage	direct
 A8B8G8R8_SINT	VK_FORMAT_A8B8G8R8_SINT_PACK32	usage_attachable | usage_storage	direct
 A8B8G8R8_UINT	VK_FORMAT_A8B8G8R8_UINT_PACK32	usage_attachable | usage_storage	direct
-R5G6B5_UNORM	VK_FORMAT_R5G6B5_UNORM_PACK16	usage_attachable	gap_uncompressed
-B5G6R5_UNORM	VK_FORMAT_B5G6R5_UNORM_PACK16	0	gap_uncompressed
-A1R5G5B5_UNORM	VK_FORMAT_A1R5G5B5_UNORM_PACK16	usage_attachable	gap_uncompressed
+R5G6B5_UNORM	VK_FORMAT_R5G6B5_UNORM_PACK16	usage_attachable	direct
+B5G6R5_UNORM	VK_FORMAT_B5G6R5_UNORM_PACK16	0	direct
+A1R5G5B5_UNORM	VK_FORMAT_A1R5G5B5_UNORM_PACK16	usage_attachable	direct
 A2B10G10R10_UNORM	VK_FORMAT_A2B10G10R10_UNORM_PACK32	usage_attachable | usage_storage	direct
 A2B10G10R10_UINT	VK_FORMAT_A2B10G10R10_UINT_PACK32	usage_attachable | usage_storage	direct
 A2R10G10B10_UNORM	VK_FORMAT_A2R10G10B10_UNORM_PACK32	usage_attachable	direct
-A1B5G5R5_UNORM	VK_FORMAT_A1R5G5B5_UNORM_PACK16	usage_attachable	gap_uncompressed
-A5B5G5R1_UNORM	VK_FORMAT_R5G5B5A1_UNORM_PACK16	0	gap_uncompressed
+A1B5G5R5_UNORM	VK_FORMAT_A1R5G5B5_UNORM_PACK16	usage_attachable	direct
+A5B5G5R1_UNORM	VK_FORMAT_R5G5B5A1_UNORM_PACK16	0	direct
 R8_UNORM	VK_FORMAT_R8_UNORM	usage_attachable | usage_storage	direct
 R8_SNORM	VK_FORMAT_R8_SNORM	usage_attachable | usage_storage	direct
 R8_SINT	VK_FORMAT_R8_SINT	usage_attachable | usage_storage	direct
@@ -70,8 +70,8 @@ BC1_RGBA_SRGB	VK_FORMAT_BC1_RGBA_SRGB_BLOCK	0	direct
 BC2_SRGB	VK_FORMAT_BC2_SRGB_BLOCK	0	direct
 BC3_SRGB	VK_FORMAT_BC3_SRGB_BLOCK	0	direct
 BC7_SRGB	VK_FORMAT_BC7_SRGB_BLOCK	0	direct
-A4B4G4R4_UNORM	VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT	0	gap_uncompressed
-G4R4_UNORM	VK_FORMAT_R4G4_UNORM_PACK8	0	gap_uncompressed
+A4B4G4R4_UNORM	VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT	0	direct
+G4R4_UNORM	VK_FORMAT_R4G4_UNORM_PACK8	0	direct
 ASTC_2D_4X4_SRGB	VK_FORMAT_ASTC_4x4_SRGB_BLOCK	0	transcode_required_astc
 ASTC_2D_8X8_SRGB	VK_FORMAT_ASTC_8x8_SRGB_BLOCK	0	transcode_required_astc
 ASTC_2D_8X5_SRGB	VK_FORMAT_ASTC_8x5_SRGB_BLOCK	0	transcode_required_astc

@@ -802,7 +802,9 @@ ordering.
   storage creation; its expanded 26-format, 1,664-pixel gate passes twice on
   FW 5.50. API 50 adds packed RGBA8 SNORM/UINT/SINT, RGB10A2 UINT, and
   BGR10A2 UNORM; its expanded 31-format, 1,984-pixel gate passes twice on FW
-  5.50 with one pinned ELF. Qualify shader sampling/storage and scalar/vector attachment
+  5.50 with one pinned ELF. API 51 adds five renderable packed 16-bit forms
+  plus sampled-only R4G4; its expanded 37-format, 2,368-pixel gate passes
+  twice on FW 5.50 with one pinned ELF. Qualify shader sampling/storage and scalar/vector attachment
   exports next.
   Integer shader execution and the final identical FW 11.60 replay remain
   before endpoint qualification.

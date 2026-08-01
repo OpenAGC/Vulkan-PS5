@@ -149,6 +149,12 @@ formats, preserving normalized/integer filtering, blit, and storage
 distinctions. The pinned FW 5.50 probe passed all 31 formats and 1,984 exact
 pixels twice. See `analysis/fw550_packed_formats_20260801.md`.
 
+OpenAGC API 51 adds exact R5G6B5, B5G6R5, R5G5B5A1, A1R5G5B5,
+A4B4G4R4, and R4G4 UNORM packed images. Vulkan exposes the five renderable
+16-bit forms without false storage/texel-buffer claims and keeps R4G4
+sampled-only. The pinned FW 5.50 probe passed all 37 formats and 2,368 exact
+pixels twice. See `analysis/fw550_packed16_formats_20260801.md`.
+
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary
 validated rectangles for every advertised color attachment format and the
