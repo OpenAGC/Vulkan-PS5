@@ -265,8 +265,11 @@ state, transition disjoint source and destination mip/layer sets concurrently,
 then restore their exact prior states. Same-subresource feedback,
 depth/stencil, and compressed-destination forms remain fail-closed. Normal and
 ASAN/UBSAN suites pass 48/48, shader regeneration is byte-stable, and Prospero
-static/shared libraries build clean. The 3D/mixed/self exact-pixel FW 5.50
-gate remains pending. The earlier 2D candidate ELF
+static/shared libraries build clean. The 3D/mixed/self candidate ELF
+`de13de9e50c8dc9a0c223f7dd56ea2f0bb8d8b2fb475029d38dae75953c67c47`
+passed twice on FW 5.500.008 with exact `volume=64 self=16`, bounded waits,
+cleanup-first teardown, and immediate relaunch. The run exposed and then
+qualified OpenAGC's single-mip view rebase fix. The earlier 2D candidate ELF
 `a2ad727201bea7ad40d1fa85e5bda566d27255a6999d1cf96006e0fcdeecd82d`
 passed twice on FW 5.500.008 with exact `pixels=256 guards=144 nearest=2x`,
 cleanup-first teardown, and immediate relaunch. The same bytes then passed

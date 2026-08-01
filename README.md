@@ -170,10 +170,13 @@ pixels and 144 untouched guards with immediate relaunch. The identical ELF
 then passed the same oracle twice on FW 11.600.005; its FTP round-trip SHA-256
 remained identical.
 
-The 3D/mixed/self extension is host-verified by all 48 normal and sanitizer
-suites, has byte-reproducible shader artifacts, and builds cleanly as static
-and shared Prospero libraries. Exact FW 5.50 pixels are the remaining gate;
-FW 11.60 replay stays deferred to the final pinned release candidate.
+The 3D/mixed/self extension is verified by all 48 normal and sanitizer suites,
+has byte-reproducible shader artifacts, and builds cleanly as static and shared
+Prospero libraries. The pinned FW 5.50 ELF SHA-256 is
+`de13de9e50c8dc9a0c223f7dd56ea2f0bb8d8b2fb475029d38dae75953c67c47`;
+two cleanup-first runs each matched all 64 volume and 16 self-image pixels,
+self-exited, and left no process behind. FW 11.60 replay stays deferred to the
+final pinned release candidate.
 
 `vkCmdResolveImage` now implements application-neutral 4x-to-1x 2D color
 resolves through a reproducible `sampler2DMS` graphics-meta shader. It validates

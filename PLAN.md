@@ -767,7 +767,9 @@ ordering.
   exact-pixel probe passed twice on both FW 5.50 and FW 11.60. The path now
   also records 3D-to-3D, mixed 2D/3D, and disjoint-subresource 2D self-image
   forms. Their shader regeneration, 48/48 normal and sanitizer suites, and
-  Prospero static/shared builds pass; qualify exact pixels on FW 5.50 next.
+  Prospero static/shared builds pass. One pinned ELF passed the 64-volume- plus
+  16-self-pixel oracle twice on FW 5.50 with bounded waits and clean immediate
+  relaunch. Preserve it and defer FW 11.60 replay to the final candidate.
 - General 4x-to-1x 2D color resolves now use a reproducible graphics-meta
   shader with strict subresource, usage, layout, format, and bounds validation.
   Normal and sanitizer suites pass 48/48, Prospero static/shared builds are
