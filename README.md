@@ -527,6 +527,13 @@ sidecar locally and after FTP upload before launching the ELF. A missing file,
 unsafe remote name, wrong hash, or only a partial sidecar tuple fails before
 console mutation.
 
+For a workload that also needs one external data artifact, the equivalent
+`VULKAN_PS5_QUALIFICATION_ASSET`,
+`VULKAN_PS5_QUALIFICATION_ASSET_REMOTE_NAME`, and
+`VULKAN_PS5_QUALIFICATION_ASSET_EXPECTED_SHA256` tuple receives the same local
+and post-upload verification. This is intended for a representative game or
+test payload; it does not turn the runner into a general unpinned file copier.
+
 The runner never retries automatically and requires the process-cleanup ELF
 immediately before launch. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,

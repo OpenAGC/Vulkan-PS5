@@ -141,16 +141,22 @@ grep -F 'FW550 eden: PASS (600 frames and compute oracle, clean exit and klog)' 
 
 printf 'init\n' >"$test_root/build/eden.launch"
 sidecar_sha=$(shasum -a 256 "$test_root/build/eden.launch" | awk '{print $1}')
+printf 'representative-homebrew\n' >"$test_root/build/2048.nro"
+asset_sha=$(shasum -a 256 "$test_root/build/2048.nro" | awk '{print $1}')
 if ! (
     VULKAN_PS5_QUALIFICATION_SIDECAR="$test_root/build/eden.launch" \
         VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME=eden.launch \
         VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256="$sidecar_sha" \
+        VULKAN_PS5_QUALIFICATION_ASSET="$test_root/build/2048.nro" \
+        VULKAN_PS5_QUALIFICATION_ASSET_REMOTE_NAME=2048.nro \
+        VULKAN_PS5_QUALIFICATION_ASSET_EXPECTED_SHA256="$asset_sha" \
         run_runner clean "$test_root/sidecar.out" "$test_root/sidecar-logs"
 ); then
     cat "$test_root/sidecar.out" >&2
     exit 1
 fi
 cmp "$test_root/build/eden.launch" "$test_root/remote/eden.launch"
+cmp "$test_root/build/2048.nro" "$test_root/remote/2048.nro"
 
 if (
     VULKAN_PS5_QUALIFICATION_SIDECAR="$test_root/build/missing.launch" \
@@ -175,6 +181,19 @@ if (
 fi
 grep -F 'qualification sidecar SHA-256 mismatch' \
     "$test_root/wrong-sidecar-hash.out" >/dev/null
+
+if (
+    VULKAN_PS5_QUALIFICATION_ASSET="$test_root/build/2048.nro" \
+        VULKAN_PS5_QUALIFICATION_ASSET_REMOTE_NAME=2048.nro \
+        VULKAN_PS5_QUALIFICATION_ASSET_EXPECTED_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
+        run_runner clean "$test_root/wrong-asset-hash.out" \
+        "$test_root/wrong-asset-hash-logs"
+); then
+    echo "wrong qualification asset hash unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'qualification asset SHA-256 mismatch' \
+    "$test_root/wrong-asset-hash.out" >/dev/null
 
 if (
     VULKAN_PS5_QUALIFICATION_REMOTE_NAME='../unsafe' \

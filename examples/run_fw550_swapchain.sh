@@ -22,6 +22,9 @@ expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 sidecar=${VULKAN_PS5_QUALIFICATION_SIDECAR:-}
 sidecar_remote_name=${VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME:-}
 expected_sidecar_sha256=${VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256:-}
+asset=${VULKAN_PS5_QUALIFICATION_ASSET:-}
+asset_remote_name=${VULKAN_PS5_QUALIFICATION_ASSET_REMOTE_NAME:-}
+expected_asset_sha256=${VULKAN_PS5_QUALIFICATION_ASSET_EXPECTED_SHA256:-}
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero sample: $elf" >&2
@@ -44,6 +47,21 @@ if [ -n "$sidecar" ]; then
     esac
 elif [ -n "$sidecar_remote_name" ] || [ -n "$expected_sidecar_sha256" ]; then
     echo "qualification sidecar path is required with sidecar metadata" >&2
+    exit 2
+fi
+if [ -n "$asset" ]; then
+    if [ ! -f "$asset" ]; then
+        echo "missing qualification asset: $asset" >&2
+        exit 2
+    fi
+    case "$asset_remote_name" in
+        ''|*[!A-Za-z0-9_.-]*)
+            echo "qualification asset remote name must use A-Z, a-z, 0-9, _, ., or -" >&2
+            exit 2
+            ;;
+    esac
+elif [ -n "$asset_remote_name" ] || [ -n "$expected_asset_sha256" ]; then
+    echo "qualification asset path is required with asset metadata" >&2
     exit 2
 fi
 case "$remote_name" in
@@ -126,6 +144,10 @@ if [ -n "$sidecar" ]; then
     verify_local_sha256 "$sidecar" "$expected_sidecar_sha256" \
         'qualification sidecar'
 fi
+if [ -n "$asset" ]; then
+    verify_local_sha256 "$asset" "$expected_asset_sha256" \
+        'qualification asset'
+fi
 if ! curl -sS --connect-timeout 3 --max-time 5 \
     "http://${PS5_HOST}:8080/" >/dev/null; then
     echo "FW 5.50 websrv is unreachable at ${PS5_HOST}:8080" >&2
@@ -201,6 +223,13 @@ if ! {
         verify_remote_sha256 \
             "ftp://${PS5_HOST}:2121${remote_dir}/${sidecar_remote_name}" \
             "$expected_sidecar_sha256" 'qualification sidecar'
+    fi
+    if [ -n "$asset" ]; then
+        curl -sS --connect-timeout 3 --max-time 30 -T "$asset" \
+            "ftp://${PS5_HOST}:2121${remote_dir}/${asset_remote_name}" >/dev/null
+        verify_remote_sha256 \
+            "ftp://${PS5_HOST}:2121${remote_dir}/${asset_remote_name}" \
+            "$expected_asset_sha256" 'qualification asset'
     fi
     curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
         "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
