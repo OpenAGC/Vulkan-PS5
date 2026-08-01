@@ -110,6 +110,7 @@
 #endif
 #define GREEN_RGBA8 0xff00ff00u
 #define RED_RGBA8 0xff0000ffu
+#define DYNAMIC_CLEAR_RGBA8 0xffbf8040u
 #define LOGIC_BACKGROUND_RGBA8 0x55aa33ccu
 #define LOGIC_XOR_RGBA8 0xaaaaccccu
 
@@ -1224,6 +1225,9 @@ int main(void)
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
     uint32_t background_count = 0;
 #endif
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+    uint32_t dynamic_clear_count = 0;
+#endif
     uint32_t unexpected_count = 0;
     for (uint32_t i = 0; i < TARGET_WIDTH * TARGET_HEIGHT; ++i) {
 #if defined(VULKAN_PS5_LOGIC_OP_PROBE)
@@ -1259,6 +1263,10 @@ int main(void)
 #if defined(VULKAN_PS5_DEMOTE_PROBE)
         else if (pixels[i] == 0u)
             ++demoted_count;
+#endif
+#if defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+        else if (pixels[i] == DYNAMIC_CLEAR_RGBA8)
+            ++dynamic_clear_count;
 #endif
         else if (pixels[i] != 0u)
             ++unexpected_count;
@@ -1424,8 +1432,16 @@ int main(void)
         center == 0xffff0000u && pixels[0] == 0u &&
         pixels[TARGET_WIDTH - 1u] == 0u;
 #endif
-#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE) || \
-    defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+#if !defined(OPENAGC_PROSPERO)
+    image_ok = 1;
+#else
+    image_ok = green_count == 1152u && dynamic_clear_count == 2944u &&
+        unexpected_count == 0u && center == GREEN_RGBA8 &&
+        pixels[0] == DYNAMIC_CLEAR_RGBA8 &&
+        pixels[TARGET_WIDTH - 1u] == DYNAMIC_CLEAR_RGBA8;
+#endif
+#elif defined(VULKAN_PS5_ALPHA_TO_ONE_PROBE)
 #if !defined(OPENAGC_PROSPERO)
     image_ok = 1;
 #else
@@ -1502,6 +1518,9 @@ int main(void)
 #elif defined(VULKAN_PS5_ROBUST_VERTEX_PROBE)
         printf("robust_vertex_access: mismatch blue=%u green=%u unexpected=%u center=%08x\n",
             blue_count, green_count, unexpected_count, center);
+#elif defined(VULKAN_PS5_DYNAMIC_RENDERING_PROBE)
+        printf("dynamic_rendering: mismatch green=%u clear=%u unexpected=%u center=%08x\n",
+            green_count, dynamic_clear_count, unexpected_count, center);
 #else
         printf(SAMPLE_LABEL ": mismatch green=%u unexpected=%u center=%08x\n",
             green_count, unexpected_count, center);
@@ -1563,7 +1582,8 @@ int main(void)
 #if !defined(OPENAGC_PROSPERO)
         printf("dynamic_rendering: PASS command recording\n");
 #else
-        printf("dynamic_rendering: PASS %u green pixels\n", green_count);
+        printf("dynamic_rendering: PASS green=%u clear=%u center=%08x\n",
+            green_count, dynamic_clear_count, center);
 #endif
 #else
         printf(SAMPLE_LABEL ": PASS %u green pixels\n", green_count);

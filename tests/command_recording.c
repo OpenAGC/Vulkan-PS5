@@ -1324,6 +1324,26 @@ int main(int argc, char **argv)
     vkCmdBeginRenderPass(command, &native_render_begin,
                          VK_SUBPASS_CONTENTS_INLINE);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    const VkClearAttachment partial_clear_attachments[] = {
+        {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .colorAttachment = 1u,
+            .clearValue.color.float32 = {0.25f, 0.5f, 0.75f, 1.0f},
+        },
+        {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+                VK_IMAGE_ASPECT_STENCIL_BIT,
+            .clearValue.depthStencil = {0.375f, 0x5au},
+        },
+    };
+    const VkClearRect partial_clear_rect = {
+        .rect = {{32, 48}, {96u, 80u}},
+        .baseArrayLayer = 0u,
+        .layerCount = 1u,
+    };
+    vkCmdClearAttachments(command, 2u, partial_clear_attachments,
+        1u, &partial_clear_rect);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     const VkDeviceSize native_vertex_offset = 0u;
     vkCmdBindVertexBuffers2(command, 0u, 1u, &vertex_buffer,
@@ -1337,7 +1357,7 @@ int main(int argc, char **argv)
     vkCmdEndRenderPass(command);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
-    assert(vk_ps5_command_buffer_native_draw_count(command) == 2u);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 4u);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
 
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
@@ -1545,8 +1565,9 @@ vkCmdEndRenderPass2(command, &subpass_end);
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = depth_view,
         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue.depthStencil = {0.625f, 0x3cu},
     };
     const VkRenderingInfo dynamic_rendering = {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
@@ -1567,6 +1588,28 @@ vkCmdEndRenderPass2(command, &subpass_end);
         VK_SUCCESS);
     vkCmdEndRendering(dynamic_rendering_command);
     assert(vkEndCommandBuffer(dynamic_rendering_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(
+        dynamic_rendering_command) == 2u);
+
+    VkCommandBuffer depth_only_rendering_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &depth_only_rendering_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(depth_only_rendering_command, &begin_info) ==
+        VK_SUCCESS);
+    const VkRenderingInfo depth_only_rendering = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {{16, 24}, {128, 96}},
+        .layerCount = 1,
+        .pDepthAttachment = &dynamic_depth_stencil,
+        .pStencilAttachment = &dynamic_depth_stencil,
+    };
+    vkCmdBeginRendering(depth_only_rendering_command, &depth_only_rendering);
+    assert(vk_ps5_command_buffer_record_error(
+        depth_only_rendering_command) == VK_SUCCESS);
+    vkCmdEndRendering(depth_only_rendering_command);
+    assert(vkEndCommandBuffer(depth_only_rendering_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(
+        depth_only_rendering_command) == 1u);
 
     VkCommandBuffer unset_line_width_command;
     assert(vkAllocateCommandBuffers(device, &allocate_info,
@@ -1731,7 +1774,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
            VK_SUCCESS);
     vkCmdClearAttachments(invalid_copy_command, 0u, NULL, 0u, NULL);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
-           VK_ERROR_FEATURE_NOT_PRESENT);
+           VK_ERROR_INITIALIZATION_FAILED);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
            VK_SUCCESS);
@@ -1812,6 +1855,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vk_ps5_command_buffer_native_state(command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(dynamic_rendering_command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vk_ps5_command_buffer_native_state(depth_only_rendering_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
 
     vkDestroyFence(device, fence, NULL);

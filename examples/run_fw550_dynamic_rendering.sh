@@ -9,6 +9,6 @@ VULKAN_PS5_EXIT_REMOTE_NAME=vulkan_ps5_dynamic_rendering \
 VULKAN_PS5_EXIT_FILE_STEM=dynamic-rendering-run1 \
 VULKAN_PS5_EXIT_DISPLAY_NAME='dynamic-rendering probe' \
 VULKAN_PS5_REQUIRE_CLEANUP=1 \
-VULKAN_PS5_EXIT_SUCCESS_REGEX='^dynamic_rendering: PASS [0-9][0-9]* green pixels$' \
+VULKAN_PS5_EXIT_SUCCESS_REGEX='^dynamic_rendering: PASS green=1152 clear=2944 center=ff00ff00$' \
 VULKAN_PS5_EXIT_FAILURE_PATTERN='dynamic_rendering: mismatch' \
     exec "$script_dir/run_fw550_system_exit_probe.sh"

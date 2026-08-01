@@ -1,5 +1,9 @@
 #include "vulkan_ps5_internal.h"
 #include "meta/clear_color_spv.h"
+#include "meta/clear_attachment_vert_spv.h"
+#include "meta/clear_attachment_color_frag_spv.h"
+#include "meta/clear_attachment_depth_frag_spv.h"
+#include "meta/clear_attachment_stencil_frag_spv.h"
 #include <openagc_psbc.h>
 #include <agc_cb.h>
 #include <agc_graphics.h>
@@ -3240,6 +3244,182 @@ VkResult vk_ps5_initialize_meta_clear(VkDevice device,
     return result;
 }
 
+VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
+    VkFormat format, VkImageAspectFlags aspects,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    const VkImageAspectFlags depth_stencil = VK_IMAGE_ASPECT_DEPTH_BIT |
+        VK_IMAGE_ASPECT_STENCIL_BIT;
+    if (!device || !layout_out || !pipeline_out ||
+        (aspects != VK_IMAGE_ASPECT_COLOR_BIT &&
+         !(aspects && (aspects & ~depth_stencil) == 0u)) ||
+        (aspects == VK_IMAGE_ASPECT_COLOR_BIT) == native_image_is_depth(format))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    *layout_out = VK_NULL_HANDLE;
+    *pipeline_out = VK_NULL_HANDLE;
+
+    const VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0u,
+        .size = 16u,
+    };
+    const VkPipelineLayoutCreateInfo layout_create = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &push_range,
+    };
+    VkResult result = vkCreatePipelineLayout(
+        device, &layout_create, NULL, layout_out);
+    if (result != VK_SUCCESS)
+        return result;
+
+    const uint32_t *fragment_code =
+        vulkan_ps5_meta_clear_attachment_color_frag_spv;
+    size_t fragment_size =
+        sizeof(vulkan_ps5_meta_clear_attachment_color_frag_spv);
+    if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
+        fragment_code = vulkan_ps5_meta_clear_attachment_depth_frag_spv;
+        fragment_size =
+            sizeof(vulkan_ps5_meta_clear_attachment_depth_frag_spv);
+    } else if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
+        fragment_code = vulkan_ps5_meta_clear_attachment_stencil_frag_spv;
+        fragment_size =
+            sizeof(vulkan_ps5_meta_clear_attachment_stencil_frag_spv);
+    }
+    const VkShaderModuleCreateInfo vertex_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_meta_clear_attachment_vert_spv),
+        .pCode = vulkan_ps5_meta_clear_attachment_vert_spv,
+    };
+    const VkShaderModuleCreateInfo fragment_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = fragment_size,
+        .pCode = fragment_code,
+    };
+    VkShaderModule vertex = VK_NULL_HANDLE;
+    VkShaderModule fragment = VK_NULL_HANDLE;
+    result = vkCreateShaderModule(device, &vertex_create, NULL, &vertex);
+    if (result == VK_SUCCESS)
+        result = vkCreateShaderModule(
+            device, &fragment_create, NULL, &fragment);
+
+    const VkPipelineShaderStageCreateInfo stages[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertex,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragment,
+            .pName = "main",
+        },
+    };
+    const VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    };
+    const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    const VkPipelineViewportStateCreateInfo viewport = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1u,
+        .scissorCount = 1u,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineColorBlendAttachmentState color_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = aspects == VK_IMAGE_ASPECT_COLOR_BIT ? 1u : 0u,
+        .pAttachments = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
+            &color_attachment : NULL,
+    };
+    const VkStencilOpState stencil = {
+        .failOp = VK_STENCIL_OP_REPLACE,
+        .passOp = VK_STENCIL_OP_REPLACE,
+        .depthFailOp = VK_STENCIL_OP_REPLACE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .compareMask = UINT8_MAX,
+        .writeMask = UINT8_MAX,
+    };
+    const VkPipelineDepthStencilStateCreateInfo depth = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) != 0u,
+        .depthWriteEnable = (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) != 0u,
+        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .stencilTestEnable = (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0u,
+        .front = stencil,
+        .back = stencil,
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f,
+    };
+    const VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) ? 3u : 2u,
+        .pDynamicStates = dynamic_states,
+    };
+    const VkFormat color_format = format;
+    const VkPipelineRenderingCreateInfo rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = aspects == VK_IMAGE_ASPECT_COLOR_BIT ? 1u : 0u,
+        .pColorAttachmentFormats = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
+            &color_format : NULL,
+        .depthAttachmentFormat = (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) ?
+            format : VK_FORMAT_UNDEFINED,
+        .stencilAttachmentFormat = (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) ?
+            format : VK_FORMAT_UNDEFINED,
+    };
+    const VkGraphicsPipelineCreateInfo pipeline_create = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &rendering,
+        .stageCount = 2u,
+        .pStages = stages,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pDepthStencilState = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
+            NULL : &depth,
+        .pColorBlendState = &blend,
+        .pDynamicState = &dynamic,
+        .layout = *layout_out,
+    };
+    if (result == VK_SUCCESS)
+        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
+            &pipeline_create, NULL, pipeline_out);
+    vkDestroyShaderModule(device, fragment, NULL);
+    vkDestroyShaderModule(device, vertex, NULL);
+    if (result != VK_SUCCESS) {
+        vkDestroyPipelineLayout(device, *layout_out, NULL);
+        *layout_out = VK_NULL_HANDLE;
+        *pipeline_out = VK_NULL_HANDLE;
+    }
+    return result;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                           uint32_t createInfoCount,
@@ -5632,70 +5812,6 @@ VkBool32 vk_ps5_pack_depth_stencil_clear(VkFormat format,
     return VK_TRUE;
 }
 
-static VkResult native_clear_color_attachment(
-    VkPs5CommandBuffer *command, VkPs5ImageView *view,
-    const VkRect2D *render_area, const VkClearColorValue *clear)
-{
-    VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
-    if (!command || !view || !image || !render_area || !clear ||
-        !image->native_clear_buffer || image->samples != VK_SAMPLE_COUNT_1_BIT ||
-        view->base_array_layer != 0u ||
-        view->layer_count != image->array_layers ||
-        render_area->offset.x != 0 || render_area->offset.y != 0 ||
-        render_area->extent.width != image->extent.width ||
-        render_area->extent.height != image->extent.height ||
-        (view->format != VK_FORMAT_R8G8B8A8_UNORM &&
-         view->format != VK_FORMAT_R8G8B8A8_SRGB &&
-         view->format != VK_FORMAT_A8B8G8R8_UNORM_PACK32 &&
-         view->format != VK_FORMAT_A8B8G8R8_SRGB_PACK32 &&
-         view->format != VK_FORMAT_B8G8R8A8_UNORM &&
-         view->format != VK_FORMAT_B8G8R8A8_SRGB))
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    if (!native_require_complete_stream(command))
-        return command->record_error;
-
-    uint32_t value;
-    if (!native_pack_rgba8_clear(view->format, clear, &value))
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    if (image->array_layers > UINT64_MAX / image->array_pitch)
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    const uint64_t clear_size = image->array_pitch * image->array_layers;
-    if (!clear_size || clear_size > image->size)
-        return VK_ERROR_INITIALIZATION_FAILED;
-
-    AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
-    int32_t result = agcGetCommandBufferRangeStateInfo(
-        command->native_graphics_command_buffer, image->native_clear_buffer,
-        0u, clear_size, &state);
-    if (result != AGC_OK)
-        return native_command_result(result);
-    AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
-    transition.before = state.usage;
-    transition.after = kAgcResourceUsageCopyDestination;
-    transition.before_owner = state.owner;
-    transition.after_owner = kAgcResourceOwnerGraphics;
-    transition.buffer = image->native_clear_buffer;
-    transition.buffer_size = clear_size;
-    result = agcCmdTransitionResources(
-        command->native_graphics_command_buffer, 1u, &transition);
-    if (result == AGC_OK)
-        result = agcCmdFillBuffer(command->native_graphics_command_buffer,
-            image->native_clear_buffer, 0u, clear_size, value);
-    if (result == AGC_OK) {
-        transition.before = kAgcResourceUsageCopyDestination;
-        transition.after = kAgcResourceUsageCopySource;
-        transition.before_owner = kAgcResourceOwnerGraphics;
-        transition.after_owner = kAgcResourceOwnerGraphics;
-        result = agcCmdTransitionResources(
-            command->native_graphics_command_buffer, 1u, &transition);
-    }
-    if (result != AGC_OK)
-        return native_command_result(result);
-    return native_transition_whole_image(command, image,
-        native_image_recorded_usage(command, image),
-        kAgcResourceUsageColorTarget);
-}
-
 static VkResult native_clear_buffer_pattern(
     VkPs5CommandBuffer *command, AgcBuffer buffer, uint64_t offset,
     uint64_t size, uint64_t buffer_size, const uint32_t pattern[4],
@@ -6796,6 +6912,10 @@ vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
             if (native_result == AGC_OK)
                 command->native_bound_graphics =
                     pipeline->native_graphics_pipeline;
+            if (native_result == AGC_OK) {
+                command->native_attachments_render_pass = NULL;
+                command->native_attachments_framebuffer = NULL;
+            }
             if (native_result == AGC_OK && pipeline->line_width_dynamic &&
                 command->dynamic_line_width_set)
                 native_result = agcCmdSetLineWidth(
@@ -8371,11 +8491,237 @@ vkCmdClearDepthStencilImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
     command->record_error = native_clear_depth_stencil_image(command,
         (VkPs5Image *)i, l, v, n, r);
 }
+
+static VkPs5ImageView *native_clear_attachment_view(
+    const VkPs5CommandBuffer *command, const VkClearAttachment *attachment,
+    VkImageAspectFlags *aspects_out)
+{
+    if (!command || !command->active_render_pass ||
+        !command->active_framebuffer || !attachment || !aspects_out)
+        return NULL;
+    const VkPs5RenderPass *render_pass = command->active_render_pass;
+    const VkPs5Framebuffer *framebuffer = command->active_framebuffer;
+    const uint32_t subpass = command->active_subpass;
+    uint32_t attachment_index = VK_ATTACHMENT_UNUSED;
+    if (attachment->aspectMask == VK_IMAGE_ASPECT_COLOR_BIT) {
+        if (attachment->colorAttachment >=
+                render_pass->subpasses[subpass].color_attachment_count)
+            return NULL;
+        attachment_index = render_pass->subpasses[subpass].color_attachments[
+            attachment->colorAttachment];
+    } else {
+        const VkImageAspectFlags depth_stencil =
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        if (!attachment->aspectMask ||
+            (attachment->aspectMask & ~depth_stencil) != 0u)
+            return NULL;
+        attachment_index = render_pass->subpasses[subpass].
+            depth_stencil_attachment;
+    }
+    if (attachment_index == VK_ATTACHMENT_UNUSED ||
+        attachment_index >= framebuffer->attachment_count)
+        return NULL;
+    VkPs5ImageView *view = framebuffer->attachments[attachment_index];
+    VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+    if (!image || !image->native_image || image->samples != VK_SAMPLE_COUNT_1_BIT)
+        return NULL;
+    if ((attachment->aspectMask == VK_IMAGE_ASPECT_COLOR_BIT) ==
+            image->is_depth_surface)
+        return NULL;
+    if (attachment->aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+        if (image->format == VK_FORMAT_S8_UINT)
+            return NULL;
+    }
+    if (attachment->aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) {
+        if (image->format != VK_FORMAT_S8_UINT &&
+            image->format != VK_FORMAT_D16_UNORM_S8_UINT &&
+            image->format != VK_FORMAT_D32_SFLOAT_S8_UINT)
+            return NULL;
+    }
+    *aspects_out = attachment->aspectMask;
+    return view;
+}
+
+static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
+    uint32_t attachment_count, const VkClearAttachment *attachments,
+    uint32_t rect_count, const VkClearRect *rects)
+{
+    if (!command || !command->active_render_pass ||
+        !command->active_framebuffer)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (!attachment_count || !rect_count)
+        return VK_SUCCESS;
+    if (!attachments || !rects)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (!native_require_complete_stream(command))
+        return command->record_error;
+    VkPs5Framebuffer *framebuffer = command->active_framebuffer;
+
+    /* Preflight all attachment, rectangle, and layer intervals. */
+    for (uint32_t attachment_index = 0u;
+         attachment_index < attachment_count; ++attachment_index) {
+        VkImageAspectFlags aspects;
+        VkPs5ImageView *view = native_clear_attachment_view(command,
+            &attachments[attachment_index], &aspects);
+        if (!view)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkPs5Image *image = (VkPs5Image *)view->image;
+        AgcResourceUsage usage = native_image_recorded_usage(command, image);
+        if ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) &&
+            !(attachments[attachment_index].clearValue.depthStencil.depth >=
+                0.0f &&
+              attachments[attachment_index].clearValue.depthStencil.depth <=
+                1.0f))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        if ((aspects == VK_IMAGE_ASPECT_COLOR_BIT &&
+             usage != kAgcResourceUsageColorTarget) ||
+            (aspects != VK_IMAGE_ASPECT_COLOR_BIT &&
+             usage != kAgcResourceUsageDepthStencilWrite))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkResult result = vk_ps5_device_meta_attachment_pipeline(
+            command->device, image->format, aspects, &pipeline);
+        if (result != VK_SUCCESS || !pipeline)
+            return result == VK_SUCCESS ?
+                VK_ERROR_INITIALIZATION_FAILED : result;
+        for (uint32_t rect_index = 0u; rect_index < rect_count; ++rect_index) {
+            const VkClearRect *rect = &rects[rect_index];
+            if (rect->rect.offset.x < 0 || rect->rect.offset.y < 0 ||
+                !rect->rect.extent.width || !rect->rect.extent.height ||
+                (uint32_t)rect->rect.offset.x > framebuffer->width ||
+                rect->rect.extent.width > framebuffer->width -
+                    (uint32_t)rect->rect.offset.x ||
+                (uint32_t)rect->rect.offset.y > framebuffer->height ||
+                rect->rect.extent.height > framebuffer->height -
+                    (uint32_t)rect->rect.offset.y ||
+                !rect->layerCount ||
+                rect->baseArrayLayer >= framebuffer->layers ||
+                rect->layerCount > framebuffer->layers -
+                    rect->baseArrayLayer ||
+                rect->baseArrayLayer >= view->layer_count ||
+                rect->layerCount > view->layer_count - rect->baseArrayLayer)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+    }
+
+    for (uint32_t attachment_index = 0u;
+         attachment_index < attachment_count; ++attachment_index) {
+        const VkClearAttachment *attachment = &attachments[attachment_index];
+        VkImageAspectFlags aspects;
+        VkPs5ImageView *view = native_clear_attachment_view(command,
+            attachment, &aspects);
+        VkPs5Image *image = (VkPs5Image *)view->image;
+        VkPipeline pipeline_handle = VK_NULL_HANDLE;
+        VkResult result = vk_ps5_device_meta_attachment_pipeline(
+            command->device, image->format, aspects, &pipeline_handle);
+        if (result != VK_SUCCESS)
+            return result;
+        VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+        int32_t native_result = agcCmdBindGraphicsPipeline(
+            command->native_graphics_command_buffer,
+            pipeline->native_graphics_pipeline);
+        if (native_result != AGC_OK)
+            return native_command_result(native_result);
+        command->native_bound_graphics = pipeline->native_graphics_pipeline;
+        command->native_descriptor_graphics_pipeline = NULL;
+        command->native_vertex_graphics_pipeline = NULL;
+        command->native_attachments_render_pass = NULL;
+        command->native_attachments_framebuffer = NULL;
+        if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+            native_result = agcCmdPushConstants(
+                command->native_graphics_command_buffer,
+                1u << kAgcShaderStagePs, 0u,
+                sizeof(attachment->clearValue.color.float32),
+                attachment->clearValue.color.float32);
+        } else if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
+            native_result = agcCmdPushConstants(
+                command->native_graphics_command_buffer,
+                1u << kAgcShaderStagePs, 0u, sizeof(float),
+                &attachment->clearValue.depthStencil.depth);
+        }
+        if (native_result == AGC_OK &&
+            (aspects & VK_IMAGE_ASPECT_STENCIL_BIT))
+            native_result = agcCmdSetStencilReference(
+                command->native_graphics_command_buffer,
+                attachment->clearValue.depthStencil.stencil & UINT8_MAX,
+                attachment->clearValue.depthStencil.stencil & UINT8_MAX);
+        if (native_result != AGC_OK)
+            return native_command_result(native_result);
+
+        for (uint32_t rect_index = 0u; rect_index < rect_count; ++rect_index) {
+            const VkClearRect *rect = &rects[rect_index];
+            AgcViewport viewport = AGC_VIEWPORT_INIT;
+            viewport.width = (float)framebuffer->width;
+            viewport.height = (float)framebuffer->height;
+            viewport.max_depth = 1.0f;
+            AgcScissor scissor = AGC_SCISSOR_INIT;
+            scissor.x = rect->rect.offset.x;
+            scissor.y = rect->rect.offset.y;
+            scissor.width = rect->rect.extent.width;
+            scissor.height = rect->rect.extent.height;
+            native_result = agcCmdSetViewportScissors(
+                command->native_graphics_command_buffer, 1u,
+                &viewport, &scissor);
+            for (uint32_t layer = 0u;
+                 native_result == AGC_OK && layer < rect->layerCount; ++layer) {
+                const uint32_t array_layer = view->base_array_layer +
+                    rect->baseArrayLayer + layer;
+                if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+                    AgcColorTargetBinding target =
+                        AGC_COLOR_TARGET_BINDING_INIT;
+                    target.image = image->native_image;
+                    target.array_layer = array_layer;
+                    native_result = agcCmdBindColorTargets(
+                        command->native_graphics_command_buffer, 1u, &target);
+                } else {
+                    AgcDepthStencilTargetBinding target =
+                        AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
+                    target.image = image->native_image;
+                    target.array_layer = array_layer;
+                    native_result = agcCmdBindColorTargets(
+                        command->native_graphics_command_buffer, 0u, NULL);
+                    if (native_result == AGC_OK)
+                        native_result = agcCmdBindDepthStencilTarget(
+                            command->native_graphics_command_buffer, &target);
+                }
+                if (native_result == AGC_OK)
+                    native_result = agcCmdDraw(
+                        command->native_graphics_command_buffer,
+                        3u, 1u, 0u, 0u);
+                if (native_result == AGC_OK)
+                    command->native_draw_count++;
+            }
+            if (native_result != AGC_OK)
+                return native_command_result(native_result);
+        }
+    }
+
+    command->native_bound_graphics = NULL;
+    command->native_attachments_render_pass = NULL;
+    command->native_attachments_framebuffer = NULL;
+    if (command->bound_graphics) {
+        vkCmdBindPipeline((VkCommandBuffer)command,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            (VkPipeline)command->bound_graphics);
+        if (command->record_error != VK_SUCCESS)
+            return command->record_error;
+    }
+    return VK_SUCCESS;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearAttachments(VkCommandBuffer c, uint32_t n, const VkClearAttachment *a,
                       uint32_t rn, const VkClearRect *r) {
-    IGNORE(n); IGNORE(a); IGNORE(rn); IGNORE(r);
-    reject_unsupported_command(c);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    command->record_error = native_clear_attachments(command, n, a, rn, r);
+    if (command->record_error != VK_SUCCESS)
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdClearAttachments failed result=%d "
+            "attachments=%u rects=%u\n",
+            command->record_error, n, rn);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
@@ -8394,9 +8740,11 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
         return;
     if (!info || info->sType != VK_STRUCTURE_TYPE_RENDERING_INFO ||
         info->pNext || info->flags || info->layerCount != 1u ||
-        info->viewMask || !info->colorAttachmentCount ||
+        info->viewMask ||
         info->colorAttachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
-        !info->pColorAttachments || command->active_render_pass ||
+        (info->colorAttachmentCount && !info->pColorAttachments) ||
+        (!info->colorAttachmentCount && !info->pDepthAttachment &&
+         !info->pStencilAttachment) || command->active_render_pass ||
         info->renderArea.offset.x < 0 || info->renderArea.offset.y < 0 ||
         !info->renderArea.extent.width || !info->renderArea.extent.height) {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
@@ -8488,13 +8836,19 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
                 depth->pNext || depth->resolveMode != VK_RESOLVE_MODE_NONE ||
                 depth->resolveImageView ||
                 (depth->loadOp != VK_ATTACHMENT_LOAD_OP_LOAD &&
-                 depth->loadOp != VK_ATTACHMENT_LOAD_OP_DONT_CARE))) ||
+                 depth->loadOp != VK_ATTACHMENT_LOAD_OP_CLEAR &&
+                 depth->loadOp != VK_ATTACHMENT_LOAD_OP_DONT_CARE) ||
+                (depth->storeOp != VK_ATTACHMENT_STORE_OP_STORE &&
+                 depth->storeOp != VK_ATTACHMENT_STORE_OP_DONT_CARE))) ||
             (stencil && (stencil->sType !=
                     VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO ||
                 stencil->pNext || stencil->resolveMode != VK_RESOLVE_MODE_NONE ||
                 stencil->resolveImageView ||
                 (stencil->loadOp != VK_ATTACHMENT_LOAD_OP_LOAD &&
-                 stencil->loadOp != VK_ATTACHMENT_LOAD_OP_DONT_CARE))) ||
+                 stencil->loadOp != VK_ATTACHMENT_LOAD_OP_CLEAR &&
+                 stencil->loadOp != VK_ATTACHMENT_LOAD_OP_DONT_CARE) ||
+                (stencil->storeOp != VK_ATTACHMENT_STORE_OP_STORE &&
+                 stencil->storeOp != VK_ATTACHMENT_STORE_OP_DONT_CARE))) ||
             !depth_surface_format(view->format, &depth_format) ||
             !layout_resource_usage(attachment->imageLayout, &usage) ||
             (samples && samples != image->samples)) {
@@ -8517,6 +8871,14 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
         render_pass->subpasses[0].depth_stencil_layout =
             attachment->imageLayout;
         framebuffer->attachments[attachment_count] = view;
+        clear_values[attachment_count].depthStencil.depth = depth ?
+            depth->clearValue.depthStencil.depth : 0.0f;
+        clear_values[attachment_count].depthStencil.stencil = stencil ?
+            stencil->clearValue.depthStencil.stencil : 0u;
+        if (!framebuffer->width) {
+            framebuffer->width = image->extent.width;
+            framebuffer->height = image->extent.height;
+        }
         ++attachment_count;
     }
     render_pass->attachment_count = attachment_count;
@@ -8554,7 +8916,7 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     VkPs5Framebuffer *framebuffer = (VkPs5Framebuffer *)b->framebuffer;
     uint32_t color_count = render_pass->subpasses[0].color_attachment_count;
     if (framebuffer->render_pass != render_pass || !render_pass->subpass_count ||
-        !color_count || color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
+        color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
         b->renderArea.offset.x < 0 || b->renderArea.offset.y < 0 ||
         !b->renderArea.extent.width || !b->renderArea.extent.height ||
         (uint32_t)b->renderArea.offset.x > framebuffer->width ||
@@ -8566,6 +8928,9 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
+    VkClearAttachment clears[AGC_GFX1013_MAX_COLOR_TARGETS + 1u];
+    uint32_t clear_count = 0u;
+    VkBool32 clear_attachment_seen[VK_PS5_MAX_RENDER_ATTACHMENTS] = {VK_FALSE};
     for (uint32_t slot = 0u; slot < color_count; ++slot) {
         uint32_t attachment_index =
             render_pass->subpasses[0].color_attachments[slot];
@@ -8588,18 +8953,22 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         }
         AgcResourceUsage before = native_image_recorded_usage(command, image);
         (void)declared_before;
-        VkResult native_result;
         if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
             if (!b->pClearValues || attachment_index >= b->clearValueCount) {
                 command->record_error = VK_ERROR_INITIALIZATION_FAILED;
                 return;
             }
-            native_result = native_clear_color_attachment(command, view,
-                &b->renderArea, &b->pClearValues[attachment_index].color);
-        } else {
-            native_result = native_transition_whole_image(
-                command, image, before, kAgcResourceUsageColorTarget);
+            if (!clear_attachment_seen[attachment_index]) {
+                clears[clear_count++] = (VkClearAttachment){
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .colorAttachment = slot,
+                    .clearValue = b->pClearValues[attachment_index],
+                };
+                clear_attachment_seen[attachment_index] = VK_TRUE;
+            }
         }
+        VkResult native_result = native_transition_whole_image(
+            command, image, before, kAgcResourceUsageColorTarget);
         if (native_result != VK_SUCCESS) {
             command->record_error = native_result;
             return;
@@ -8622,14 +8991,23 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
             kAgcResourceUsageDepthStencilRead :
             kAgcResourceUsageDepthStencilWrite;
-        if (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-            attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ||
-            !image || !image->native_image || !image->is_depth_surface ||
+        const VkImageAspectFlags clear_aspects =
+            (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ?
+                VK_IMAGE_ASPECT_DEPTH_BIT : 0u) |
+            (attachment->stencilLoadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ?
+                VK_IMAGE_ASPECT_STENCIL_BIT : 0u);
+        if (!image || !image->native_image || !image->is_depth_surface ||
             !(image->usage &
               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
             !native_usage_from_layout(
                 attachment->initialLayout, &declared_before)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        if (clear_aspects &&
+            (!b->pClearValues || depth_index >= b->clearValueCount ||
+             after != kAgcResourceUsageDepthStencilWrite)) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
         AgcResourceUsage before = native_image_recorded_usage(command, image);
@@ -8640,10 +9018,30 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             command->record_error = native_result;
             return;
         }
+        if (clear_aspects) {
+            clears[clear_count++] = (VkClearAttachment){
+                .aspectMask = clear_aspects,
+                .clearValue = b->pClearValues[depth_index],
+            };
+        }
     }
     command->active_render_pass = render_pass;
     command->active_framebuffer = framebuffer;
     command->active_subpass = 0u;
+    if (clear_count) {
+        const VkClearRect clear_rect = {
+            .rect = b->renderArea,
+            .baseArrayLayer = 0u,
+            .layerCount = framebuffer->layers,
+        };
+        VkResult clear_result = native_clear_attachments(command,
+            clear_count, clears, 1u, &clear_rect);
+        if (clear_result != VK_SUCCESS) {
+            command->active_render_pass = NULL;
+            command->active_framebuffer = NULL;
+            command->record_error = clear_result;
+        }
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdNextSubpass(VkCommandBuffer c, VkSubpassContents s) {

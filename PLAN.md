@@ -752,13 +752,18 @@ ordering.
   layouts and the same reproducible meta-compute pipeline. A 70-layer combined
   image batches to one dispatch per selected plane/mip; 48/48 normal and
   sanitizer suites plus the Prospero static/shared build pass. D24 and 4x
-  depth/stencil remain fail-closed, and hardware pixels are pending. The next
-  command forms are graphics-meta attachment clears, blits, and resolves.
+  depth/stencil remain fail-closed, and hardware pixels are pending.
+- Graphics-meta attachment clearing is host-complete. `vkCmdClearAttachments`
+  and render-pass/dynamic-rendering load clears cover partial rectangles,
+  advertised color formats, separate/combined depth and stencil aspects, and
+  depth-only dynamic rendering through public OpenAGC pipelines and commands.
+  Normal and sanitizer suites pass 48/48; FW 5.50 exact color pixels pass twice
+  with immediate relaunch. Depth/stencil pixels and identical-byte FW 11.60
+  replay remain before full qualification. Blit is the next command form.
 - The graphics-pipeline translator now accepts valid depth-only dynamic
   rendering with zero color formats and zero blend attachments. A D32 pipeline
   exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;
-  this prerequisite is complete before the graphics-meta attachment-clear
-  cache is added.
+  this prerequisite is consumed by the graphics-meta attachment-clear cache.
 - The first general format expansion exposes all 14 BC1-BC7 Vulkan formats for
   sampled/filter/transfer use through native OpenAGC layouts and descriptors.
   Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete

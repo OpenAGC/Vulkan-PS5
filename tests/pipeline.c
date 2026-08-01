@@ -78,6 +78,42 @@ int main(int argc, char **argv) {
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
 
+    VkPipeline meta_color = VK_NULL_HANDLE;
+    VkPipeline meta_color_again = VK_NULL_HANDLE;
+    VkPipeline meta_depth = VK_NULL_HANDLE;
+    VkPipeline meta_stencil = VK_NULL_HANDLE;
+    VkPipeline meta_depth_stencil = VK_NULL_HANDLE;
+    VkPipeline meta_combined_depth = VK_NULL_HANDLE;
+    VkPipeline meta_combined_stencil = VK_NULL_HANDLE;
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT,
+        &meta_color) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT,
+        &meta_color_again) == VK_SUCCESS && meta_color_again == meta_color);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT,
+        &meta_depth) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_S8_UINT, VK_IMAGE_ASPECT_STENCIL_BIT,
+        &meta_stencil) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+        &meta_depth_stencil) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_DEPTH_BIT,
+        &meta_combined_depth) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_attachment_pipeline(device,
+        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_ASPECT_STENCIL_BIT,
+        &meta_combined_stencil) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_color));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_depth));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_stencil));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_depth_stencil));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_combined_depth));
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_combined_stencil));
+
     VkShaderModule vertex = shader_module(device, argv[1]);
     VkShaderModule fragment = shader_module(device, argv[2]);
     VkShaderModule compute = shader_module(device, argv[3]);

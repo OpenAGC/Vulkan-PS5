@@ -190,9 +190,10 @@ quick win.
 **Outcome:** `vkCmdCopyImage`, `vkCmdCopyBufferToImage`, and
 `vkCmdCopyImageToBuffer` now use OpenAGC API 41 layout-derived region records.
 The command-recording gate covers partial color copies and a strided
-buffer→image→buffer chain. `vkCmdClearColorImage`, `vkCmdBlitImage`,
-`vkCmdClearDepthStencilImage`, `vkCmdClearAttachments`, and
-`vkCmdResolveImage` fail closed. The detailed bullets below are retained as
+buffer→image→buffer chain. `vkCmdClearColorImage`,
+`vkCmdClearDepthStencilImage`, and `vkCmdClearAttachments` now use public
+OpenAGC meta paths; `vkCmdBlitImage` and `vkCmdResolveImage` fail closed. The
+detailed bullets below are retained as
 the pre-implementation rationale and hazard checklist; their silent-stub and
 missing-copy-contract statements are resolved historical context.
 

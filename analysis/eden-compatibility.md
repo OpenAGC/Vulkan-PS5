@@ -391,6 +391,15 @@ the Prospero libraries build clean. D24 stays unadvertised; multisampled and
 partial attachment clears remain fail-closed pending their general Vulkan
 implementations, and exact hardware pixels for this slice remain unqualified.
 
+Attachment clears are now application-neutral Vulkan operations, not an Eden
+override. `vkCmdClearAttachments` and both render-pass and dynamic-rendering
+load clears use reproducible graphics-meta shaders and lazily cached native
+pipelines for partial color, depth, stencil, and combined depth/stencil
+rectangles. Normal and sanitizer suites pass 48/48; the FW 5.50 color/load-
+clear oracle passed twice with exact `green=1152 clear=2944`, teardown, and
+immediate relaunch. Depth/stencil hardware pixels and FW 11.60 replay remain
+pending, so this is not yet a cross-firmware qualification claim.
+
 Depth-only dynamic-rendering pipelines no longer require a fictitious color
 attachment. A zero-color `VkPipelineRenderingCreateInfo` and zero-attachment
 color-blend state now compile a depth-exporting fragment shader into a native
@@ -441,8 +450,10 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    gates on both firmware endpoints. Keep D24 fail-closed until a correct
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
-4. Complete the remaining native command forms in dependency order: partial
-   attachment clears, unscaled/scaled blits, then 4x resolves. General
+4. Complete the remaining native command forms in dependency order:
+   unscaled/scaled blits, then 4x resolves. Partial attachment clears are
+   implemented; their color/load-clear path is FW 5.50-qualified, while
+   depth/stencil and FW 11.60 pixel gates remain. General
    uncompressed color and single-sample depth/stencil image clears are
    host-complete and await their hardware pixel oracles.
 5. Add only the allowed Eden changes: Prospero surface creation, build/link

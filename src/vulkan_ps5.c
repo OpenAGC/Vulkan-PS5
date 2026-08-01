@@ -48,6 +48,15 @@ struct VkPs5Queue {
     AgcFence present_ready_fence;
 };
 
+#define VK_PS5_META_ATTACHMENT_PIPELINE_COUNT 32u
+
+typedef struct VkPs5MetaAttachmentPipeline {
+    VkFormat format;
+    VkImageAspectFlags aspects;
+    VkPipelineLayout layout;
+    VkPipeline pipeline;
+} VkPs5MetaAttachmentPipeline;
+
 struct VkPs5Device {
     VK_LOADER_DATA loader_data;
     VkAllocationCallbacks allocator;
@@ -62,6 +71,10 @@ struct VkPs5Device {
     VkBool32 depth_clip_enable;
     VkPipelineLayout meta_clear_layout;
     VkPipeline meta_clear_pipeline;
+    atomic_flag meta_attachment_lock;
+    uint32_t meta_attachment_count;
+    VkPs5MetaAttachmentPipeline meta_attachments[
+        VK_PS5_META_ATTACHMENT_PIPELINE_COUNT];
     atomic_uint memory_allocation_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
@@ -231,6 +244,45 @@ VkBool32 vk_ps5_device_depth_clip_enable(VkDevice device_handle) {
 VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device_handle) {
     const VkPs5Device *device = (const VkPs5Device *)device_handle;
     return device ? device->meta_clear_pipeline : VK_NULL_HANDLE;
+}
+
+VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device_handle,
+    VkFormat format, VkImageAspectFlags aspects, VkPipeline *pipeline_out)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !pipeline_out)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *pipeline_out = VK_NULL_HANDLE;
+    while (atomic_flag_test_and_set_explicit(&device->meta_attachment_lock,
+            memory_order_acquire)) {}
+    for (uint32_t index = 0u; index < device->meta_attachment_count; ++index) {
+        VkPs5MetaAttachmentPipeline *entry = &device->meta_attachments[index];
+        if (entry->format == format && entry->aspects == aspects) {
+            *pipeline_out = entry->pipeline;
+            atomic_flag_clear_explicit(&device->meta_attachment_lock,
+                memory_order_release);
+            return VK_SUCCESS;
+        }
+    }
+    if (device->meta_attachment_count >=
+            VK_PS5_META_ATTACHMENT_PIPELINE_COUNT) {
+        atomic_flag_clear_explicit(&device->meta_attachment_lock,
+            memory_order_release);
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    VkPs5MetaAttachmentPipeline *entry =
+        &device->meta_attachments[device->meta_attachment_count];
+    VkResult result = vk_ps5_initialize_meta_attachment_clear(device_handle,
+        format, aspects, &entry->layout, &entry->pipeline);
+    if (result == VK_SUCCESS) {
+        entry->format = format;
+        entry->aspects = aspects;
+        *pipeline_out = entry->pipeline;
+        device->meta_attachment_count++;
+    }
+    atomic_flag_clear_explicit(&device->meta_attachment_lock,
+        memory_order_release);
+    return result;
 }
 
 void *vk_ps5_instance_alloc(VkInstance instance_handle,
@@ -1751,6 +1803,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
     atomic_flag_clear(&device->deferred_native_lock);
+    atomic_flag_clear(&device->meta_attachment_lock);
     atomic_flag_clear(&device->queue.submit_lock);
     AgcDeviceDesc native_device_desc = AGC_DEVICE_DESC_INIT;
     AgcQueueDesc native_queue_desc = AGC_QUEUE_DESC_INIT;
@@ -1818,6 +1871,12 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
     vk_ps5_collect_deferred_native(device_handle);
+    for (uint32_t index = 0u; index < device->meta_attachment_count; ++index) {
+        vkDestroyPipeline(device_handle,
+            device->meta_attachments[index].pipeline, NULL);
+        vkDestroyPipelineLayout(device_handle,
+            device->meta_attachments[index].layout, NULL);
+    }
     vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
     vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
     vk_ps5_collect_deferred_native(device_handle);

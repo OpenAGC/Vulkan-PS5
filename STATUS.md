@@ -227,10 +227,26 @@ then validates subresource layouts, BC block rules, footprints, retention, and
 command capacity. The command-recording gate covers a partial image copy and
 a strided buffer→image→buffer chain. This paragraph records the original
 transfer migration baseline; color and depth/stencil image clears have since
-moved to native meta-compute paths, while blit, attachment clear, and resolve
-still fail closed instead of silently succeeding. The
+moved to native meta-compute paths, and attachment clears now use a
+graphics-meta path, while blit and resolve still fail closed instead of
+silently succeeding. The
 direct-call audit remains 34 because these `agcCmd*` calls replace no audited
 low-level symbol.
+
+Attachment clearing is now general Vulkan behavior rather than an Eden
+special case. `vkCmdClearAttachments`, render-pass `loadOp=CLEAR`, and dynamic
+rendering load clears share lazily cached format/aspect graphics pipelines,
+accept partial render rectangles, cover advertised color plus single-sample
+D16/D32/S8/combined depth-stencil formats, and restore application state before
+subsequent draws. Normal and ASAN/UBSAN suites pass 48/48 and the Prospero
+static/shared builds are clean. The guarded FW 5.500.008 candidate passed twice
+with exact `green=1152 clear=2944 center=ff00ff00`, clean self-exit, and
+immediate relaunch. Its ELF SHA-256 is
+`973caa5748468edfc81b2e3d6860eb741c9da52b606a69d0df1fc1c469f13e0e`;
+evidence is in the `20260801T091354Z` and
+`20260801T091405Z` dynamic-rendering logs. This qualifies color load clears on
+FW 5.50. Depth/stencil pixels and identical-byte FW 11.60 replay remain
+unqualified.
 
 The shader-execution migration removes eight more audited symbols. Vulkan no
 longer allocates, relocates, flushes, frees, or fuses shader binaries itself;
