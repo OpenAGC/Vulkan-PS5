@@ -53,6 +53,26 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_R16_SFLOAT, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0x38003800u);
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16_UNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x80008000u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16_UNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xffff8000u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16B16A16_UNORM, &clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0xffff8000u &&
+        pattern[1] == 0xffff0000u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16_SNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x40004000u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16_SNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x7fff4000u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16B16A16_SNORM, &clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0x7fff4000u &&
+        pattern[1] == 0x7fff8000u);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_SFLOAT, &clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0x3c003800u &&
         pattern[1] == 0x4000bc00u);
@@ -71,6 +91,19 @@ static void test_clear_pattern_packing(void)
     assert(words == 2u && pattern[0] == 0xabcd1234u &&
         pattern[1] == 0x9abc5678u);
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16_UINT, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x12341234u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16_UINT, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xabcd1234u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32_UINT, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x1234u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32G32_UINT, &uint_clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0x1234u &&
+        pattern[1] == 0xabcdu);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R32G32B32A32_UINT, &uint_clear, pattern, &words));
     assert(words == 4u && memcmp(pattern, uint_clear.uint32,
         sizeof(pattern)) == 0);
@@ -81,6 +114,19 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_R16G16B16A16_SINT, &sint_clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0xfffeffffu &&
         pattern[1] == 0x80001234u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16_SINT, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xffffffffu);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16_SINT, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xfffeffffu);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32_SINT, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xffffffffu);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32G32_SINT, &sint_clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0xffffffffu &&
+        pattern[1] == 0xfffffffeu);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R32G32B32A32_SINT, &sint_clear, pattern, &words));
     assert(words == 4u && memcmp(pattern, sint_clear.int32,
@@ -99,8 +145,22 @@ static void test_integer_color_image_views(void)
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = create_device(instance, &physical);
     const VkFormat formats[] = {
+        VK_FORMAT_R16_UNORM,
+        VK_FORMAT_R16_SNORM,
+        VK_FORMAT_R16_UINT,
+        VK_FORMAT_R16_SINT,
+        VK_FORMAT_R16G16_UNORM,
+        VK_FORMAT_R16G16_SNORM,
+        VK_FORMAT_R16G16_UINT,
+        VK_FORMAT_R16G16_SINT,
+        VK_FORMAT_R16G16B16A16_UNORM,
+        VK_FORMAT_R16G16B16A16_SNORM,
         VK_FORMAT_R16G16B16A16_UINT,
         VK_FORMAT_R16G16B16A16_SINT,
+        VK_FORMAT_R32_UINT,
+        VK_FORMAT_R32_SINT,
+        VK_FORMAT_R32G32_UINT,
+        VK_FORMAT_R32G32_SINT,
         VK_FORMAT_R32G32B32A32_UINT,
         VK_FORMAT_R32G32B32A32_SINT,
     };

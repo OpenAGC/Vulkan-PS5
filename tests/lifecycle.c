@@ -473,8 +473,16 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
         &image_format_properties) == VK_SUCCESS);
     const VkFormat integer_color_formats[] = {
+        VK_FORMAT_R16_UINT,
+        VK_FORMAT_R16_SINT,
+        VK_FORMAT_R16G16_UINT,
+        VK_FORMAT_R16G16_SINT,
         VK_FORMAT_R16G16B16A16_UINT,
         VK_FORMAT_R16G16B16A16_SINT,
+        VK_FORMAT_R32_UINT,
+        VK_FORMAT_R32_SINT,
+        VK_FORMAT_R32G32_UINT,
+        VK_FORMAT_R32G32_SINT,
         VK_FORMAT_R32G32B32A32_UINT,
         VK_FORMAT_R32G32B32A32_SINT,
     };
@@ -496,6 +504,42 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         assert(format_properties.bufferFeatures == 0u);
         assert(vkGetPhysicalDeviceImageFormatProperties(physical,
             integer_color_formats[i], VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            0u, &image_format_properties) == VK_SUCCESS);
+    }
+    const VkFormat normalized_storage_formats[] = {
+        VK_FORMAT_R16_UNORM,
+        VK_FORMAT_R16_SNORM,
+        VK_FORMAT_R16G16_UNORM,
+        VK_FORMAT_R16G16_SNORM,
+        VK_FORMAT_R16G16B16A16_UNORM,
+        VK_FORMAT_R16G16B16A16_SNORM,
+    };
+    const VkFormatFeatureFlags normalized_storage_features =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+        VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+        VK_FORMAT_FEATURE_BLIT_DST_BIT |
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    for (size_t i = 0u;
+         i < sizeof(normalized_storage_formats) /
+             sizeof(normalized_storage_formats[0]); ++i) {
+        vkGetPhysicalDeviceFormatProperties(physical,
+            normalized_storage_formats[i], &format_properties);
+        assert(format_properties.linearTilingFeatures ==
+            normalized_storage_features);
+        assert(format_properties.optimalTilingFeatures ==
+            normalized_storage_features);
+        assert(format_properties.bufferFeatures == 0u);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            normalized_storage_formats[i], VK_IMAGE_TYPE_2D,
             VK_IMAGE_TILING_OPTIMAL,
             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT |

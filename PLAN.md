@@ -790,8 +790,11 @@ ordering.
   format slice expands Eden-required uncompressed formats without introducing
   application-specific aliases. The first RGBA16/32 signed/unsigned integer
   slice now passes exact clear/readback twice on FW 5.50 with bounded waits and
-  immediate relaunch; shader sampling/storage, integer attachment exports, and
-  the final identical FW 11.60 replay remain before endpoint qualification.
+  immediate relaunch. The following API 48 slice adds fourteen R/RG
+  scalar/vector normalized and integer forms and is host/Prospero complete;
+  qualify its clear, shader sampling/storage, and attachment exports next.
+  Integer shader execution and the final identical FW 11.60 replay remain
+  before endpoint qualification.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined
   VS/TCS/TES/GS pipeline. The fused primitive recorder now permits and
   preserves its vertex resource table before descriptor-set tables. Both

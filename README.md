@@ -106,6 +106,14 @@ immediately relaunches the identical ELF. Run it with
 examples/run_fw550_integer_formats.sh`. Shader sampling/storage and integer
 attachment exports remain separate hardware gates.
 
+OpenAGC API 48 adds the related R/RG 16-bit normalized and integer, RGBA16
+normalized, and R/RG 32-bit integer image forms. Their Vulkan queries preserve
+the numeric-class distinction—normalized images may filter and blit while
+integer images may not—and do not advertise unimplemented texel buffers. The
+host and Prospero gates cover exact native descriptors, scalar/vector render
+exports, image/view creation, and clear packing; hardware execution is the
+next qualification gate.
+
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary
 validated rectangles for every advertised color attachment format and the

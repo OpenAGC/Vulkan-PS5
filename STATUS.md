@@ -368,10 +368,10 @@ below are the implementation and qualification ledger.
 
 The Eden `612409c7ba` format audit is now revision-frozen rather than
 approximate: 112 guest rows map to 109 unique Vulkan formats. The committed
-inventory classifies 36 direct formats after adding
-`R16G16B16A16_{UINT,SINT}` and `R32G32B32A32_{UINT,SINT}`, 33 remaining
+inventory classifies 50 direct formats after adding the first RGBA16/32
+integer group and the API 48 R/RG scalar/vector group, with 19 remaining
 uncompressed gaps, 28 ASTC plus 10 ETC2/EAC transcode-required forms, and two
-fail-closed D24 forms. The four new integer formats expose sampled, storage,
+fail-closed D24 forms. The four RGBA integer formats expose sampled, storage,
 color-attachment, and transfer use without unsupported filtering, blit, or
 texel-buffer claims. Exact format queries, image/view creation, signed and
 unsigned clear packing, the frozen capability snapshot, both 50/50 host
@@ -384,6 +384,17 @@ and only the accepted raw-ELF `0x4000` warning. The identical probe ELF is
 evidence is recorded in `analysis/fw550_integer_formats_20260801.md`. Shader
 sampling/storage and integer attachment exports remain separate hardware
 gates, as does the final FW 11.60 replay.
+
+The next fourteen Eden formats are host/Prospero qualified through OpenAGC
+API 48: R/RG 16-bit UNORM, SNORM, UINT, and SINT; RGBA16 UNORM and SNORM; and
+R/RG 32-bit UINT and SINT. Vulkan exposes sampled, storage, attachment,
+transfer, filtering, and blit bits only where the numeric class permits them,
+keeps all fourteen texel-buffer claims false, creates optimal images and
+native views, and packs exact normalized/integer clears. OpenAGC validates
+R32/RG32 against their real `32_R`/`32_GR` exports instead of an invalid ABGR
+assumption. The frozen capability snapshot, both 51/51 normal and sanitizer
+suites, and the complete Prospero build pass. Hardware shader/attachment and
+clear pixels for this group remain pending.
 
 ## SDL/Zink capability slice (2026-07-31)
 
