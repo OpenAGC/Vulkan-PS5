@@ -244,8 +244,12 @@ with exact `green=1152 clear=2944 center=ff00ff00`, clean self-exit, and
 immediate relaunch. Its ELF SHA-256 is
 `973caa5748468edfc81b2e3d6860eb741c9da52b606a69d0df1fc1c469f13e0e`;
 evidence is in the `20260801T091354Z` and
-`20260801T091405Z` dynamic-rendering logs. This qualifies color load clears on
-FW 5.50. Depth/stencil pixels and identical-byte FW 11.60 replay remain
+`20260801T091405Z` dynamic-rendering logs. The exact same ELF then passed twice
+on FW 11.600.005 with identical pixels, teardown, and immediate relaunch; its
+FTP round-trip SHA-256 remained identical. Evidence is in the
+`20260801T091924Z` and `20260801T092002Z` logs and
+`analysis/fw550_fw1160_attachment_clear_20260801.md`. This cross-firmware
+qualifies color attachment/load clears. Depth/stencil attachment pixels remain
 unqualified.
 
 The shader-execution migration removes eight more audited symbols. Vulkan no

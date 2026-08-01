@@ -104,9 +104,10 @@ advertised single-sample D16, D32, S8, D16+S8, and D32+S8 depth/stencil
 formats, including separate or combined depth/stencil aspects and depth-only
 dynamic rendering. Pipelines are cached lazily by format/aspect, use only
 public OpenAGC objects and commands, and restore application state before later
-draws. FW 5.500.008 twice produced the exact 64x64 dynamic-rendering oracle
-`green=1152 clear=2944` with clean teardown and immediate relaunch.
-Depth/stencil pixels and FW 11.60 replay remain separate qualification gates.
+draws. The identical pinned ELF twice produced the exact 64x64
+dynamic-rendering oracle `green=1152 clear=2944` on both FW 5.500.008 and FW
+11.600.005, with clean teardown and immediate relaunch. Depth/stencil pixels
+remain a separate qualification gate.
 
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping

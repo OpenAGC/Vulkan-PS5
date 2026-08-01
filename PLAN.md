@@ -757,9 +757,10 @@ ordering.
   and render-pass/dynamic-rendering load clears cover partial rectangles,
   advertised color formats, separate/combined depth and stencil aspects, and
   depth-only dynamic rendering through public OpenAGC pipelines and commands.
-  Normal and sanitizer suites pass 48/48; FW 5.50 exact color pixels pass twice
-  with immediate relaunch. Depth/stencil pixels and identical-byte FW 11.60
-  replay remain before full qualification. Blit is the next command form.
+  Normal and sanitizer suites pass 48/48; one pinned ELF produced identical
+  exact color pixels twice on both FW 5.50 and FW 11.60 with teardown and
+  immediate relaunch. Depth/stencil pixels remain before full qualification.
+  Blit is the next command form.
 - The graphics-pipeline translator now accepts valid depth-only dynamic
   rendering with zero color formats and zero blend attachments. A D32 pipeline
   exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;

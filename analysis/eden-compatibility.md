@@ -397,8 +397,9 @@ load clears use reproducible graphics-meta shaders and lazily cached native
 pipelines for partial color, depth, stencil, and combined depth/stencil
 rectangles. Normal and sanitizer suites pass 48/48; the FW 5.50 color/load-
 clear oracle passed twice with exact `green=1152 clear=2944`, teardown, and
-immediate relaunch. Depth/stencil hardware pixels and FW 11.60 replay remain
-pending, so this is not yet a cross-firmware qualification claim.
+immediate relaunch on both FW 5.500.008 and FW 11.600.005 using one pinned ELF.
+Depth/stencil hardware pixels remain pending, so cross-firmware qualification
+currently applies only to color attachment/load clears.
 
 Depth-only dynamic-rendering pipelines no longer require a fictitious color
 attachment. A zero-color `VkPipelineRenderingCreateInfo` and zero-attachment
@@ -452,8 +453,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    execution is implemented and qualified.
 4. Complete the remaining native command forms in dependency order:
    unscaled/scaled blits, then 4x resolves. Partial attachment clears are
-   implemented; their color/load-clear path is FW 5.50-qualified, while
-   depth/stencil and FW 11.60 pixel gates remain. General
+   implemented; their color/load-clear path is identically qualified on FW
+   5.50 and FW 11.60, while depth/stencil pixel gates remain. General
    uncompressed color and single-sample depth/stencil image clears are
    host-complete and await their hardware pixel oracles.
 5. Add only the allowed Eden changes: Prospero surface creation, build/link
