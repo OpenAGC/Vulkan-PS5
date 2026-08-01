@@ -518,6 +518,15 @@ Remote names and labels are restricted to alphanumerics, `_`, and `-`; empty
 or oversized PASS controls fail before cleanup or upload. The runner safety
 test covers both the default swapchain artifact and this external-app form.
 
+An application with a bounded external launch or mode contract can use this
+same gate without weakening the ELF pin. Set
+`VULKAN_PS5_QUALIFICATION_SIDECAR`, its leaf-only
+`VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME`, and
+`VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256`. The runner verifies the
+sidecar locally and after FTP upload before launching the ELF. A missing file,
+unsafe remote name, wrong hash, or only a partial sidecar tuple fails before
+console mutation.
+
 The runner never retries automatically and requires the process-cleanup ELF
 immediately before launch. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,

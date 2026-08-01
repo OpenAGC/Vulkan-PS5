@@ -6,7 +6,8 @@ runner="$repo_dir/examples/run_fw550_swapchain.sh"
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/vulkan-ps5-runner.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT
 
-mkdir -p "$test_root/bin" "$test_root/build" "$test_root/pyps4debug"
+mkdir -p "$test_root/bin" "$test_root/build" "$test_root/pyps4debug" \
+    "$test_root/remote"
 : >"$test_root/build/vulkan_ps5_swapchain_example.elf"
 : >"$test_root/build/vulkan_ps5_process_cleanup.elf"
 
@@ -14,14 +15,24 @@ cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
 output=
 take_output=0
+upload=
+take_upload=0
+last_arg=
 for arg do
+    last_arg=$arg
     if [ "$take_output" = 1 ]; then
         output=$arg
         take_output=0
         continue
     fi
+    if [ "$take_upload" = 1 ]; then
+        upload=$arg
+        take_upload=0
+        continue
+    fi
     case "$arg" in
         -o) take_output=1 ;;
+        -T) take_upload=1 ;;
         */hbldr*)
             printf '%s\n' \
                 'swapchain: 1800/1800 frames' \
@@ -31,7 +42,17 @@ for arg do
             ;;
     esac
 done
-[ -z "$output" ] || : >"$output"
+remote_file="$FAKE_CURL_REMOTE/$(basename "$last_arg")"
+if [ -n "$upload" ]; then
+    cp "$upload" "$remote_file"
+fi
+if [ -n "$output" ]; then
+    if [ -f "$remote_file" ]; then
+        cp "$remote_file" "$output"
+    else
+        : >"$output"
+    fi
+fi
 EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
@@ -87,6 +108,7 @@ run_runner() {
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
+    FAKE_CURL_REMOTE="$test_root/remote" \
     FAKE_KLOG_MODE="$mode" \
     VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256="${FAKE_EXPECTED_SHA256:-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}" \
     VULKAN_PS5_CLEANUP_EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
@@ -116,6 +138,43 @@ if ! (
 fi
 grep -F 'FW550 eden: PASS (600 frames and compute oracle, clean exit and klog)' \
     "$test_root/external.out" >/dev/null
+
+printf 'init\n' >"$test_root/build/eden.launch"
+sidecar_sha=$(shasum -a 256 "$test_root/build/eden.launch" | awk '{print $1}')
+if ! (
+    VULKAN_PS5_QUALIFICATION_SIDECAR="$test_root/build/eden.launch" \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME=eden.launch \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256="$sidecar_sha" \
+        run_runner clean "$test_root/sidecar.out" "$test_root/sidecar-logs"
+); then
+    cat "$test_root/sidecar.out" >&2
+    exit 1
+fi
+cmp "$test_root/build/eden.launch" "$test_root/remote/eden.launch"
+
+if (
+    VULKAN_PS5_QUALIFICATION_SIDECAR="$test_root/build/missing.launch" \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME=eden.launch \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256="$sidecar_sha" \
+        run_runner clean "$test_root/missing-sidecar.out" "$test_root/missing-sidecar-logs"
+); then
+    echo "missing qualification sidecar unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'missing qualification sidecar' "$test_root/missing-sidecar.out" >/dev/null
+
+if (
+    VULKAN_PS5_QUALIFICATION_SIDECAR="$test_root/build/eden.launch" \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME=eden.launch \
+        VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
+        run_runner clean "$test_root/wrong-sidecar-hash.out" \
+        "$test_root/wrong-sidecar-hash-logs"
+); then
+    echo "wrong qualification sidecar hash unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'qualification sidecar SHA-256 mismatch' \
+    "$test_root/wrong-sidecar-hash.out" >/dev/null
 
 if (
     VULKAN_PS5_QUALIFICATION_REMOTE_NAME='../unsafe' \

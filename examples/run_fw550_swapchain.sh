@@ -19,6 +19,9 @@ pass_pattern=${VULKAN_PS5_QUALIFICATION_PASS_PATTERN:-'^swapchain: PASS 1800 fra
 pass_description=${VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION:-'1800 frames'}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
+sidecar=${VULKAN_PS5_QUALIFICATION_SIDECAR:-}
+sidecar_remote_name=${VULKAN_PS5_QUALIFICATION_SIDECAR_REMOTE_NAME:-}
+expected_sidecar_sha256=${VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256:-}
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero sample: $elf" >&2
@@ -26,6 +29,21 @@ if [ ! -f "$elf" ]; then
 fi
 if [ ! -f "$cleanup_elf" ]; then
     echo "missing Prospero cleanup prerequisite: $cleanup_elf" >&2
+    exit 2
+fi
+if [ -n "$sidecar" ]; then
+    if [ ! -f "$sidecar" ]; then
+        echo "missing qualification sidecar: $sidecar" >&2
+        exit 2
+    fi
+    case "$sidecar_remote_name" in
+        ''|*[!A-Za-z0-9_.-]*)
+            echo "qualification sidecar remote name must use A-Z, a-z, 0-9, _, ., or -" >&2
+            exit 2
+            ;;
+    esac
+elif [ -n "$sidecar_remote_name" ] || [ -n "$expected_sidecar_sha256" ]; then
+    echo "qualification sidecar path is required with sidecar metadata" >&2
     exit 2
 fi
 case "$remote_name" in
@@ -104,6 +122,10 @@ verify_remote_sha256() {
 verify_local_sha256 "$elf" "$expected_sha256" 'swapchain ELF'
 verify_local_sha256 "$cleanup_elf" "$expected_cleanup_sha256" \
     'cleanup prerequisite'
+if [ -n "$sidecar" ]; then
+    verify_local_sha256 "$sidecar" "$expected_sidecar_sha256" \
+        'qualification sidecar'
+fi
 if ! curl -sS --connect-timeout 3 --max-time 5 \
     "http://${PS5_HOST}:8080/" >/dev/null; then
     echo "FW 5.50 websrv is unreachable at ${PS5_HOST}:8080" >&2
@@ -173,6 +195,13 @@ if ! {
     verify_remote_sha256 \
         "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf" \
         "$expected_sha256" 'swapchain ELF'
+    if [ -n "$sidecar" ]; then
+        curl -sS --connect-timeout 3 --max-time 30 -T "$sidecar" \
+            "ftp://${PS5_HOST}:2121${remote_dir}/${sidecar_remote_name}" >/dev/null
+        verify_remote_sha256 \
+            "ftp://${PS5_HOST}:2121${remote_dir}/${sidecar_remote_name}" \
+            "$expected_sidecar_sha256" 'qualification sidecar'
+    fi
     curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
         "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
 } >"$log" 2>&1; then
