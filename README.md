@@ -90,9 +90,9 @@ layout is compiled by a real storage-buffer pipeline, and `alphaToOne` is baked
 into the gfx1013 pixel epilog. `VK_EXT_depth_clip_enable` is also enumerated,
 feature-enabled, and translated to OpenAGC's explicit depth-clip state; its
 depth-sensitive probe passes twice with identical bytes and one gfx1013 clip
-sequence on both FW 5.50 and FW 11.60. The full FW 11.60 SDL/EGL/Zink gate is
-still investigating intermittent first-frame readback independently of depth
-clip state.
+sequence on both FW 5.50 and FW 11.60. The final SDL/EGL/Zink libraries also
+pass three consecutive FW 11.60 runs and two FW 5.50 replays with exact
+readback, presentation, teardown, and immediate relaunch.
 The live strict report is now
 `api=0 extensions=0 features=0 total=0`, with FW 5.500.008 readback evidence
 for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
@@ -107,8 +107,8 @@ aliased clear buffer performs an explicit copy-write release before image use,
 and Vulkan object destruction is deferred until OpenAGC command recycling
 releases native references. Two immediate guarded runs returned exact RGBA
 `64,128,191,255`, presented, completed native teardown, self-exited, and
-relaunched without reboot. The host suite now passes 47/47; FW 11.60 is
-deferred.
+relaunched without reboot. The identical final libraries subsequently passed
+three FW 11.60 runs and two FW 5.50 replays; the host suite remains 47/47.
 
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline

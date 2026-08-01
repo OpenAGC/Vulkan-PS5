@@ -517,9 +517,10 @@ the native-runtime migration.
   maintenance5, and Vulkan 1.2 are implemented. FW 5.500.008 readback qualifies
   the scalar, alpha, dynamic-rendering, and swizzled-border slices, and the
   strict Mesa GL 2.1 report is zero-gap. The pinned Mesa now also passes the
-  SDL native-window EGL/WSI bridge twice with exact readback, presentation,
-  complete native teardown, and immediate relaunch. Preserve those hashes and
-  defer the FW 11.60 replay until that endpoint is available.
+  SDL native-window EGL/WSI bridge with exact readback, presentation, complete
+  native teardown, and immediate relaunch. Mesa's Prospero package keeps the
+  EGL `$ORIGIN` RUNPATH and omits Gallium's redundant copy. Preserve the final
+  hashes replayed three times on FW 11.60 and twice on FW 5.50.
   `VK_EXT_depth_clip_enable` is closed on FW 5.500.008 and FW 11.600.005.
   Extension enumeration,
   feature query/enablement, rasterization-chain parsing, fail-closed
@@ -531,9 +532,8 @@ the native-runtime migration.
   Mesa/Zink runs pass exact pixels, visible presentation, teardown, immediate
   relaunch, and contain no depth-clip warning. Preserve the pinned ELF/library
   hashes. The identical firmware-neutral depth probe passes twice on each
-  endpoint. Continue the separate intermittent FW 11.60 SDL/EGL/Zink
-  first-frame investigation in WSI synchronization; do not reintroduce a
-  firmware-specific clip-control value.
+  endpoint. The same final Mesa/EGL/Zink library set passes both endpoints; do
+  not reintroduce a firmware-specific clip-control value.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset

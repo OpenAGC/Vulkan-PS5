@@ -45,8 +45,8 @@ feature-chain enablement, reserved-flag rejection, and the exact native flags.
 The cleanup-guarded depth probe passed twice on FW 5.500.008 and twice on FW
 11.600.005 with identical bytes, one firmware-neutral gfx1013 clip-control
 sequence, and exact coverage/depth/stencil output. The rebuilt Mesa/Zink
-integration then passed
-twice with exact RGBA `64,128,191,255`, visible presentation, complete
+integration then passed three consecutive FW 11.600.005 runs and two FW
+5.500.008 replays with exact RGBA `64,128,191,255`, visible presentation, complete
 teardown, immediate relaunch, and no `VK_EXT_depth_clip_enable` warning. The
 final depth-probe ELF and shared ICD hashes are recorded in `STATUS.md`.
 

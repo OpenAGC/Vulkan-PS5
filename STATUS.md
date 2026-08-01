@@ -372,16 +372,19 @@ returns to zero after pool reset.
 The diagnostic-free final candidate passes all 47 generic tests and all 47
 ASan/UBSan tests, including the strict zero-gap Zink profile and package
 relocation gate. The Prospero shared-ICD verifier reports `204` exports and
-only `RELATIVE`, `GLOB_DAT`, and `JUMP_SLOT` relocations. Two consecutive
-cleanup-guarded FW 5.500.008 depth-clip release-candidate runs at
-`20260801T043729Z` and `20260801T043745Z` returned renderer `zink Vulkan 1.2`,
-exact RGBA `64,128,191,255`, visible presentation, no native lifetime error,
-normal self-exit, and immediate relaunch without reboot. Final tested hashes:
+only `RELATIVE`, `GLOB_DAT`, and `JUMP_SLOT` relocations. Mesa commit `6dbc12f`
+keeps `$ORIGIN` on EGL but removes Gallium's redundant identical RUNPATH. The
+exact candidate then passed three consecutive FW 11.600.005 runs at
+`20260801T060248Z`, `20260801T060313Z`, and `20260801T060341Z`, followed by
+two FW 5.500.008 replays at `20260801T060410Z` and `20260801T060435Z`. Every
+run returned renderer `zink Vulkan 1.2`, exact RGBA `64,128,191,255`, visible
+presentation, no native lifetime error, raw-klog PID-attributed teardown, and
+immediate relaunch without reboot. Final tested hashes:
 
 - `testps5zink`: `95da10acf89da3e35865890874034b8bffef1c563417309a0e4bb98404540ad9`
-- `libvulkan_ps5.so`: `a0b52105b1ab1806553fa0777991e78f57545ba2d0d550cbf3b6d2f83bd341c7`
+- `libvulkan_ps5.so`: `eacc4cf3dd1c15983e9f78482d65b14250d073a161c0b02433087eaeb5b6d271`
 - `libEGL.so.1.0.0`: `0d2922b30b3dbbe25f060331043bb4a4732272d0813023568381306528913fc1`
-- `libgallium-26.3.0-devel.so`: `9da905ef314e3362631406b1d85e013071b7fc80661cb663c7c40920d23eef85`
+- `libgallium-26.3.0-devel.so`: `75f3c3fcd229387557d4649af9eee293ac485feeaea1904e48649370565b6b5f`
 
 The subsequent `VK_EXT_depth_clip_enable` closure is hardware-qualified on FW
 5.500.008. The ICD enumerates the extension, reports and accepts
@@ -397,15 +400,11 @@ FW 11.600.005 (`20260801T055428Z`, `20260801T055445Z`) and twice on FW
 SHA-256 is
 `eb3ce7775f5aefe5dd232b44b9e85b781da9a78270e268fba3e3d12a06341cc2`.
 The first Zink replay exposed a missing gfx10.3 `DX_LINEAR_ATTR_CLIP_ENA` bit
-in OpenAGC's explicit clip-control register. OpenAGC commit `1d42288` corrected
-the encoding; both final Zink logs contain no `VK_EXT_depth_clip_enable`
-warning and pass exact readback, presentation, teardown, and relaunch.
-
-This closes the FW 11.60 `VK_EXT_depth_clip_enable` hardware replay. The full
-SDL/EGL/Zink FW 11.60 qualification remains open because identical integration
-bytes have alternated between exact and zero first-frame readback; that is a
-separate WSI/first-frame synchronization investigation, not a clip-control or
-console-stability result.
+in OpenAGC's explicit clip-control register. OpenAGC commits `1d42288` and
+`34cbceb` corrected the named encoding and proved one firmware-neutral gfx1013
+value; the final Zink logs contain no `VK_EXT_depth_clip_enable` warning. This
+closes both the FW 11.60 depth-clip replay and the full SDL/EGL/Zink endpoint
+gate with identical application and library bytes.
 
 ## Milestone 6: multiple viewports (2026-07-29)
 
