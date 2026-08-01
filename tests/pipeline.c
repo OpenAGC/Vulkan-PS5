@@ -53,9 +53,16 @@ int main(int argc, char **argv) {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT,
         .depthClipEnable = VK_TRUE,
     };
+    VkPhysicalDeviceUniformBufferStandardLayoutFeatures
+        uniform_layout_features = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES,
+            .pNext = &depth_clip_features,
+            .uniformBufferStandardLayout = VK_TRUE,
+        };
     const VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
-        .pNext = &depth_clip_features,
+        .pNext = &uniform_layout_features,
         .scalarBlockLayout = VK_TRUE,
     };
     const char *device_extensions[] = {
@@ -158,16 +165,24 @@ int main(int argc, char **argv) {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
     };
     assert(vkCreateDescriptorSetLayout(device, &empty_info, NULL, &empty_set) == VK_SUCCESS);
-    const VkDescriptorSetLayoutBinding storage_binding = {
-        .binding = 3,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+    const VkDescriptorSetLayoutBinding resource_bindings[] = {
+        {
+            .binding = 3,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        },
+        {
+            .binding = 4,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        },
     };
     const VkDescriptorSetLayoutCreateInfo resource_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = 1,
-        .pBindings = &storage_binding,
+        .bindingCount = 2,
+        .pBindings = resource_bindings,
     };
     assert(vkCreateDescriptorSetLayout(device, &resource_info, NULL, &resource_set) == VK_SUCCESS);
     const VkDescriptorSetLayout sets[] = {empty_set, resource_set};

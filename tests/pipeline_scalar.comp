@@ -8,7 +8,11 @@ layout(set = 1, binding = 3, scalar) buffer ScalarData {
     float result;
 } data;
 
+layout(set = 1, binding = 4, std430) uniform StandardUniformData {
+    float weights[2];
+} standard_data;
+
 void main()
 {
-    data.result = data.value.x;
+    data.result = data.value.x + standard_data.weights[1];
 }

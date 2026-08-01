@@ -225,10 +225,12 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    D16, D32, and S8 sampled-image support. Qualify sampled pixels on FW 5.50,
    then resolve the remaining mandatory Vulkan 1.2 feature failure before
    broadening the case list. Core imageless framebuffers are now implemented
-   and removed from the CTS failure log; next close standard uniform-buffer
-   layout and separate depth/stencil layouts, then subgroup extended/dynamic
-   broadcast, multiview, and border-color swizzle. Keep the conformance version
-   non-conformant until the required suite supports a stronger claim.
+   and removed from the CTS failure log. Standard uniform-buffer layout is now
+   host-closed through an actual `std430` UBO pipeline; add its FW 5.50 value
+   oracle and close separate depth/stencil layouts next, then subgroup
+   extended/dynamic broadcast, multiview, and border-color swizzle. Keep the
+   conformance version non-conformant until the required suite supports a
+   stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a
    game-like workload through one firmware-neutral build on FW 5.50 and FW
    11.60.

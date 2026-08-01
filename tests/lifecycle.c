@@ -360,6 +360,17 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &imageless_features2);
     assert(imageless_features.imagelessFramebuffer == VK_TRUE);
+    VkPhysicalDeviceUniformBufferStandardLayoutFeatures
+        uniform_layout_features = {
+            .sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES,
+        };
+    VkPhysicalDeviceFeatures2 uniform_layout_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &uniform_layout_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &uniform_layout_features2);
+    assert(uniform_layout_features.uniformBufferStandardLayout == VK_TRUE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -373,6 +384,7 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     assert(features12.hostQueryReset == VK_TRUE);
     assert(features12.timelineSemaphore == VK_TRUE);
     assert(features12.imagelessFramebuffer == VK_TRUE);
+    assert(features12.uniformBufferStandardLayout == VK_TRUE);
     assert(features12.drawIndirectCount == VK_FALSE);
     assert(features12.bufferDeviceAddress == VK_FALSE);
 VkPhysicalDeviceLineRasterizationFeatures line_features = {

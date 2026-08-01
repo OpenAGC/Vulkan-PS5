@@ -34,6 +34,13 @@ Migration status:
   normal and ASAN/UBSAN 59-test suites and in the Prospero build. The CTS
   mandatory-feature log no longer lists either imageless-framebuffer
   requirement; six unique feature gaps remain.
+  Core `uniformBufferStandardLayout` is now host-qualified as well. Dedicated
+  and Vulkan-1.2 queries/device requests are enabled, while the pipeline gate
+  compiles and reflects a `std430` uniform block beside scalar storage data
+  into the native compute pipeline. Normal and ASAN/UBSAN suites remain 59/59,
+  the Prospero build is clean, and both duplicated CTS uniform-layout findings
+  are gone. Five unique mandatory-feature gaps remain; hardware value readback
+  for the standard-layout UBO is pending the guarded FW 5.50 probe.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised
