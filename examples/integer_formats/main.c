@@ -9,7 +9,7 @@
 
 #define IMAGE_WIDTH 8u
 #define IMAGE_HEIGHT 8u
-#define FORMAT_COUNT 37u
+#define FORMAT_COUNT 38u
 #define INTEGER_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | \
     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
@@ -145,6 +145,12 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
         VK_FORMAT_R4G4_UNORM_PACK8, "r4g4_unorm",
         {.float32 = {0.5f, 1.0f, 0.0f, 1.0f}},
         {UINT32_C(0x000000f8), 0u, 0u, 0u}, 1u,
+        SAMPLED_ONLY_FEATURES,
+    },
+    {
+        VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, "rgb9e5_ufloat",
+        {.float32 = {1.0f, 0.5f, 0.25f, 1.0f}},
+        {UINT32_C(0x81010100), 0u, 0u, 0u}, 4u,
         SAMPLED_ONLY_FEATURES,
     },
     {

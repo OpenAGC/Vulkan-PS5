@@ -109,6 +109,13 @@ static void test_clear_pattern_packing(void)
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_B10G11R11_UFLOAT_PACK32, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0x001e0380u);
+    const VkClearColorValue rgb9e5_clear = {
+        .float32 = {1.0f, 0.5f, 0.25f, 1.0f},
+    };
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, &rgb9e5_clear,
+        pattern, &words));
+    assert(words == 1u && pattern[0] == 0x81010100u);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R32G32B32A32_SFLOAT, &clear, pattern, &words));
     assert(words == 4u && memcmp(pattern, clear.float32,

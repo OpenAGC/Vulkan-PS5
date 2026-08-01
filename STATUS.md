@@ -435,6 +435,17 @@ passed twice on FW 5.500.008 with all 37 formats and 2,368 pixels bit-exact,
 bounded waits, cleanup-first execution, teardown, PID absence, immediate
 relaunch, and no panic. See `analysis/fw550_packed16_formats_20260801.md`.
 
+OpenAGC API 52 and Vulkan now directly map RGB9E5 shared-exponent images for
+sampling, filtering, transfers, and source blits. Color-attachment and storage
+features remain disabled while the gfx10.3 RB+ partial-mask erratum lacks a
+qualified runtime workaround. Clean normal and ASAN/UBSAN suites pass 55/55,
+and the complete Prospero library/example build passes. Pinned ELF
+`28905a561a4fea0f61e02bb33180b5208d941bd533155ff0ad39d4775c3498bd`
+passed twice on FW 5.500.008 with all 38 formats and 2,432 pixels bit-exact,
+bounded waits, cleanup-first execution, teardown, PID absence, immediate
+relaunch, and no panic, reset, timeout, or GPU fault in target-attributed
+logs. See `analysis/fw550_rgb9e5_format_20260801.md`.
+
 The BC slice now has a real shader-execution gate rather than format-query-only
 coverage. Compute descriptor preparation realizes Vulkan samplers, combined
 image samplers, sampled images, storage images, and input attachments through

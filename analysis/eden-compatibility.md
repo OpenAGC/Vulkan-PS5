@@ -425,6 +425,18 @@ Prospero build pass. Pinned ELF
 then passed all 37 formats and 2,368 exact pixels twice on FW 5.500.008. See
 `analysis/fw550_packed16_formats_20260801.md`.
 
+The sixth refreshed uncompressed slice consumes OpenAGC API 52 for RGB9E5
+shared-exponent images. `VK_FORMAT_E5B9G9R9_UFLOAT_PACK32` is sampled,
+filterable, transferable, and source-blit capable without false attachment,
+storage, or texel-buffer claims. Clean normal and ASAN/UBSAN suites pass
+55/55, the complete Prospero build passes, and pinned ELF
+`28905a561a4fea0f61e02bb33180b5208d941bd533155ff0ad39d4775c3498bd`
+passed all 38 formats and 2,432 exact pixels twice on FW 5.500.008. The only
+remaining inventory entry formerly classified as an uncompressed image gap,
+`VK_FORMAT_R32G32B32_SFLOAT`, is now explicitly classified buffer-only because
+the gfx10.3 format table rejects it for images. See
+`analysis/fw550_rgb9e5_format_20260801.md`.
+
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer
 contract for all 14 formats, while image-format queries reject BC 3D images.

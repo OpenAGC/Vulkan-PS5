@@ -217,6 +217,8 @@ static bool native_image_format(VkFormat format, AgcFormat *native) {
         *native = AGC_FORMAT_RGBA32_SINT; return true;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         *native = AGC_FORMAT_R11G11B10_FLOAT; return true;
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+        *native = AGC_FORMAT_RGB9E5_FLOAT; return true;
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
         *native = AGC_FORMAT_BC1_UNORM; return true;
     case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
@@ -1330,7 +1332,9 @@ static uint32_t format_bytes(VkFormat format) {
     case VK_FORMAT_R16G16_SNORM: case VK_FORMAT_R16G16_UINT:
     case VK_FORMAT_R16G16_SINT: case VK_FORMAT_R32_SFLOAT:
     case VK_FORMAT_R32_UINT: case VK_FORMAT_R32_SINT:
-    case VK_FORMAT_B10G11R11_UFLOAT_PACK32: case VK_FORMAT_D32_SFLOAT:
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+    case VK_FORMAT_D32_SFLOAT:
     case VK_FORMAT_D16_UNORM_S8_UINT: return 4;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
     case VK_FORMAT_R16G16B16A16_UNORM:
@@ -6292,6 +6296,49 @@ static uint32_t native_snorm8(float value)
     return (uint32_t)rounded & 0xffu;
 }
 
+static uint32_t native_rgb9e5_clamped_bits(float value)
+{
+    uint32_t bits;
+    uint32_t maximum;
+    const float maximum_value = 65408.0f;
+    memcpy(&bits, &value, sizeof(bits));
+    memcpy(&maximum, &maximum_value, sizeof(maximum));
+    if (bits > UINT32_C(0x7f800000))
+        return 0u;
+    return bits >= maximum ? maximum : bits;
+}
+
+static uint32_t native_rgb9e5(const float color[3])
+{
+    uint32_t component_bits[3] = {
+        native_rgb9e5_clamped_bits(color[0]),
+        native_rgb9e5_clamped_bits(color[1]),
+        native_rgb9e5_clamped_bits(color[2]),
+    };
+    uint32_t maximum = component_bits[0];
+    if (component_bits[1] > maximum)
+        maximum = component_bits[1];
+    if (component_bits[2] > maximum)
+        maximum = component_bits[2];
+    maximum += maximum & (1u << 14u);
+    uint32_t exponent_bits = maximum >> 23u;
+    if (exponent_bits < 111u)
+        exponent_bits = 111u;
+    const uint32_t shared_exponent = exponent_bits - 111u;
+    const uint32_t reciprocal_bits = (152u - shared_exponent) << 23u;
+    float reciprocal;
+    memcpy(&reciprocal, &reciprocal_bits, sizeof(reciprocal));
+    uint32_t mantissa[3];
+    for (uint32_t i = 0u; i < 3u; ++i) {
+        float component;
+        memcpy(&component, &component_bits[i], sizeof(component));
+        const uint32_t doubled = (uint32_t)(component * reciprocal);
+        mantissa[i] = (doubled & 1u) + (doubled >> 1u);
+    }
+    return (shared_exponent << 27u) | (mantissa[2] << 18u) |
+        (mantissa[1] << 9u) | mantissa[0];
+}
+
 static bool native_pack_rgba8_clear(VkFormat format,
                                     const VkClearColorValue *clear,
                                     uint32_t *value_out)
@@ -6460,6 +6507,9 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
         pattern[0] = native_unsigned_float(clear->float32[0], 6u) |
             (native_unsigned_float(clear->float32[1], 6u) << 11u) |
             (native_unsigned_float(clear->float32[2], 5u) << 22u);
+        break;
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+        pattern[0] = native_rgb9e5(clear->float32);
         break;
     case VK_FORMAT_R16_SFLOAT:
         packed = native_float16(clear->float32[0]);

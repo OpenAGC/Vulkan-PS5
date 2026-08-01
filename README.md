@@ -155,6 +155,14 @@ A4B4G4R4, and R4G4 UNORM packed images. Vulkan exposes the five renderable
 sampled-only. The pinned FW 5.50 probe passed all 37 formats and 2,368 exact
 pixels twice. See `analysis/fw550_packed16_formats_20260801.md`.
 
+OpenAGC API 52 adds RGB9E5 shared-exponent sampled images. Vulkan exposes
+`VK_FORMAT_E5B9G9R9_UFLOAT_PACK32` as sampled/filterable, transferable, and a
+blit source without falsely advertising color-attachment or storage support.
+The pinned FW 5.50 probe passed all 38 formats and 2,432 exact pixels twice.
+`VK_FORMAT_R32G32B32_SFLOAT` remains intentionally image-unsupported because
+gfx10.3 defines that encoding as buffer-only. See
+`analysis/fw550_rgb9e5_format_20260801.md`.
+
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary
 validated rectangles for every advertised color attachment format and the

@@ -1124,7 +1124,8 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     int color_index = ps5_color_format(format);
     int depth_index = ps5_depth_format(format);
     int bc_format = ps5_bc_format(format);
-    const int sampled_only = format == VK_FORMAT_R4G4_UNORM_PACK8;
+    const int sampled_only = format == VK_FORMAT_R4G4_UNORM_PACK8 ||
+        format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
     (void)physicalDevice;
     if (!pFormatProperties) return;
     memset(pFormatProperties, 0, sizeof(*pFormatProperties));
@@ -1212,6 +1213,7 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         pFormatProperties->optimalTilingFeatures = color;
         break;
     case VK_FORMAT_R4G4_UNORM_PACK8:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
         pFormatProperties->linearTilingFeatures = sampled | transfer |
             blit_source;
         pFormatProperties->optimalTilingFeatures = sampled | transfer |
