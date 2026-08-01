@@ -58,7 +58,6 @@ static void create_bound_test_image(VkDevice device,
         VK_SUCCESS);
 }
 
-#if 0 /* Removed with the remaining legacy command-stream encoder. */
 static bool has_register_value(const uint32_t *commands, uint32_t used,
                                uint32_t opcode, uint32_t offset,
                                uint32_t value)
@@ -79,24 +78,6 @@ static bool has_register_value(const uint32_t *commands, uint32_t used,
     }
     return false;
 }
-
-static uint32_t count_register_value(const uint32_t *commands, uint32_t used,
-                                     uint32_t opcode, uint32_t value)
-{
-    uint32_t cursor = 0;
-    uint32_t count = 0;
-    while (cursor < used) {
-        uint32_t length = agcPm4Length(commands[cursor]);
-        if (length < 2u || cursor + length > used)
-            return 0u;
-        if (agcPm4Opcode(commands[cursor]) == opcode)
-            for (uint32_t i = 0; i < length - 2u; ++i)
-                count += commands[cursor + 2u + i] == value;
-        cursor += length;
-    }
-    return count;
-}
-#endif
 
 int main(int argc, char **argv)
 {
@@ -816,10 +797,10 @@ int main(int argc, char **argv)
             VK_COLOR_COMPONENT_A_BIT},
         {
             .blendEnable = VK_TRUE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_CONSTANT_COLOR,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
             .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_CONSTANT_ALPHA,
             .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
             .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_G_BIT |
@@ -1650,10 +1631,16 @@ vkCmdEndRenderPass2(command, &subpass_end);
         .pStencilAttachment = &dynamic_depth_stencil,
     };
     vkCmdBeginRendering(dynamic_rendering_command, &dynamic_rendering);
+    assert(vk_ps5_command_buffer_record_error(dynamic_rendering_command) ==
+        VK_SUCCESS);
     vkCmdBindPipeline(dynamic_rendering_command,
         VK_PIPELINE_BIND_POINT_GRAPHICS, dynamic_rendering_pipeline);
+    assert(vk_ps5_command_buffer_record_error(dynamic_rendering_command) ==
+        VK_SUCCESS);
     vkCmdBindPipeline(dynamic_rendering_command,
         VK_PIPELINE_BIND_POINT_GRAPHICS, color_only_dynamic_pipeline);
+    assert(vk_ps5_command_buffer_record_error(dynamic_rendering_command) ==
+        VK_SUCCESS);
     vkCmdSetDepthBias(dynamic_rendering_command, 4.0f, 0.5f, -2.0f);
     assert(vk_ps5_command_buffer_record_error(dynamic_rendering_command) ==
         VK_SUCCESS);
@@ -2015,6 +2002,13 @@ vkCmdEndRenderPass2(command, &subpass_end);
     };
     assert(vkQueueSubmit(queue, 1, &submit_info, fence) == VK_SUCCESS);
     assert(vkGetFenceStatus(device, fence) == VK_SUCCESS);
+    const AgcCommandBufferSubmit *native_submit =
+        agcDriverDebugLastDcbSubmit();
+    assert(native_submit && native_submit->command_address);
+    assert(has_register_value(
+        (const uint32_t *)(uintptr_t)native_submit->command_address,
+        native_submit->dword_count, AGC_PM4_OP_SET_CONTEXT_REG,
+        AGC_REG_CB_BLEND_RED, UINT32_C(0x3e800000)));
 
     uint64_t query_results[] = {UINT64_MAX, UINT64_MAX};
     assert(vkGetQueryPoolResults(device, query_pool, 1, 1,

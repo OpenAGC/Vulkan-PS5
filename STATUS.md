@@ -874,6 +874,17 @@ Implemented and host-verified:
   advertised and accepted through legacy and Features2 paths; dual-source
   blend remains unsupported. The public-path Prospero ELF SHA-256 is
   `e42014fcab89df6001555faecd6a2c4a0d05edb87d9d7bcd011c62ca0caa6a99`.
+  The later native-runtime migration briefly regressed static blend constants:
+  per-target equations survived, but Vulkan's pipeline constants were left at
+  OpenAGC's zero default, so target one stayed untouched. The repaired
+  translator marks constants as native command state only when an enabled
+  factor consumes them and republishes either the pipeline-static or current
+  Vulkan dynamic values after each native bind. A generic packet oracle now
+  requires `CB_BLEND_RED=0.25`. The corrected FW 5.500.008 candidate
+  `03f9d4ec0d448a0561902067ec76698f5f7940202864b07cbc24ece757e65570`
+  again produced 18,432 pixels on both targets with exact target-one
+  `0x80800080`, clean system exit, no residual process, and only the accepted
+  `0x4000` loader VM warning.
   Begin/end transitions cover every attachment, OpenAGC binds CB0-CB7, the
   target mask enables every active slot, and fragment export context carries
   the real MRT count. The command regression verifies CB1 and dual RGBA8

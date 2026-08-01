@@ -1653,6 +1653,33 @@ static bool color_blend_state(
     return true;
 }
 
+static bool color_blend_uses_constants(
+    const AgcGfx1013ColorBlendState *state)
+{
+    if (!state)
+        return false;
+    for (uint32_t i = 0u; i < state->target_count; ++i) {
+        const AgcGfx1013ColorBlendTargetState *target = &state->targets[i];
+        if (!target->enable)
+            continue;
+        const AgcGfx1013BlendFactor factors[] = {
+            target->color_source, target->color_destination,
+            target->alpha_source, target->alpha_destination,
+        };
+        for (uint32_t factor = 0u;
+             factor < sizeof(factors) / sizeof(factors[0]); ++factor) {
+            if (factors[factor] == AGC_GFX1013_BLEND_CONSTANT_COLOR ||
+                factors[factor] ==
+                    AGC_GFX1013_BLEND_ONE_MINUS_CONSTANT_COLOR ||
+                factors[factor] == AGC_GFX1013_BLEND_CONSTANT_ALPHA ||
+                factors[factor] ==
+                    AGC_GFX1013_BLEND_ONE_MINUS_CONSTANT_ALPHA)
+                return true;
+        }
+    }
+    return false;
+}
+
 static bool layout_resource_usage(
     VkImageLayout layout, AgcGfx1013ResourceUsage *usage) {
     if (!usage) return false;
@@ -3112,6 +3139,32 @@ static VkResult finalize_runtime_shader(
     if (native_result != AGC_OK) {
         fprintf(stderr, "vulkan-ps5: native shader creation failed: 0x%08x\n",
             (unsigned)native_result);
+        fprintf(stderr,
+            "vulkan-ps5: shader stage=%u flags=0x%x record=%u compiler=%u "
+            "wave=%u code=%u+%u/%zu front=%u+%u/%zu exports=%u "
+            "inputs=0x%llx outputs=0x%llx linkage=0x%llx\n",
+            (unsigned)output->metadata.stage, output->metadata.flags,
+            output->metadata.shader_record_version,
+            output->metadata.compiler_api_version,
+            output->metadata.wave_size, output->metadata.code_offset,
+            output->metadata.code_size, output->shader.size,
+            output->metadata.front_code_offset,
+            output->metadata.front_code_size, output->front_shader.size,
+            output->metadata.color_export_count,
+            (unsigned long long)output->metadata.stage_input_mask,
+            (unsigned long long)output->metadata.stage_output_mask,
+            (unsigned long long)output->metadata.stage_linkage_hash);
+        for (uint32_t i = 0u;
+             i < output->metadata.color_export_count; ++i) {
+            const AgcShaderColorExport *export =
+                &output->metadata.color_exports[i];
+            fprintf(stderr,
+                "vulkan-ps5: color export[%u] location=%u format=%u "
+                "class=%u mask=0x%x flags=0x%x\n",
+                i, export->location, (unsigned)export->format,
+                (unsigned)export->component_class, export->write_mask,
+                export->flags);
+        }
         return native_result == AGC_ERROR_OUT_OF_MEMORY ?
             VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_INVALID_SHADER_NV;
     }
@@ -4573,7 +4626,11 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (dynamic_line_width)
                 native_desc.dynamic_state_mask |=
                     AGC_DYNAMIC_STATE_LINE_WIDTH_BIT;
-            if (dynamic_blend_constants)
+            /* OpenAGC exposes blend constants as command state. Treat
+             * Vulkan's static constants as internally dynamic so every
+             * native pipeline bind publishes the exact Vulkan state instead
+             * of inheriting the runtime's zero default. */
+            if (color_blend_uses_constants(&pipeline->color_blend))
                 native_desc.dynamic_state_mask |=
                     AGC_DYNAMIC_STATE_BLEND_CONSTANTS_BIT;
             if (dynamic_stencil_reference && native_depth.stencil_test_enable)
@@ -4588,6 +4645,34 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 AgcDebugMessage debug_message = AGC_DEBUG_MESSAGE_INIT;
                 const int32_t debug_result = agcGetLastDebugMessage(
                     vk_ps5_native_device(device), &debug_message);
+                for (uint32_t stage_index = 0u;
+                     stage_index < pipeline->stage_count; ++stage_index) {
+                    const AgcShaderReflection *reflection =
+                        &pipeline->stages[stage_index].metadata;
+                    fprintf(stderr,
+                        "vulkan-ps5: native stage[%u] stage=%u mappings=%u "
+                        "push_ranges=%u push_size=%u inline=0x%llx "
+                        "vertex_inputs=%u user_sgprs=%u\n",
+                        stage_index, reflection->stage,
+                        reflection->descriptor_mapping_count,
+                        reflection->push_constant_range_count,
+                        reflection->push_constant_size,
+                        (unsigned long long)
+                            reflection->inline_push_constant_mask,
+                        reflection->vertex_input_count,
+                        reflection->user_sgpr_count);
+                    for (uint32_t sgpr_index = 0u;
+                         sgpr_index < reflection->user_sgpr_count;
+                         ++sgpr_index) {
+                        const AgcShaderUserSgpr *sgpr =
+                            &reflection->user_sgprs[sgpr_index];
+                        fprintf(stderr,
+                            "vulkan-ps5: native stage[%u] sgpr[%u] "
+                            "kind=%u index=%u reg=0x%x dwords=%u\n",
+                            stage_index, sgpr_index, sgpr->kind, sgpr->index,
+                            sgpr->register_offset, sgpr->dword_count);
+                    }
+                }
                 fprintf(stderr,
                     "vulkan-ps5: native graphics pipeline creation failed: "
                     "0x%08x%s%s\n", (unsigned)native_result,
@@ -7262,11 +7347,23 @@ vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
                     command->native_graphics_command_buffer, &depth_bias);
             }
             if (native_result == AGC_OK &&
-                pipeline->blend_constants_dynamic &&
-                command->dynamic_blend_constants_set)
-                native_result = agcCmdSetBlendConstants(
-                    command->native_graphics_command_buffer,
-                    command->dynamic_blend_constants);
+                color_blend_uses_constants(&pipeline->color_blend)) {
+                const float *constants = NULL;
+                if (!pipeline->blend_constants_dynamic)
+                    constants = pipeline->color_blend.constants;
+                else if (command->dynamic_blend_constants_set)
+                    constants = command->dynamic_blend_constants;
+                if (constants) {
+                    native_result = agcCmdSetBlendConstants(
+                        command->native_graphics_command_buffer, constants);
+                    if (native_result != AGC_OK)
+                        fprintf(stderr,
+                            "vulkan-ps5: agcCmdSetBlendConstants after "
+                            "pipeline bind failed result=0x%x dynamic=%u\n",
+                            (unsigned int)native_result,
+                            pipeline->blend_constants_dynamic);
+                }
+            }
             if (native_result == AGC_OK &&
                 pipeline->stencil_reference_dynamic &&
                 pipeline->depth_stencil.stencil_test_enable &&
