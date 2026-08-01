@@ -8,13 +8,14 @@ trap 'rm -rf "$test_root"' EXIT
 
 mkdir -p "$test_root/bin" "$test_root/build" "$test_root/pyps4debug"
 : >"$test_root/build/vulkan_ps5_depth_clip_enable_probe.elf"
+: >"$test_root/build/vulkan_ps5_process_cleanup.elf"
 
 cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
 for arg do
     case "$arg" in
         */hbldr*) printf '%s\n' \
-            'depth_clip_enable: PASS green=5736 red=4590 raw=55210/5736/4590 stencil=10326' ;;
+            'depth_clip_enable: PASS green=12288 red=9830 raw=54145/0/9830 stencil=22118' ;;
     esac
 done
 EOF

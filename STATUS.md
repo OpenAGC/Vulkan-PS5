@@ -369,30 +369,34 @@ pipelines, shaders, and memory until command recycling and collects them in
 dependency order. A generic regression proves that deferred native count
 returns to zero after pool reset.
 
-The diagnostic-free final candidate passes all 46 generic tests and all 46
+The diagnostic-free final candidate passes all 47 generic tests and all 47
 ASan/UBSan tests, including the strict zero-gap Zink profile and package
 relocation gate. The Prospero shared-ICD verifier reports `204` exports and
 only `RELATIVE`, `GLOB_DAT`, and `JUMP_SLOT` relocations. Two consecutive
-cleanup-guarded FW 5.500.008 runs at
-`20260801T032341Z` and `20260801T032359Z` returned renderer `zink Vulkan 1.2`,
+cleanup-guarded FW 5.500.008 depth-clip release-candidate runs at
+`20260801T043729Z` and `20260801T043745Z` returned renderer `zink Vulkan 1.2`,
 exact RGBA `64,128,191,255`, visible presentation, no native lifetime error,
 normal self-exit, and immediate relaunch without reboot. Final tested hashes:
 
 - `testps5zink`: `95da10acf89da3e35865890874034b8bffef1c563417309a0e4bb98404540ad9`
-- `libvulkan_ps5.so`: `f2f2a176d0dc4dcb14942471af41d9fa6eebdeaba134084a52de280932b71f52`
+- `libvulkan_ps5.so`: `a0b52105b1ab1806553fa0777991e78f57545ba2d0d550cbf3b6d2f83bd341c7`
 - `libEGL.so.1.0.0`: `0d2922b30b3dbbe25f060331043bb4a4732272d0813023568381306528913fc1`
 - `libgallium-26.3.0-devel.so`: `9da905ef314e3362631406b1d85e013071b7fc80661cb663c7c40920d23eef85`
 
-The subsequent `VK_EXT_depth_clip_enable` closure is host-qualified but not
-yet hardware-qualified. The ICD enumerates the extension, reports and accepts
+The subsequent `VK_EXT_depth_clip_enable` closure is hardware-qualified on FW
+5.500.008. The ICD enumerates the extension, reports and accepts
 `VkPhysicalDeviceDepthClipEnableFeaturesEXT`, rejects use without feature
 enablement or with nonzero reserved flags, parses the static rasterization
 state, and maps its independent Boolean to OpenAGC API 45. Pipeline inspection
 proves both explicit disable and explicit enable while depth clamp is active.
-A cleanup-guarded runner now covers a depth-sensitive FW 5.50 probe whose near
-triangle is outside the Vulkan Z frustum; the hardware run and rebuilt
-warning-free Mesa/Zink replay remain pending, so no replacement hashes are
-claimed yet.
+A cleanup-guarded depth probe whose near triangle is outside the Vulkan Z
+frustum passed twice at `20260801T043640Z` and `20260801T043655Z` with exact
+`green=12288 red=9830 raw=54145/0/9830 stencil=22118`; its ELF SHA-256 is
+`cdc6f9ec17ebab5878c0a38c4dad039cf68a5abf123003d9a19ba11c6fa6430c`.
+The first Zink replay exposed a missing gfx10.3 `DX_LINEAR_ATTR_CLIP_ENA` bit
+in OpenAGC's explicit clip-control register. OpenAGC commit `1d42288` corrected
+the encoding; both final Zink logs contain no `VK_EXT_depth_clip_enable`
+warning and pass exact readback, presentation, teardown, and relaunch.
 
 FW 11.60 qualification remains deferred until that endpoint is available.
 

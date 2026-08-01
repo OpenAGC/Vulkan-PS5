@@ -520,18 +520,16 @@ the native-runtime migration.
   SDL native-window EGL/WSI bridge twice with exact readback, presentation,
   complete native teardown, and immediate relaunch. Preserve those hashes and
   defer the FW 11.60 replay until that endpoint is available.
-  The remaining Mesa runtime warning is `VK_EXT_depth_clip_enable`; treat the
-  SDL/Zink track as functionally qualified for the prior probe, but not yet
-  warning-free or generally depth-correct. Extension enumeration, feature
-  query/enablement, rasterization-chain parsing, fail-closed validation, and
-  translation through OpenAGC API 45 are now host-tested. The dedicated probe
-  places geometry beyond the near Z plane and requires its exact color and
-  negative depth readback with clipping disabled. Next, run that probe and the
-  rebuilt Mesa/Zink integration through cleanup-guarded FW 5.50 gates with
-  exact pixels,
-  presentation, teardown, immediate relaunch, and no depth-clip warning before
-  recording new pinned ELF/library hashes. Replay the identical final bytes on
-  FW 11.60 when that endpoint becomes available.
+  `VK_EXT_depth_clip_enable` is closed on FW 5.500.008. Extension enumeration,
+  feature query/enablement, rasterization-chain parsing, fail-closed
+  validation, and translation through OpenAGC API 45 pass host tests. The
+  dedicated negative-Z probe passes twice with exact color, defined depth,
+  and stencil oracles; out-of-range unclamped depth is intentionally not
+  assigned a Vulkan-defined value. OpenAGC now includes gfx10.3 linear
+  attribute clipping in explicit clip-control packets. Two cleanup-guarded
+  Mesa/Zink runs pass exact pixels, visible presentation, teardown, immediate
+  relaunch, and contain no depth-clip warning. Preserve the pinned ELF/library
+  hashes and replay the identical final bytes on FW 11.60 when available.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset

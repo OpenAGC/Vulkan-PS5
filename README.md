@@ -89,12 +89,12 @@ colors with image-view swizzle, maintenance5, and Vulkan 1.2. Scalar block
 layout is compiled by a real storage-buffer pipeline, and `alphaToOne` is baked
 into the gfx1013 pixel epilog. `VK_EXT_depth_clip_enable` is also enumerated,
 feature-enabled, and translated to OpenAGC's explicit depth-clip state; its
-depth-sensitive FW 5.50 and warning-free Zink replay remain the current gate.
+depth-sensitive FW 5.50 and warning-free Zink gates now pass.
 The live strict report is now
 `api=0 extensions=0 features=0 total=0`, with FW 5.500.008 readback evidence
 for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
-sampling. SDL must still retain OSMesa until pinned Mesa executes through the
-PS5 EGL/WSI bridge; a capability report alone is not a Zink runtime pass.
+sampling. SDL retains OSMesa as its conservative fallback; the pinned Mesa
+runtime now also passes through the PS5 EGL/WSI bridge.
 
 The pinned integration now passes end to end on FW 5.500.008. Vulkan-PS5
 records reflected push constants, dynamic-rendering RGBA8/BGRA8 clears, global
@@ -104,7 +104,8 @@ aliased clear buffer performs an explicit copy-write release before image use,
 and Vulkan object destruction is deferred until OpenAGC command recycling
 releases native references. Two immediate guarded runs returned exact RGBA
 `64,128,191,255`, presented, completed native teardown, self-exited, and
-relaunched without reboot. The host suite remains 46/46; FW 11.60 is deferred.
+relaunched without reboot. The host suite now passes 47/47; FW 11.60 is
+deferred.
 
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline

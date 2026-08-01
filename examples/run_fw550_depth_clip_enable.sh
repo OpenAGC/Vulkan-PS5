@@ -11,4 +11,5 @@ VULKAN_PS5_EXIT_FILE_STEM=depth-clip-enable-run1 \
 VULKAN_PS5_EXIT_DISPLAY_NAME='depth-clip-enable probe' \
 VULKAN_PS5_EXIT_SUCCESS_REGEX='^depth_clip_enable: PASS green=[0-9]+ red=[0-9]+ raw=[0-9]+/[0-9]+/[0-9]+ stencil=[0-9]+$' \
 VULKAN_PS5_EXIT_FAILURE_PATTERN='depth_clip_enable: mismatch' \
+VULKAN_PS5_REQUIRE_CLEANUP=1 \
     exec "$script_dir/run_fw550_system_exit_probe.sh"

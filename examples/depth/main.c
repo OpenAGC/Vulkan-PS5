@@ -27,6 +27,10 @@
 #elif defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
 #include "../system_service_exit.h"
 #define SAMPLE_NAME "depth_clip_enable"
+/* With clipping and clamping both disabled, an out-of-range fragment depth
+ * is undefined after Vulkan's depth-range adjustment.  Prove that the
+ * negative-Z primitive survives through exact color/stencil coverage instead
+ * of assigning its depth word a value the specification does not guarantee. */
 #define NEAR_DEPTH_BITS 0xbe800000u
 #define FAR_DEPTH_BITS 0x3e800000u
 #else
@@ -454,6 +458,12 @@ int main(void)
         left != GREEN || right != RED || clear_depth == 0u ||
         near_depth < 1000u || far_depth < 1000u ||
         stencil_written != green + red;
+#if defined(VULKAN_PS5_DEPTH_CLIP_ENABLE_PROBE)
+    status = green != 12288u || red != 9830u || other != 0u ||
+        left != GREEN || right != RED || clear_depth != 54145u ||
+        near_depth != 0u || far_depth != 9830u ||
+        stencil_written != 22118u;
+#endif
     if (status)
         printf(SAMPLE_NAME ": mismatch green=%u red=%u other=%u left=%08x right=%08x raw=%u/%u/%u stencil=%u\n",
             green, red, other, left, right, clear_depth, near_depth, far_depth,
