@@ -368,6 +368,16 @@ retrying the guarded readback run. Do not record a passing hash until the
 rebuilt candidate completes readback, visible presentation, teardown, and
 immediate relaunch.
 
+The clean-reboot retry advanced through Zink geometry and fragment compilation
+and exposed a null `vkCmdBindVertexBuffers2` dispatch. The fault registers
+matched that command's seven-argument ABI exactly; Vulkan-PS5 had only exposed
+the original `vkCmdBindVertexBuffers`. The ICD now provides the core and EXT
+proc names, validates Zink's null optional size/stride form, and fails closed on
+dynamic strides because the complete extended-dynamic-state contract is not
+advertised yet. All 46 generic tests and all 46 ASan/UBSan tests pass. The next
+guarded hardware attempt did not upload or launch because the rebooted console
+answered ICMP but WebSrv/FTP ports 8080/2121 were not running.
+
 ## Milestone 6: multiple viewports (2026-07-29)
 
 `multiViewport` is advertised and accepted through legacy and Features2

@@ -100,6 +100,15 @@ mutable RGBA/A8B8G8R8 readback format class. Pixel-readback qualification is
 still pending a clean reboot and guarded rerun; a retired constant-source DMA
 clear candidate timed out and is not part of the current source.
 
+That rerun progressed through Zink pipeline compilation and identified one
+more loader-level gap: current Mesa records vertex bindings through
+`vkCmdBindVertexBuffers2` even when its optional size and stride arrays are
+null. Vulkan-PS5 now exposes the core and EXT proc aliases for that compatible
+form and rejects non-null dynamic strides until the full extended-dynamic-state
+feature is implemented. The fix passes both 46-test host suites; FW 5.50
+readback, presentation, teardown, and immediate relaunch remain the acceptance
+gate.
+
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
 had 30 hard gaps; the live ICD profile now reports

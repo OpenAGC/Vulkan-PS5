@@ -6545,6 +6545,46 @@ vkCmdBindVertexBuffers(VkCommandBuffer c, uint32_t f, uint32_t n,
         command->vertex_offsets[f + i] = o[i];
     }
 }
+VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
+vkCmdBindVertexBuffers2(VkCommandBuffer c, uint32_t f, uint32_t n,
+                        const VkBuffer *b, const VkDeviceSize *o,
+                        const VkDeviceSize *sizes,
+                        const VkDeviceSize *strides) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    /* Dynamic vertex strides belong to VK_EXT_extended_dynamic_state, which
+     * is not advertised until every command in that contract is native. */
+    if (strides) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    if (f > VK_PS5_MAX_VERTEX_BINDINGS ||
+        n > VK_PS5_MAX_VERTEX_BINDINGS - f || (n && (!b || !o))) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    for (uint32_t i = 0; i < n; ++i) {
+        VkPs5Buffer *buffer = (VkPs5Buffer *)b[i];
+        if (!buffer || !buffer->memory ||
+            !(buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) ||
+            o[i] >= buffer->size) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        if (sizes) {
+            VkDeviceSize resolved_size = sizes[i] == VK_WHOLE_SIZE ?
+                buffer->size - o[i] : sizes[i];
+            if (!resolved_size || resolved_size > buffer->size - o[i]) {
+                command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+                return;
+            }
+        }
+        command->vertex_buffers[f + i] = buffer;
+        command->vertex_offsets[f + i] = o[i];
+    }
+}
 
 static VkResult native_bind_graphics_attachments(
     VkPs5CommandBuffer *command)

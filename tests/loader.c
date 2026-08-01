@@ -43,6 +43,8 @@ int main(void) {
     };
     VkDevice device = VK_NULL_HANDLE;
     assert(vkCreateDevice(physical, &device_info, NULL, &device) == VK_SUCCESS);
+    assert(vkGetDeviceProcAddr(device, "vkCmdBindVertexBuffers2") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkCmdBindVertexBuffers2EXT") != NULL);
     VkQueue queue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, 0, 0, &queue);
     assert(queue != VK_NULL_HANDLE);

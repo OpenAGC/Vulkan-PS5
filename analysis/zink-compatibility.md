@@ -84,3 +84,19 @@ evidence timestamps are `20260731T074115Z` and `20260731T075944Z`.
 
 This closes the capability profile, not the Zink execution gate. SDL must
 retain OSMesa until the pinned Mesa build runs through the PS5 EGL/WSI bridge.
+
+## Execution-gate follow-up (2026-08-01)
+
+The first complete compiler pass on FW 5.500.008 reached Zink's draw path and
+then made a null indirect call. The fatal register tuple was the exact SysV ABI
+shape of `vkCmdBindVertexBuffers2(command, 0, 1, buffers, offsets, NULL,
+NULL)`. The Vulkan 1.2 ICD exported `vkCmdBindVertexBuffers` but neither the
+promoted core name nor `vkCmdBindVertexBuffers2EXT`.
+
+Vulkan-PS5 now exposes both proc names for the compatible null-stride form and
+performs the same typed buffer, memory, usage, offset, and optional-size bounds
+validation as the original command. A non-null stride array records
+`VK_ERROR_FEATURE_NOT_PRESENT`; this avoids pretending that the rest of
+`VK_EXT_extended_dynamic_state` exists. The generic and sanitizer suites each
+pass 46/46. A subsequent guarded attempt stopped before upload because WebSrv
+and FTP were not listening, so no new hardware result or hash is claimed.

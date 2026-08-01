@@ -1295,8 +1295,8 @@ int main(int argc, char **argv)
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     const VkDeviceSize native_vertex_offset = 0u;
-    vkCmdBindVertexBuffers(command, 0u, 1u, &vertex_buffer,
-                           &native_vertex_offset);
+    vkCmdBindVertexBuffers2(command, 0u, 1u, &vertex_buffer,
+                            &native_vertex_offset, NULL, NULL);
     vkCmdDraw(command, 3u, 1u, 0u, 0u);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdBindIndexBuffer(command, index_buffer, 0u, VK_INDEX_TYPE_UINT16);
