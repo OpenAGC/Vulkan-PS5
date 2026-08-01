@@ -56,6 +56,12 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_A2B10G10R10_UNORM_PACK32, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xc00ffe00u);
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_A8B8G8R8_SNORM_PACK32, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x7f807f40u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_A2R10G10B10_UNORM_PACK32, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xe00ffc00u);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16_SFLOAT, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0x38003800u);
     assert(vk_ps5_pack_clear_color(
@@ -99,6 +105,12 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_R8G8_UINT, &uint_clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xcd34cd34u);
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_A8B8G8R8_UINT_PACK32, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xbc78cd34u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_A2B10G10R10_UINT_PACK32, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x278f3634u);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_UINT, &uint_clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0xabcd1234u &&
         pattern[1] == 0x9abc5678u);
@@ -128,6 +140,9 @@ static void test_clear_pattern_packing(void)
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R8G8_SINT, &sint_clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xfefffeffu);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_A8B8G8R8_SINT_PACK32, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x0034feffu);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_SINT, &sint_clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0xfffeffffu &&
@@ -171,6 +186,10 @@ static void test_integer_color_image_views(void)
         VK_FORMAT_R8G8_SNORM,
         VK_FORMAT_R8G8_UINT,
         VK_FORMAT_R8G8_SINT,
+        VK_FORMAT_A8B8G8R8_SNORM_PACK32,
+        VK_FORMAT_A8B8G8R8_UINT_PACK32,
+        VK_FORMAT_A8B8G8R8_SINT_PACK32,
+        VK_FORMAT_A2B10G10R10_UINT_PACK32,
         VK_FORMAT_R16_UNORM,
         VK_FORMAT_R16_SNORM,
         VK_FORMAT_R16_UINT,

@@ -9,7 +9,7 @@
 
 #define IMAGE_WIDTH 8u
 #define IMAGE_HEIGHT 8u
-#define FORMAT_COUNT 26u
+#define FORMAT_COUNT 31u
 #define INTEGER_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | \
     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
@@ -18,6 +18,8 @@
 #define NORMALIZED_FEATURES (INTEGER_FEATURES | \
     VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | \
     VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT)
+#define NORMALIZED_NO_STORAGE_FEATURES (NORMALIZED_FEATURES & \
+    ~VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)
 
 typedef struct FormatCase {
     VkFormat format;
@@ -78,6 +80,32 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
         VK_FORMAT_R8G8_SINT, "rg8_sint",
         {.int32 = {-2, 123, 0, 0}},
         {UINT32_C(0x00007bfe), 0u, 0u, 0u}, 2u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_A8B8G8R8_SNORM_PACK32, "rgba8_snorm",
+        {.float32 = {0.5f, -0.5f, 1.0f, -1.0f}},
+        {UINT32_C(0x807fc040), 0u, 0u, 0u}, 4u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_A8B8G8R8_UINT_PACK32, "rgba8_uint",
+        {.uint32 = {0x12u, 0x34u, 0x56u, 0x78u}},
+        {UINT32_C(0x78563412), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_A8B8G8R8_SINT_PACK32, "rgba8_sint",
+        {.int32 = {-1, -2, 0x34, -128}},
+        {UINT32_C(0x8034feff), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_A2B10G10R10_UINT_PACK32, "rgb10a2_uint",
+        {.uint32 = {0x123u, 0x234u, 0x345u, 2u}},
+        {UINT32_C(0xb458d123), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_A2R10G10B10_UNORM_PACK32, "bgr10a2_unorm",
+        {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}},
+        {UINT32_C(0xd00802ff), 0u, 0u, 0u}, 4u,
+        NORMALIZED_NO_STORAGE_FEATURES,
     },
     {
         VK_FORMAT_R16_UNORM, "r16_unorm",
@@ -219,7 +247,9 @@ static VkResult create_image(VkPhysicalDevice physical, VkDevice device,
         .arrayLayers = 1u,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_LINEAR,
-        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+            ((format_case->features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ?
+                VK_IMAGE_USAGE_STORAGE_BIT : 0u) |
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,

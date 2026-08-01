@@ -368,8 +368,8 @@ below are the implementation and qualification ledger.
 
 The Eden `612409c7ba` format audit is now revision-frozen rather than
 approximate: 112 guest rows map to 109 unique Vulkan formats. The committed
-inventory classifies 56 unique direct formats after adding the API 49 R8/RG8
-group, with 13 remaining unique uncompressed gaps, 28 ASTC plus 10 ETC2/EAC
+inventory classifies 61 unique direct formats after adding the API 50 packed
+group, with 8 remaining unique uncompressed gaps, 28 ASTC plus 10 ETC2/EAC
 transcode-required forms, and two fail-closed D24 forms. The four RGBA integer
 formats expose sampled, storage, color-attachment, and transfer use without
 unsupported filtering, blit, or texel-buffer claims. Exact format queries,
@@ -412,6 +412,18 @@ passed twice on FW 5.500.008 with all 26 formats and 1,664 pixels bit-exact,
 bounded waits, cleanup-first execution, clean teardown, PID absence, and
 immediate relaunch. See `analysis/fw550_r8_rg8_formats_20260801.md`; shader
 sampling/storage and attachment-export gates remain pending.
+
+OpenAGC API 50 and Vulkan now directly map packed RGBA8 SNORM/UINT/SINT,
+RGB10A2 UINT, and BGR10A2 UNORM images with exact component selection,
+color-target classes, clear packing, and numeric-class feature masks. The BGR
+UNORM form deliberately omits storage-image support. The frozen capability
+baseline, 55/55 normal tests, 55/55 ASAN/UBSAN tests, and complete Prospero
+library/example build pass. Pinned ELF
+`07384ba86e1db7b69b3994be320fe4a35fc05db6eec1773d761aa2a9a66602b8`
+passed twice on FW 5.500.008 with all 31 formats and 1,984 pixels bit-exact,
+bounded waits, cleanup-first execution, teardown, PID absence, immediate
+relaunch, and no panic. See `analysis/fw550_packed_formats_20260801.md`;
+shader sampling/storage, attachment exports, and FW 11.60 remain pending.
 
 The BC slice now has a real shader-execution gate rather than format-query-only
 coverage. Compute descriptor preparation realizes Vulkan samplers, combined

@@ -800,7 +800,9 @@ ordering.
   eighteen-format exact clear/readback gate twice on FW 5.50. API 49 then
   adds exact R8/RG8 SNORM, UINT, and SINT mappings and corrects R8/RG8 UNORM
   storage creation; its expanded 26-format, 1,664-pixel gate passes twice on
-  FW 5.50. Qualify shader sampling/storage and scalar/vector attachment
+  FW 5.50. API 50 adds packed RGBA8 SNORM/UINT/SINT, RGB10A2 UINT, and
+  BGR10A2 UNORM; its expanded 31-format, 1,984-pixel gate passes twice on FW
+  5.50 with one pinned ELF. Qualify shader sampling/storage and scalar/vector attachment
   exports next.
   Integer shader execution and the final identical FW 11.60 replay remain
   before endpoint qualification.

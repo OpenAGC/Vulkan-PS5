@@ -117,7 +117,7 @@ bytes. Compressed and depth/stencil formats are rejected by this color path.
 The Eden-required scalar/vector normalized and integer images expose sampled,
 storage, color-attachment, and transfer use with filtering and blit restricted
 to normalized classes. They are included in the expanded bounded FW 5.50
-gate, which creates 26 native views, clears and reads back 1,664 exact
+gate, which creates 31 native views, clears and reads back 1,984 exact
 component patterns, tears down, and immediately relaunches the identical ELF.
 Run it with
 `PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1
@@ -141,6 +141,13 @@ filter, and blit features, and also corrects the pre-existing R8/RG8 UNORM
 storage-image creation gap. The pinned FW 5.50 probe passed all eight R8/RG8
 forms twice with exact bits as part of its 26-format oracle. See
 `analysis/fw550_r8_rg8_formats_20260801.md`.
+
+OpenAGC API 50 adds exact RGBA8 SNORM/UINT/SINT, RGB10A2 UINT, and
+BGR10A2 UNORM descriptors and render-target classes. Vulkan exposes them as
+the corresponding packed `A8B8G8R8`, `A2B10G10R10`, and `A2R10G10B10`
+formats, preserving normalized/integer filtering, blit, and storage
+distinctions. The pinned FW 5.50 probe passed all 31 formats and 1,984 exact
+pixels twice. See `analysis/fw550_packed_formats_20260801.md`.
 
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary

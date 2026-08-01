@@ -144,10 +144,20 @@ static bool native_image_format(VkFormat format, AgcFormat *native) {
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
         *native = AGC_FORMAT_RGBA8_UNORM; return true;
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+        *native = AGC_FORMAT_RGBA8_SNORM; return true;
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+        *native = AGC_FORMAT_RGBA8_UINT; return true;
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+        *native = AGC_FORMAT_RGBA8_SINT; return true;
     case VK_FORMAT_B8G8R8A8_UNORM:
         *native = AGC_FORMAT_BGRA8_UNORM; return true;
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
         *native = AGC_FORMAT_RGB10A2_UNORM; return true;
+    case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+        *native = AGC_FORMAT_RGB10A2_UINT; return true;
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+        *native = AGC_FORMAT_BGR10A2_UNORM; return true;
     case VK_FORMAT_R8G8B8A8_SRGB:
     case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
         *native = AGC_FORMAT_RGBA8_SRGB; return true;
@@ -279,6 +289,10 @@ static bool native_image_storage_supported(VkFormat format,
         format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R8_SINT ||
         format == VK_FORMAT_R8G8_UNORM || format == VK_FORMAT_R8G8_SNORM ||
         format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R8G8_SINT ||
+        format == VK_FORMAT_A8B8G8R8_SNORM_PACK32 ||
+        format == VK_FORMAT_A8B8G8R8_UINT_PACK32 ||
+        format == VK_FORMAT_A8B8G8R8_SINT_PACK32 ||
+        format == VK_FORMAT_A2B10G10R10_UINT_PACK32 ||
         format == VK_FORMAT_R16G16B16A16_UINT ||
         format == VK_FORMAT_R16G16B16A16_SINT ||
         format == VK_FORMAT_R32G32B32A32_UINT ||
@@ -1286,7 +1300,12 @@ static uint32_t format_bytes(VkFormat format) {
     case VK_FORMAT_D16_UNORM: return 2;
     case VK_FORMAT_R8G8B8A8_UNORM: case VK_FORMAT_B8G8R8A8_UNORM:
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+    case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
     case VK_FORMAT_R8G8B8A8_SRGB: case VK_FORMAT_B8G8R8A8_SRGB:
     case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
     case VK_FORMAT_R16G16_SFLOAT: case VK_FORMAT_R16G16_UNORM:
@@ -1338,6 +1357,16 @@ static bool color_target_format(
         *target_format = AGC_GFX1013_RT_FORMAT_BGRA8_UNORM; break;
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
         *target_format = AGC_GFX1013_RT_FORMAT_RGB10A2_UNORM; break;
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_SNORM; break;
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_UINT; break;
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_SINT; break;
+    case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGB10A2_UINT; break;
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+        *target_format = AGC_GFX1013_RT_FORMAT_BGR10A2_UNORM; break;
     case VK_FORMAT_R16_SFLOAT:
         *target_format = AGC_GFX1013_RT_FORMAT_R16_FLOAT; break;
     case VK_FORMAT_R16_UNORM:
@@ -6325,10 +6354,40 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
         if (!native_pack_rgba8_clear(format, clear, &pattern[0]))
             return VK_FALSE;
         break;
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+        pattern[0] = native_snorm8(clear->float32[0]) |
+            (native_snorm8(clear->float32[1]) << 8u) |
+            (native_snorm8(clear->float32[2]) << 16u) |
+            (native_snorm8(clear->float32[3]) << 24u);
+        break;
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+        pattern[0] = (clear->uint32[0] & 0xffu) |
+            ((clear->uint32[1] & 0xffu) << 8u) |
+            ((clear->uint32[2] & 0xffu) << 16u) |
+            ((clear->uint32[3] & 0xffu) << 24u);
+        break;
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+        pattern[0] = ((uint32_t)clear->int32[0] & 0xffu) |
+            (((uint32_t)clear->int32[1] & 0xffu) << 8u) |
+            (((uint32_t)clear->int32[2] & 0xffu) << 16u) |
+            (((uint32_t)clear->int32[3] & 0xffu) << 24u);
+        break;
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
         pattern[0] = native_unorm(clear->float32[0], 1023u) |
             (native_unorm(clear->float32[1], 1023u) << 10u) |
             (native_unorm(clear->float32[2], 1023u) << 20u) |
+            (native_unorm(clear->float32[3], 3u) << 30u);
+        break;
+    case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+        pattern[0] = (clear->uint32[0] & 0x3ffu) |
+            ((clear->uint32[1] & 0x3ffu) << 10u) |
+            ((clear->uint32[2] & 0x3ffu) << 20u) |
+            ((clear->uint32[3] & 0x3u) << 30u);
+        break;
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+        pattern[0] = native_unorm(clear->float32[2], 1023u) |
+            (native_unorm(clear->float32[1], 1023u) << 10u) |
+            (native_unorm(clear->float32[0], 1023u) << 20u) |
             (native_unorm(clear->float32[3], 3u) << 30u);
         break;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
