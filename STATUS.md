@@ -366,6 +366,17 @@ through Vulkan until Vulkan semantics, validation, and exact-firmware gates
 also pass. `PLAN.md` is authoritative for migration order; the dated sections
 below are the implementation and qualification ledger.
 
+The Eden `612409c7ba` format audit is now revision-frozen rather than
+approximate: 112 guest rows map to 109 unique Vulkan formats. The committed
+inventory classifies 36 direct formats after adding
+`R16G16B16A16_{UINT,SINT}` and `R32G32B32A32_{UINT,SINT}`, 33 remaining
+uncompressed gaps, 28 ASTC plus 10 ETC2/EAC transcode-required forms, and two
+fail-closed D24 forms. The four new integer formats expose sampled, storage,
+color-attachment, and transfer use without unsupported filtering, blit, or
+texel-buffer claims. Exact format queries, image/view creation, signed and
+unsigned clear packing, the frozen capability snapshot, both 50/50 host
+suites, and the Prospero build pass. Hardware pixels remain pending.
+
 ## SDL/Zink capability slice (2026-07-31)
 
 The pinned Mesa GL 2.1 Zink reporter and its exact remaining contract are

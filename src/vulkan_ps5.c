@@ -165,9 +165,13 @@ static int ps5_color_format(VkFormat format) {
     case VK_FORMAT_R16_SFLOAT: return AGC_GFX1013_RT_FORMAT_R16_FLOAT;
     case VK_FORMAT_R16G16_SFLOAT: return AGC_GFX1013_RT_FORMAT_RG16_FLOAT;
     case VK_FORMAT_R16G16B16A16_SFLOAT: return AGC_GFX1013_RT_FORMAT_RGBA16_FLOAT;
+    case VK_FORMAT_R16G16B16A16_UINT: return AGC_GFX1013_RT_FORMAT_RGBA16_UINT;
+    case VK_FORMAT_R16G16B16A16_SINT: return AGC_GFX1013_RT_FORMAT_RGBA16_SINT;
     case VK_FORMAT_R32_SFLOAT: return AGC_GFX1013_RT_FORMAT_R32_FLOAT;
     case VK_FORMAT_R32G32_SFLOAT: return AGC_GFX1013_RT_FORMAT_RG32_FLOAT;
     case VK_FORMAT_R32G32B32A32_SFLOAT: return AGC_GFX1013_RT_FORMAT_RGBA32_FLOAT;
+    case VK_FORMAT_R32G32B32A32_UINT: return AGC_GFX1013_RT_FORMAT_RGBA32_UINT;
+    case VK_FORMAT_R32G32B32A32_SINT: return AGC_GFX1013_RT_FORMAT_RGBA32_SINT;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32: return AGC_GFX1013_RT_FORMAT_R11G11B10_FLOAT;
     case VK_FORMAT_R8G8B8A8_SRGB: return AGC_GFX1013_RT_FORMAT_RGBA8_SRGB;
     case VK_FORMAT_A8B8G8R8_SRGB_PACK32: return AGC_GFX1013_RT_FORMAT_RGBA8_SRGB;
@@ -1102,13 +1106,17 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
 
     const VkFormatFeatureFlags transfer =
         VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
-    const VkFormatFeatureFlags sampled =
-        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+    const VkFormatFeatureFlags sampled_nearest =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    const VkFormatFeatureFlags sampled = sampled_nearest |
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
     const VkFormatFeatureFlags blit_source = VK_FORMAT_FEATURE_BLIT_SRC_BIT;
     const VkFormatFeatureFlags color = sampled | transfer | blit_source |
         VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
     const VkFormatFeatureFlags storage_color = color |
+        VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+    const VkFormatFeatureFlags integer_color = sampled_nearest | transfer |
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
         VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     const VkFormatFeatureFlags depth = transfer |
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -1162,6 +1170,13 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     case VK_FORMAT_B8G8R8A8_SRGB:
         pFormatProperties->linearTilingFeatures = color;
         pFormatProperties->optimalTilingFeatures = color;
+        break;
+    case VK_FORMAT_R16G16B16A16_UINT:
+    case VK_FORMAT_R16G16B16A16_SINT:
+    case VK_FORMAT_R32G32B32A32_UINT:
+    case VK_FORMAT_R32G32B32A32_SINT:
+        pFormatProperties->linearTilingFeatures = integer_color;
+        pFormatProperties->optimalTilingFeatures = integer_color;
         break;
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:

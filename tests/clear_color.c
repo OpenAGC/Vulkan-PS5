@@ -63,8 +63,97 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_R32G32B32A32_SFLOAT, &clear, pattern, &words));
     assert(words == 4u && memcmp(pattern, clear.float32,
         sizeof(pattern)) == 0);
+    const VkClearColorValue uint_clear = {
+        .uint32 = {0x1234u, 0xabcdu, 0x5678u, 0x9abcu},
+    };
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16B16A16_UINT, &uint_clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0xabcd1234u &&
+        pattern[1] == 0x9abc5678u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32G32B32A32_UINT, &uint_clear, pattern, &words));
+    assert(words == 4u && memcmp(pattern, uint_clear.uint32,
+        sizeof(pattern)) == 0);
+    const VkClearColorValue sint_clear = {
+        .int32 = {-1, -2, 0x1234, -32768},
+    };
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R16G16B16A16_SINT, &sint_clear, pattern, &words));
+    assert(words == 2u && pattern[0] == 0xfffeffffu &&
+        pattern[1] == 0x80001234u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R32G32B32A32_SINT, &sint_clear, pattern, &words));
+    assert(words == 4u && memcmp(pattern, sint_clear.int32,
+        sizeof(pattern)) == 0);
     assert(!vk_ps5_pack_clear_color(
         VK_FORMAT_BC1_RGBA_UNORM_BLOCK, &clear, pattern, &words));
+}
+
+static void test_integer_color_image_views(void)
+{
+    const VkInstanceCreateInfo instance_create = {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    };
+    VkInstance instance = VK_NULL_HANDLE;
+    assert(vkCreateInstance(&instance_create, NULL, &instance) == VK_SUCCESS);
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
+    VkDevice device = create_device(instance, &physical);
+    const VkFormat formats[] = {
+        VK_FORMAT_R16G16B16A16_UINT,
+        VK_FORMAT_R16G16B16A16_SINT,
+        VK_FORMAT_R32G32B32A32_UINT,
+        VK_FORMAT_R32G32B32A32_SINT,
+    };
+    for (uint32_t i = 0u; i < sizeof(formats) / sizeof(formats[0]); ++i) {
+        const VkImageCreateInfo image_create = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = formats[i],
+            .extent = {8u, 8u, 1u},
+            .mipLevels = 1u,
+            .arrayLayers = 1u,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        };
+        VkImage image = VK_NULL_HANDLE;
+        assert(vkCreateImage(device, &image_create, NULL, &image) ==
+            VK_SUCCESS);
+        VkMemoryRequirements requirements;
+        vkGetImageMemoryRequirements(device, image, &requirements);
+        const VkMemoryAllocateInfo allocation = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = requirements.size,
+            .memoryTypeIndex = 0u,
+        };
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        assert(vkAllocateMemory(device, &allocation, NULL, &memory) ==
+            VK_SUCCESS);
+        assert(vkBindImageMemory(device, image, memory, 0u) == VK_SUCCESS);
+        const VkImageViewCreateInfo view_create = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = formats[i],
+            .subresourceRange = {
+                VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+            },
+        };
+        VkImageView view = VK_NULL_HANDLE;
+        assert(vkCreateImageView(device, &view_create, NULL, &view) ==
+            VK_SUCCESS);
+        vkDestroyImageView(device, view, NULL);
+        vkDestroyImage(device, image, NULL);
+        vkFreeMemory(device, memory, NULL);
+    }
+    vkDestroyDevice(device, NULL);
+    vkDestroyInstance(instance, NULL);
 }
 
 static void test_depth_stencil_pattern_packing(void)
@@ -279,6 +368,7 @@ static void test_depth_stencil_clear_recording(void)
 int main(void)
 {
     test_clear_pattern_packing();
+    test_integer_color_image_views();
     test_depth_stencil_pattern_packing();
     test_multidword_clear_recording();
     test_depth_stencil_clear_recording();

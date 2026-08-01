@@ -152,11 +152,19 @@ static bool native_image_format(VkFormat format, AgcFormat *native) {
         *native = AGC_FORMAT_RG16_FLOAT; return true;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
         *native = AGC_FORMAT_RGBA16_FLOAT; return true;
+    case VK_FORMAT_R16G16B16A16_UINT:
+        *native = AGC_FORMAT_RGBA16_UINT; return true;
+    case VK_FORMAT_R16G16B16A16_SINT:
+        *native = AGC_FORMAT_RGBA16_SINT; return true;
     case VK_FORMAT_R32_SFLOAT: *native = AGC_FORMAT_R32_FLOAT; return true;
     case VK_FORMAT_R32G32_SFLOAT:
         *native = AGC_FORMAT_RG32_FLOAT; return true;
     case VK_FORMAT_R32G32B32A32_SFLOAT:
         *native = AGC_FORMAT_RGBA32_FLOAT; return true;
+    case VK_FORMAT_R32G32B32A32_UINT:
+        *native = AGC_FORMAT_RGBA32_UINT; return true;
+    case VK_FORMAT_R32G32B32A32_SINT:
+        *native = AGC_FORMAT_RGBA32_SINT; return true;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         *native = AGC_FORMAT_R11G11B10_FLOAT; return true;
     case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
@@ -232,6 +240,17 @@ static bool native_image_is_bc(VkFormat format) {
         return false;
     return native_format >= AGC_FORMAT_BC1_UNORM &&
         native_format <= AGC_FORMAT_BC7_SRGB;
+}
+
+static bool native_image_storage_supported(VkFormat format,
+                                           VkImageTiling tiling)
+{
+    if (format == VK_FORMAT_R8G8B8A8_UNORM)
+        return tiling == VK_IMAGE_TILING_LINEAR;
+    return format == VK_FORMAT_R16G16B16A16_UINT ||
+        format == VK_FORMAT_R16G16B16A16_SINT ||
+        format == VK_FORMAT_R32G32B32A32_UINT ||
+        format == VK_FORMAT_R32G32B32A32_SINT;
 }
 
 static bool native_image_is_rgba8_clearable(VkFormat format)
@@ -1225,9 +1244,14 @@ static uint32_t format_bytes(VkFormat format) {
     case VK_FORMAT_R16G16_SFLOAT: case VK_FORMAT_R32_SFLOAT:
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32: case VK_FORMAT_D32_SFLOAT:
     case VK_FORMAT_D16_UNORM_S8_UINT: return 4;
-    case VK_FORMAT_R16G16B16A16_SFLOAT: case VK_FORMAT_R32G32_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R16G16B16A16_UINT:
+    case VK_FORMAT_R16G16B16A16_SINT:
+    case VK_FORMAT_R32G32_SFLOAT:
     case VK_FORMAT_D32_SFLOAT_S8_UINT: return 8;
-    case VK_FORMAT_R32G32B32A32_SFLOAT: return 16;
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+    case VK_FORMAT_R32G32B32A32_UINT:
+    case VK_FORMAT_R32G32B32A32_SINT: return 16;
     default: return 0;
     }
 }
@@ -1253,12 +1277,20 @@ static bool color_target_format(
         *target_format = AGC_GFX1013_RT_FORMAT_RG16_FLOAT; break;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
         *target_format = AGC_GFX1013_RT_FORMAT_RGBA16_FLOAT; break;
+    case VK_FORMAT_R16G16B16A16_UINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA16_UINT; break;
+    case VK_FORMAT_R16G16B16A16_SINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA16_SINT; break;
     case VK_FORMAT_R32_SFLOAT:
         *target_format = AGC_GFX1013_RT_FORMAT_R32_FLOAT; break;
     case VK_FORMAT_R32G32_SFLOAT:
         *target_format = AGC_GFX1013_RT_FORMAT_RG32_FLOAT; break;
     case VK_FORMAT_R32G32B32A32_SFLOAT:
         *target_format = AGC_GFX1013_RT_FORMAT_RGBA32_FLOAT; break;
+    case VK_FORMAT_R32G32B32A32_UINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA32_UINT; break;
+    case VK_FORMAT_R32G32B32A32_SINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RGBA32_SINT; break;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         *target_format = AGC_GFX1013_RT_FORMAT_R11G11B10_FLOAT; break;
     case VK_FORMAT_R8G8B8A8_SRGB:
@@ -1742,8 +1774,8 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
          pCreateInfo->samples != VK_SAMPLE_COUNT_4_BIT) ||
         !native_image_format(pCreateInfo->format, &(AgcFormat){0}) ||
         ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
-         (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
-          pCreateInfo->tiling != VK_IMAGE_TILING_LINEAR)) ||
+         !native_image_storage_supported(pCreateInfo->format,
+             pCreateInfo->tiling)) ||
         (pCreateInfo->flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                                VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT |
                                VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
@@ -6170,6 +6202,20 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
             ((uint32_t)native_float16(clear->float32[3]) << 16u);
         *pattern_word_count = 2u;
         return VK_TRUE;
+    case VK_FORMAT_R16G16B16A16_UINT:
+        pattern[0] = (clear->uint32[0] & 0xffffu) |
+            (clear->uint32[1] << 16u);
+        pattern[1] = (clear->uint32[2] & 0xffffu) |
+            (clear->uint32[3] << 16u);
+        *pattern_word_count = 2u;
+        return VK_TRUE;
+    case VK_FORMAT_R16G16B16A16_SINT:
+        pattern[0] = ((uint32_t)clear->int32[0] & 0xffffu) |
+            ((uint32_t)clear->int32[1] << 16u);
+        pattern[1] = ((uint32_t)clear->int32[2] & 0xffffu) |
+            ((uint32_t)clear->int32[3] << 16u);
+        *pattern_word_count = 2u;
+        return VK_TRUE;
     case VK_FORMAT_R32_SFLOAT:
         memcpy(&pattern[0], &clear->float32[0], sizeof(uint32_t));
         break;
@@ -6179,6 +6225,14 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
         return VK_TRUE;
     case VK_FORMAT_R32G32B32A32_SFLOAT:
         memcpy(pattern, clear->float32, 4u * sizeof(uint32_t));
+        *pattern_word_count = 4u;
+        return VK_TRUE;
+    case VK_FORMAT_R32G32B32A32_UINT:
+        memcpy(pattern, clear->uint32, 4u * sizeof(uint32_t));
+        *pattern_word_count = 4u;
+        return VK_TRUE;
+    case VK_FORMAT_R32G32B32A32_SINT:
+        memcpy(pattern, clear->int32, 4u * sizeof(uint32_t));
         *pattern_word_count = 4u;
         return VK_TRUE;
     default:

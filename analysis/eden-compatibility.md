@@ -348,11 +348,31 @@ warning. The public Prospero ELF SHA-256 is
 | Area | Current evidence | State |
 | --- | --- | --- |
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
-| Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD exposes its existing uncompressed/depth subset plus all 14 BC1-BC7 UNORM/SNORM/SRGB/UFLOAT/SFLOAT formats for sampled, filtered, and transfer use. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified. D24, ASTC, and ETC remain fail-closed | Partial; broader uncompressed coverage and hardware BC sampling remain |
+| Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 36 of those Vulkan formats after the RGBA16/32 integer slice, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified. The remaining unique set is 33 uncompressed gaps, 28 ASTC and 10 ETC2/EAC formats that Eden can transcode, and two D24 forms that remain fail-closed | Partial; broader uncompressed coverage and hardware integer/BC sampling remain |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
+
+The revision-frozen source inventory is committed as
+`analysis/eden-format-inventory-612409c7ba.tsv`. It is derived from Eden's
+`SURFACE_FORMAT_LIST`, preserving all 112 guest rows, their requested usage,
+the 109 unique Vulkan mappings, and the current direct/transcode/fail-closed
+classification. This replaces the earlier approximate “roughly 150” count.
+ASTC and ETC2/EAC remain unadvertised in the ICD so Eden selects its existing
+RGBA8/BC or R/RG transcode paths. `VK_FORMAT_X8_D24_UNORM_PACK32` and
+`VK_FORMAT_D24_UNORM_S8_UINT` remain unadvertised and image creation rejects
+them.
+
+The first refreshed uncompressed slice adds the four directly native integer
+targets `R16G16B16A16_{UINT,SINT}` and `R32G32B32A32_{UINT,SINT}`. They expose
+sampled, storage, color-attachment, and transfer features, but deliberately do
+not expose linear filtering or blit features. OpenAGC translates their public
+format values to exact gfx1013 SQ resource encodings; Vulkan creates optimal
+images and native views, preserves signed/unsigned clear bits, and keeps texel-
+buffer features false because typed buffer-view descriptors are not yet
+implemented. Hardware pixels remain required before this slice is called
+endpoint-qualified.
 
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer
@@ -401,14 +421,18 @@ immediate relaunch on both FW 5.500.008 and FW 11.600.005 using one pinned ELF.
 Depth/stencil hardware pixels remain pending, so cross-firmware qualification
 currently applies only to color attachment/load clears.
 
-General 2D color blits are also application-neutral. The ICD uses a committed
+General color blits are also application-neutral. The ICD uses a committed
 graphics-meta shader with public OpenAGC pipelines, descriptors, views,
 samplers, transitions, and draws for nearest/linear scaling, reversed axes,
 mips, and array layers. BC and uncompressed color sources are accepted;
 destinations use the supported uncompressed color-target matrix. The exact
 nearest 2x readback probe passed twice on FW 5.500.008 with 256 copied pixels
 and 144 guards, then the same ELF passed twice on FW 11.600.005 with an exact
-FTP round-trip hash. 3D, self, depth/stencil, and compressed-destination blits
+FTP round-trip hash. Public OpenAGC 3D sampled views and depth-slice color
+bindings now also back 3D color blits, while disjoint-subresource self blits
+use exact recorded subresource state and symmetric restoration. Their combined
+FW 5.50 gate passed `3d=512 self=64 guard=160` with clean exit. Same-
+subresource feedback blits, depth/stencil blits, and compressed destinations
 stay fail-closed.
 
 Depth-only dynamic-rendering pipelines no longer require a fictitious color
@@ -461,13 +485,17 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    gates on both firmware endpoints. Keep D24 fail-closed until a correct
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
-4. Complete the remaining native command forms in dependency order:
-   finish valid self/3D blit forms. General 2D color blits and 4x-to-1x 2D
+4. Complete the remaining native command forms in dependency order. General
+   2D/3D and disjoint-subresource self color blits plus 4x-to-1x 2D
    color resolves are host-complete and exact-pixel qualified on both
-   endpoints. Partial attachment clears are
+   endpoints except that the 3D/self combined gate currently has FW 5.50
+   evidence only. Partial attachment clears are
    implemented; their color/load-clear path is identically qualified on FW
    5.50 and FW 11.60, while depth/stencil pixel gates remain. General
    uncompressed color and single-sample depth/stencil image clears are
-   host-complete and await their hardware pixel oracles.
+   host-complete and await their hardware pixel oracles. Preserve same-
+   subresource feedback blits, depth/stencil blits, compressed destinations,
+   and unsupported resolve/sample-count forms as explicit gaps until Eden
+   traces prove they are needed and a general native path exists.
 5. Add only the allowed Eden changes: Prospero surface creation, build/link
    integration, and static Vulkan entrypoint location.

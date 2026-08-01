@@ -472,6 +472,37 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
         VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
         &image_format_properties) == VK_SUCCESS);
+    const VkFormat integer_color_formats[] = {
+        VK_FORMAT_R16G16B16A16_UINT,
+        VK_FORMAT_R16G16B16A16_SINT,
+        VK_FORMAT_R32G32B32A32_UINT,
+        VK_FORMAT_R32G32B32A32_SINT,
+    };
+    const VkFormatFeatureFlags integer_color_features =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    for (size_t i = 0u;
+         i < sizeof(integer_color_formats) /
+             sizeof(integer_color_formats[0]); ++i) {
+        vkGetPhysicalDeviceFormatProperties(physical,
+            integer_color_formats[i], &format_properties);
+        assert(format_properties.linearTilingFeatures ==
+            integer_color_features);
+        assert(format_properties.optimalTilingFeatures ==
+            integer_color_features);
+        assert(format_properties.bufferFeatures == 0u);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            integer_color_formats[i], VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            0u, &image_format_properties) == VK_SUCCESS);
+    }
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures == 0);
