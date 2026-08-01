@@ -520,6 +520,18 @@ the native-runtime migration.
   SDL native-window EGL/WSI bridge twice with exact readback, presentation,
   complete native teardown, and immediate relaunch. Preserve those hashes and
   defer the FW 11.60 replay until that endpoint is available.
+  The remaining Mesa runtime warning is `VK_EXT_depth_clip_enable`; treat the
+  SDL/Zink track as functionally qualified for the current probe, but not
+  warning-free or generally depth-correct until this extension is complete.
+  Next, advertise and enable `VkPhysicalDeviceDepthClipEnableFeaturesEXT`,
+  consume `VkPipelineRasterizationDepthClipStateCreateInfoEXT` during graphics
+  pipeline creation, and translate `depthClipEnable` through the public
+  OpenAGC rasterization contract without exposing PM4 state. Add feature-chain,
+  device-enablement, pipeline-validation, and depth-sensitive rendering tests,
+  then require a cleanup-guarded FW 5.50 Zink run with exact pixels,
+  presentation, teardown, immediate relaunch, and no depth-clip warning before
+  recording new pinned ELF/library hashes. Replay the identical final bytes on
+  FW 11.60 when that endpoint becomes available.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset
