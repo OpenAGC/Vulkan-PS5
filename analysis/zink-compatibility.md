@@ -42,8 +42,10 @@ ICD reports and accepts its feature structure, consumes the static graphics
 pipeline state, and translates explicit enable/disable to OpenAGC API 45 while
 keeping `depthClampEnable` independent. Host tests cover extension enumeration,
 feature-chain enablement, reserved-flag rejection, and the exact native flags.
-The cleanup-guarded depth probe passed twice on FW 5.500.008 with exact
-coverage/depth/stencil output. The rebuilt Mesa/Zink integration then passed
+The cleanup-guarded depth probe passed twice on FW 5.500.008 and twice on FW
+11.600.005 with identical bytes, one firmware-neutral gfx1013 clip-control
+sequence, and exact coverage/depth/stencil output. The rebuilt Mesa/Zink
+integration then passed
 twice with exact RGBA `64,128,191,255`, visible presentation, complete
 teardown, immediate relaunch, and no `VK_EXT_depth_clip_enable` warning. The
 final depth-probe ELF and shared ICD hashes are recorded in `STATUS.md`.

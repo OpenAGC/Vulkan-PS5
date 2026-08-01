@@ -89,7 +89,10 @@ colors with image-view swizzle, maintenance5, and Vulkan 1.2. Scalar block
 layout is compiled by a real storage-buffer pipeline, and `alphaToOne` is baked
 into the gfx1013 pixel epilog. `VK_EXT_depth_clip_enable` is also enumerated,
 feature-enabled, and translated to OpenAGC's explicit depth-clip state; its
-depth-sensitive FW 5.50 and warning-free Zink gates now pass.
+depth-sensitive probe passes twice with identical bytes and one gfx1013 clip
+sequence on both FW 5.50 and FW 11.60. The full FW 11.60 SDL/EGL/Zink gate is
+still investigating intermittent first-frame readback independently of depth
+clip state.
 The live strict report is now
 `api=0 extensions=0 features=0 total=0`, with FW 5.500.008 readback evidence
 for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border

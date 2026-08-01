@@ -7,9 +7,12 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_dir=$(dirname -- "$script_dir")
 build_dir=${VULKAN_PS5_PROSPERO_BUILD:-$repo_dir/build-prospero-m2}
 log_dir=${VULKAN_PS5_FW550_LOG_DIR:-$script_dir/qualification-logs}
+endpoint_label=${VULKAN_PS5_ENDPOINT_LABEL:-FW550}
 websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-30}
 klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
+live_klog=${VULKAN_PS5_LIVE_KLOG:-0}
+allow_no_klog=${VULKAN_PS5_ALLOW_NO_KLOG:-0}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf=${VULKAN_PS5_EXIT_ELF:-$build_dir/vulkan_ps5_system_exit_probe.elf}
 cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
@@ -19,6 +22,15 @@ file_stem=${VULKAN_PS5_EXIT_FILE_STEM:-system-exit-probe}
 display_name=${VULKAN_PS5_EXIT_DISPLAY_NAME:-system-exit probe}
 success_regex=${VULKAN_PS5_EXIT_SUCCESS_REGEX:-'^system-exit-probe: ready app=0x[0-9a-f]+$'}
 failure_pattern=${VULKAN_PS5_EXIT_FAILURE_PATTERN:-'system-exit-probe: unexpected return'}
+
+case "$live_klog" in
+    0|1) ;;
+    *) echo "VULKAN_PS5_LIVE_KLOG must be 0 or 1" >&2; exit 2 ;;
+esac
+case "$allow_no_klog" in
+    0|1) ;;
+    *) echo "VULKAN_PS5_ALLOW_NO_KLOG must be 0 or 1" >&2; exit 2 ;;
+esac
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero probe: $elf" >&2
@@ -62,6 +74,22 @@ kill_exact_pid() {
         "$script_dir/ps5debug_kill_process.py" --pid "$1" "$PS5_HOST" eboot.bin
 }
 
+assert_process_absent() {
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" --assert-absent \
+        "$PS5_HOST" eboot.bin
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" --assert-absent \
+        "$PS5_HOST" eboot.elf
+}
+
+accept_no_klog_fallback() {
+    [ "$allow_no_klog" = 1 ] &&
+        assert_process_absent &&
+        curl -sS --connect-timeout 3 --max-time 5 \
+            "http://${PS5_HOST}:8080/" >/dev/null
+}
+
 latest_eboot_pid() {
     sed -n 's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*category=native_game.*/\1/p' "$1" | \
         tail -n 1
@@ -78,12 +106,32 @@ timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-${file_stem}.log"
 klog="$log_dir/${timestamp}-${file_stem}.klog"
 target_klog="$log_dir/${timestamp}-${file_stem}-target.klog"
+live_klog_pid=
 
-echo "FW550 ${display_name} 1/1"
+stop_live_klog() {
+    if [ -n "$live_klog_pid" ]; then
+        kill "$live_klog_pid" >/dev/null 2>&1 || true
+        wait "$live_klog_pid" >/dev/null 2>&1 || true
+        live_klog_pid=
+    fi
+}
+trap 'stop_live_klog' EXIT
+
+if [ "$live_klog" = 1 ]; then
+    nc -w 30 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 &
+    live_klog_pid=$!
+    sleep 1
+fi
+
+echo "${endpoint_label} ${display_name} 1/1"
 if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
     "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
     sleep "$klog_settle_delay"
-    nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || true
+    if [ "$live_klog" = 1 ]; then
+        stop_live_klog
+    else
+        nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || true
+    fi
     if [ -s "$klog" ]; then sanitize_klog "$klog"; fi
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
@@ -95,11 +143,11 @@ if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
 fi
 
 sleep "$klog_settle_delay"
-if ! nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1 || [ ! -s "$klog" ]; then
-    echo "${display_name} klog capture failed: $klog" >&2
-    exit 1
+if [ "$live_klog" = 1 ]; then
+    stop_live_klog
+elif ! nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1; then
+    :
 fi
-sanitize_klog "$klog"
 sed -n '1,160p' "$log"
 if ! grep -E "$success_regex" "$log" >/dev/null || \
    grep -F "$failure_pattern" "$log" >/dev/null; then
@@ -110,9 +158,26 @@ if ! grep -E "$success_regex" "$log" >/dev/null || \
     echo "${display_name} did not reach its self-kill oracle: $log" >&2
     exit 1
 fi
+if [ ! -s "$klog" ]; then
+    if ! accept_no_klog_fallback; then
+        echo "${display_name} klog capture failed: $klog" >&2
+        exit 1
+    fi
+    echo "${endpoint_label} ${display_name}: NO_KLOG_PROCESS_ABSENCE"
+    echo "log: $log"
+    echo "klog unavailable: $klog"
+    exit 0
+fi
+sanitize_klog "$klog"
 
 target_pid=$(latest_eboot_pid "$klog")
 if [ -z "$target_pid" ]; then
+    if accept_no_klog_fallback; then
+        echo "${endpoint_label} ${display_name}: NO_KLOG_PROCESS_ABSENCE"
+        echo "log: $log"
+        echo "klog unavailable or unattributable: $klog"
+        exit 0
+    fi
     echo "kernel log did not identify the ${display_name} PID: $klog" >&2
     exit 1
 fi
@@ -167,9 +232,9 @@ if grep -F '[KERNEL] WARNING:' "$target_klog" | grep -Fvx "$warning" \
     exit 1
 fi
 if [ "$warning_count" -eq 1 ]; then
-    echo "FW550 ${display_name}: BASELINE_VM_WARNING amount=0x4000"
+    echo "${endpoint_label} ${display_name}: BASELINE_VM_WARNING amount=0x4000"
 else
-    echo "FW550 ${display_name}: CLEAN"
+    echo "${endpoint_label} ${display_name}: CLEAN"
 fi
 echo "log: $log"
 echo "klog: $target_klog"

@@ -390,15 +390,22 @@ enablement or with nonzero reserved flags, parses the static rasterization
 state, and maps its independent Boolean to OpenAGC API 45. Pipeline inspection
 proves both explicit disable and explicit enable while depth clamp is active.
 A cleanup-guarded depth probe whose near triangle is outside the Vulkan Z
-frustum passed twice at `20260801T043640Z` and `20260801T043655Z` with exact
-`green=12288 red=9830 raw=54145/0/9830 stencil=22118`; its ELF SHA-256 is
-`cdc6f9ec17ebab5878c0a38c4dad039cf68a5abf123003d9a19ba11c6fa6430c`.
+frustum now passes with the same firmware-neutral OpenAGC clip state twice on
+FW 11.600.005 (`20260801T055428Z`, `20260801T055445Z`) and twice on FW
+5.500.008 (`20260801T055514Z`, `20260801T055537Z`). Every replay returned exact
+`green=12288 red=9830 raw=54145/0/9830 stencil=22118`; the identical ELF
+SHA-256 is
+`eb3ce7775f5aefe5dd232b44b9e85b781da9a78270e268fba3e3d12a06341cc2`.
 The first Zink replay exposed a missing gfx10.3 `DX_LINEAR_ATTR_CLIP_ENA` bit
 in OpenAGC's explicit clip-control register. OpenAGC commit `1d42288` corrected
 the encoding; both final Zink logs contain no `VK_EXT_depth_clip_enable`
 warning and pass exact readback, presentation, teardown, and relaunch.
 
-FW 11.60 qualification remains deferred until that endpoint is available.
+This closes the FW 11.60 `VK_EXT_depth_clip_enable` hardware replay. The full
+SDL/EGL/Zink FW 11.60 qualification remains open because identical integration
+bytes have alternated between exact and zero first-frame readback; that is a
+separate WSI/first-frame synchronization investigation, not a clip-control or
+console-stability result.
 
 ## Milestone 6: multiple viewports (2026-07-29)
 

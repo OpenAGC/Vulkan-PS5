@@ -520,7 +520,8 @@ the native-runtime migration.
   SDL native-window EGL/WSI bridge twice with exact readback, presentation,
   complete native teardown, and immediate relaunch. Preserve those hashes and
   defer the FW 11.60 replay until that endpoint is available.
-  `VK_EXT_depth_clip_enable` is closed on FW 5.500.008. Extension enumeration,
+  `VK_EXT_depth_clip_enable` is closed on FW 5.500.008 and FW 11.600.005.
+  Extension enumeration,
   feature query/enablement, rasterization-chain parsing, fail-closed
   validation, and translation through OpenAGC API 45 pass host tests. The
   dedicated negative-Z probe passes twice with exact color, defined depth,
@@ -529,7 +530,10 @@ the native-runtime migration.
   attribute clipping in explicit clip-control packets. Two cleanup-guarded
   Mesa/Zink runs pass exact pixels, visible presentation, teardown, immediate
   relaunch, and contain no depth-clip warning. Preserve the pinned ELF/library
-  hashes and replay the identical final bytes on FW 11.60 when available.
+  hashes. The identical firmware-neutral depth probe passes twice on each
+  endpoint. Continue the separate intermittent FW 11.60 SDL/EGL/Zink
+  first-frame investigation in WSI synchronization; do not reintroduce a
+  firmware-specific clip-control value.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset

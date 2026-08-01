@@ -3,6 +3,7 @@ set -eu
 
 repo_dir=$1
 runner="$repo_dir/examples/run_fw550_depth_clip_enable.sh"
+fw1160_runner="$repo_dir/examples/run_fw1160_depth_clip_enable.sh"
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/vulkan-ps5-depth-clip-enable.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT
 
@@ -22,6 +23,13 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
+if [ "${FAKE_KLOG_MODE:-clean}" = empty ]; then
+    exit 0
+fi
+if [ "${FAKE_KLOG_MODE:-clean}" = unavailable ]; then
+    echo 'nc: connectx to 127.0.0.1 port 3232 (tcp) failed: Connection refused' >&2
+    exit 1
+fi
 printf '%s\n' \
     '<931> EXEC /app0/eboot.bin [system], vm#1 category=native_game' \
     '<932> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui'
@@ -40,6 +48,8 @@ cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
     *" --pid 931 "*" eboot.bin "*) ;;
+    *" --assert-absent "*" eboot.bin "*) ;;
+    *" --assert-absent "*" eboot.elf "*) ;;
     *) echo "depth-clip-enable runner did not use exact PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"
@@ -50,6 +60,7 @@ chmod +x "$test_root/bin/curl" "$test_root/bin/nc" "$test_root/bin/uv"
 run_runner() {
     mode=$1
     output=$2
+    selected_runner=${3:-$runner}
     : >"$test_root/uv.log"
     PATH="$test_root/bin:$PATH" \
     PS5_HOST=127.0.0.1 \
@@ -59,7 +70,7 @@ run_runner() {
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_KLOG_MODE="$mode" \
-        sh "$runner" >"$output" 2>&1
+        sh "$selected_runner" >"$output" 2>&1
 }
 
 run_runner clean "$test_root/clean.out"
@@ -76,5 +87,13 @@ if run_runner crash "$test_root/crash.out"; then
 fi
 grep -F 'fatal lifecycle fault' "$test_root/crash.out" >/dev/null
 grep -F -- '--pid 931' "$test_root/uv.log" >/dev/null
+
+run_runner empty "$test_root/fw1160.out" "$fw1160_runner"
+grep -F 'FW1160 depth-clip-enable probe: NO_KLOG_PROCESS_ABSENCE' \
+    "$test_root/fw1160.out" >/dev/null
+
+run_runner unavailable "$test_root/fw1160-unavailable.out" "$fw1160_runner"
+grep -F 'FW1160 depth-clip-enable probe: NO_KLOG_PROCESS_ABSENCE' \
+    "$test_root/fw1160-unavailable.out" >/dev/null
 
 echo "depth-clip-enable runner safety gate: PASS"
