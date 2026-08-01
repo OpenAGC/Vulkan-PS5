@@ -297,7 +297,8 @@ if(VULKAN_PS5_BUILD_TESTS)
     set(PIPELINE_SHADER_OUTPUTS)
     foreach(shader pipeline.vert pipeline.frag pipeline.comp pipeline.geom
                    pipeline.tesc pipeline.tese pipeline_sample.frag
-                   pipeline_cube_array.frag pipeline_scalar.comp)
+                   pipeline_cube_array.frag pipeline_scalar.comp
+                   pipeline_depth_only.frag)
       set(output "${CMAKE_CURRENT_BINARY_DIR}/${shader}.spv")
       add_custom_command(OUTPUT "${output}"
         COMMAND "${GLSLANG_VALIDATOR}" -V

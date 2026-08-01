@@ -33,7 +33,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 10);
+    assert(argc == 11);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -87,6 +87,7 @@ int main(int argc, char **argv) {
     VkShaderModule sample_fragment = shader_module(device, argv[7]);
     VkShaderModule cube_array_fragment = shader_module(device, argv[8]);
     VkShaderModule scalar_compute = shader_module(device, argv[9]);
+    VkShaderModule depth_only_fragment = shader_module(device, argv[10]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -365,6 +366,41 @@ int main(int argc, char **argv) {
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
         &dynamic_rendering_info, NULL, &dynamic_rendering_pipeline) ==
         VK_SUCCESS);
+    const VkPipelineRenderingCreateInfo depth_only_rendering_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT,
+    };
+    const VkPipelineShaderStageCreateInfo depth_only_stages[] = {
+        stages[0],
+        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
+         VK_SHADER_STAGE_FRAGMENT_BIT, depth_only_fragment, "main", NULL},
+    };
+    VkPipelineColorBlendStateCreateInfo depth_only_blend = blend;
+    depth_only_blend.attachmentCount = 0u;
+    depth_only_blend.pAttachments = NULL;
+    const VkPipelineDepthStencilStateCreateInfo depth_only_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f,
+    };
+    VkGraphicsPipelineCreateInfo depth_only_info = graphics_info;
+    depth_only_info.pNext = &depth_only_rendering_info;
+    depth_only_info.renderPass = VK_NULL_HANDLE;
+    depth_only_info.subpass = 0u;
+    depth_only_info.stageCount = 2u;
+    depth_only_info.pStages = depth_only_stages;
+    depth_only_info.pColorBlendState = &depth_only_blend;
+    depth_only_info.pDepthStencilState = &depth_only_state;
+    VkPipeline depth_only_pipeline = VK_NULL_HANDLE;
+    VkResult depth_only_result = vkCreateGraphicsPipelines(device,
+        VK_NULL_HANDLE, 1, &depth_only_info, NULL, &depth_only_pipeline);
+    if (depth_only_result != VK_SUCCESS)
+        fprintf(stderr, "depth-only pipeline result=%d\n", depth_only_result);
+    assert(depth_only_result == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(depth_only_pipeline));
     const VkViewport multi_viewports[] = {
         {0, 0, 128, 256, 0, 1},
         {128, 0, 128, 256, 0.25f, 0.75f},
@@ -745,6 +781,7 @@ vkDestroyPipeline(device, unclipped_graphics_pipeline, NULL);
 vkDestroyPipeline(device, clipped_clamp_graphics_pipeline, NULL);
     vkDestroyPipeline(device, alpha_to_one_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
+    vkDestroyPipeline(device, depth_only_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyPipeline(device, scalar_compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
@@ -756,6 +793,7 @@ vkDestroyPipeline(device, clipped_clamp_graphics_pipeline, NULL);
     vkDestroyDescriptorSetLayout(device, empty_set, NULL);
     vkDestroyShaderModule(device, compute, NULL);
     vkDestroyShaderModule(device, scalar_compute, NULL);
+    vkDestroyShaderModule(device, depth_only_fragment, NULL);
     vkDestroyShaderModule(device, sample_fragment, NULL);
     vkDestroyShaderModule(device, cube_array_fragment, NULL);
     vkDestroyShaderModule(device, tess_evaluation, NULL);

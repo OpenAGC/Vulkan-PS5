@@ -391,6 +391,12 @@ the Prospero libraries build clean. D24 stays unadvertised; multisampled and
 partial attachment clears remain fail-closed pending their general Vulkan
 implementations, and exact hardware pixels for this slice remain unqualified.
 
+Depth-only dynamic-rendering pipelines no longer require a fictitious color
+attachment. A zero-color `VkPipelineRenderingCreateInfo` and zero-attachment
+color-blend state now compile a depth-exporting fragment shader into a native
+OpenAGC D32 graphics pipeline. This is a general Vulkan correction for depth
+passes and the prerequisite for graphics-meta depth/stencil attachment clears.
+
 The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
 guard bytes. Prospero ELF SHA-256 is

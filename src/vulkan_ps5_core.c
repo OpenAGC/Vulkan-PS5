@@ -1554,16 +1554,17 @@ static bool color_blend_state(
     const VkColorComponentFlags component_mask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    if (!source || !destination || !dual_source_blend || !target_count ||
+    if (!source || !destination || !dual_source_blend ||
         target_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
         source->logicOpEnable > VK_TRUE ||
-        source->attachmentCount != target_count || !source->pAttachments)
+        source->attachmentCount != target_count ||
+        (target_count && !source->pAttachments))
         return false;
     memset(destination, 0, sizeof(*destination));
     *dual_source_blend = false;
     destination->target_count = target_count;
-    destination->logic_enable = source->logicOpEnable;
-    if (source->logicOpEnable) {
+    destination->logic_enable = target_count ? source->logicOpEnable : VK_FALSE;
+    if (destination->logic_enable) {
         if (!logic_operation(source->logicOp,
                 &destination->logic_operation))
             return false;
@@ -3401,9 +3402,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
              (!(multisample->minSampleShading >= 0.0f) ||
               !(multisample->minSampleShading <= 1.0f))) ||
             multisample->alphaToCoverageEnable ||
-            !blend->attachmentCount ||
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
-            !blend->pAttachments)
+            (blend->attachmentCount && !blend->pAttachments))
             return VK_ERROR_FEATURE_NOT_PRESENT;
         AgcGfx1013ViewportArrayState viewport_state = {
             .count = create->pViewportState->viewportCount,

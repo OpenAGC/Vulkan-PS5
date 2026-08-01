@@ -1282,6 +1282,11 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   Prospero static/shared libraries build clean. D24, multisampled clears,
   partial attachment clears, and exact hardware pixels remain fail-closed or
   pending as applicable.
+- Depth-only graphics pipelines are now accepted with zero dynamic-rendering
+  color formats and a zero-attachment color-blend state. The D32 host gate
+  compiles a fragment shader that exports only depth and proves creation of a
+  native OpenAGC graphics pipeline. This is the application-neutral prerequisite
+  for depth/stencil attachment-clear draws and ordinary depth-only passes.
 - `analysis/eden-compatibility.md` records the evidence, prevents Eden's
   continue-after-unsuitable behavior from being mistaken for support, and
   defines the application-neutral implementation order.

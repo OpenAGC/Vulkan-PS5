@@ -139,6 +139,12 @@ depth/stencil clears remain fail-closed, and partial render-area attachment
 clears still require the planned graphics-meta path. Exact hardware pixels for
 this command slice are not yet qualified.
 
+Graphics pipeline creation accepts the Vulkan depth-only form: dynamic
+rendering may declare zero color formats, `VkPipelineColorBlendStateCreateInfo`
+may contain zero attachments, and a depth/stencil pipeline is still translated
+to a native OpenAGC graphics pipeline. This removes a general Vulkan contract
+gap needed by shadow/depth passes and by the attachment-clear meta pipeline.
+
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline
 had 30 hard gaps; the live ICD profile now reports

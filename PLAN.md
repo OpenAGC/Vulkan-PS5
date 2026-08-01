@@ -754,6 +754,11 @@ ordering.
   sanitizer suites plus the Prospero static/shared build pass. D24 and 4x
   depth/stencil remain fail-closed, and hardware pixels are pending. The next
   command forms are graphics-meta attachment clears, blits, and resolves.
+- The graphics-pipeline translator now accepts valid depth-only dynamic
+  rendering with zero color formats and zero blend attachments. A D32 pipeline
+  exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;
+  this prerequisite is complete before the graphics-meta attachment-clear
+  cache is added.
 - The first general format expansion exposes all 14 BC1-BC7 Vulkan formats for
   sampled/filter/transfer use through native OpenAGC layouts and descriptors.
   Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete
