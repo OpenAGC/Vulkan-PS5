@@ -77,6 +77,15 @@ descriptor and vertex state. Descriptor encoding, tessellation resources,
 image layout, command storage, submission, and finite waits are OpenAGC-owned;
 the legacy encoder and submission fallback have been deleted.
 
+The current compressed-texture baseline exposes all 14 Vulkan BC1-BC7
+UNORM/SNORM/SRGB/UFLOAT/SFLOAT formats for sampled, linearly filtered, and
+transfer image use. Images may contain complete mip chains, including cube and
+cube-array layers, and views may select nonzero mip intervals through native
+OpenAGC descriptors. D24, ASTC, and ETC remain deliberately unsupported rather
+than being aliased to incompatible hardware formats. This is a general Vulkan
+contract used by Eden and other applications; `analysis/eden-compatibility.md`
+tracks Eden only as one demanding consumer.
+
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping
 must not be advertised until its host and exact-firmware gates pass.

@@ -233,6 +233,42 @@ int main(void) {
     assert(vkCreateImageView(device, &cube_view_info, NULL, &cube_view) ==
            VK_SUCCESS);
 
+    VkImageCreateInfo bc_info = cube_info;
+    bc_info.format = VK_FORMAT_BC7_SRGB_BLOCK;
+    bc_info.extent = (VkExtent3D){17u, 17u, 1u};
+    bc_info.mipLevels = 5u;
+    bc_info.arrayLayers = 6u;
+    bc_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImage bc_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &bc_info, NULL, &bc_image) == VK_SUCCESS);
+    VkMemoryRequirements bc_requirements;
+    vkGetImageMemoryRequirements(device, bc_image, &bc_requirements);
+    VkMemoryAllocateInfo bc_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = bc_requirements.size,
+        .memoryTypeIndex = find_memory_type(physical,
+            bc_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    VkDeviceMemory bc_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &bc_allocation, NULL, &bc_memory) ==
+           VK_SUCCESS);
+    assert(vkBindImageMemory(device, bc_image, bc_memory, 0u) == VK_SUCCESS);
+    VkImageViewCreateInfo bc_view_info = cube_view_info;
+    bc_view_info.image = bc_image;
+    bc_view_info.format = bc_info.format;
+    bc_view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+    bc_view_info.subresourceRange.levelCount = 5u;
+    bc_view_info.subresourceRange.layerCount = 6u;
+    VkImageView bc_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &bc_view_info, NULL, &bc_view) ==
+           VK_SUCCESS);
+    bc_view_info.subresourceRange.baseMipLevel = 2u;
+    bc_view_info.subresourceRange.levelCount = 2u;
+    VkImageView bc_mip_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &bc_view_info, NULL, &bc_mip_view) ==
+           VK_SUCCESS);
+
     VkAttachmentDescription attachment = {
         .format = image_info.format,
         .samples = VK_SAMPLE_COUNT_4_BIT,
@@ -307,6 +343,10 @@ int main(void) {
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyImageView(device, bc_mip_view, NULL);
+    vkDestroyImageView(device, bc_view, NULL);
+    vkDestroyImage(device, bc_image, NULL);
+    vkFreeMemory(device, bc_memory, NULL);
     vkDestroyImageView(device, cube_view, NULL);
     vkDestroyImage(device, cube_image, NULL);
     vkFreeMemory(device, cube_memory, NULL);

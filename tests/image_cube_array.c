@@ -30,9 +30,12 @@ int main(void)
     assert(supported.imageCubeArray == VK_TRUE);
     VkImageFormatProperties format_properties;
     assert(vkGetPhysicalDeviceImageFormatProperties(physical,
-        VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_LINEAR,
-        VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+        VK_FORMAT_BC7_SRGB_BLOCK, VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_LINEAR,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
         &format_properties) == VK_SUCCESS);
+    assert(format_properties.maxMipLevels >= 5u);
     assert(format_properties.maxArrayLayers >= 12u);
     assert(format_properties.sampleCounts == VK_SAMPLE_COUNT_1_BIT);
     assert(vkGetPhysicalDeviceImageFormatProperties(physical,
@@ -62,13 +65,14 @@ int main(void)
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
-        .extent = {4u, 4u, 1u},
-        .mipLevels = 1u,
+        .format = VK_FORMAT_BC7_SRGB_BLOCK,
+        .extent = {17u, 17u, 1u},
+        .mipLevels = 5u,
         .arrayLayers = 12u,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_LINEAR,
-        .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
     };
@@ -88,11 +92,17 @@ int main(void)
     assert(vkBindImageMemory(device, image, memory, 0u) == VK_SUCCESS);
     const VkImageSubresource layer_zero = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u};
     const VkImageSubresource layer_six = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 6u};
-    VkSubresourceLayout layout_zero, layout_six;
+    const VkImageSubresource last_mip = {VK_IMAGE_ASPECT_COLOR_BIT, 4u, 0u};
+    VkSubresourceLayout layout_zero, layout_six, layout_last_mip;
     vkGetImageSubresourceLayout(device, image, &layer_zero, &layout_zero);
     vkGetImageSubresourceLayout(device, image, &layer_six, &layout_six);
-    assert(layout_zero.offset == 0u);
-    assert(layout_six.offset == 6u * layout_zero.arrayPitch);
+    vkGetImageSubresourceLayout(device, image, &last_mip, &layout_last_mip);
+    assert(layout_six.offset == layout_zero.offset +
+           6u * layout_zero.arrayPitch);
+    assert(layout_zero.rowPitch >= 5u * 16u);
+    assert(layout_last_mip.offset != layout_zero.offset);
+    assert(layout_last_mip.rowPitch >= 16u);
+    assert(layout_last_mip.size <= layout_zero.size);
 
     VkImageViewCreateInfo view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -100,7 +110,7 @@ int main(void)
         .viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY,
         .format = image_info.format,
         .subresourceRange = {
-            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 12u,
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 5u, 0u, 12u,
         },
     };
     VkImageView cube_array_view = VK_NULL_HANDLE;
@@ -124,7 +134,17 @@ int main(void)
     VkImageView layer_view = VK_NULL_HANDLE;
     assert(vkCreateImageView(device, &view_info, NULL, &layer_view) ==
            VK_SUCCESS);
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    view_info.subresourceRange.baseMipLevel = 2u;
+    view_info.subresourceRange.levelCount = 2u;
+    view_info.subresourceRange.baseArrayLayer = 0u;
+    view_info.subresourceRange.layerCount = 4u;
+    VkImageView mip_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &view_info, NULL, &mip_view) ==
+           VK_SUCCESS);
     view_info.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    view_info.subresourceRange.baseMipLevel = 0u;
+    view_info.subresourceRange.levelCount = 5u;
     view_info.subresourceRange.baseArrayLayer = 0u;
     view_info.subresourceRange.layerCount = 7u;
     VkImageView invalid_view = VK_NULL_HANDLE;
@@ -192,6 +212,7 @@ int main(void)
     vkDestroyDescriptorPool(device, pool, NULL);
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     vkDestroySampler(device, sampler, NULL);
+    vkDestroyImageView(device, mip_view, NULL);
     vkDestroyImageView(device, layer_view, NULL);
     vkDestroyImageView(device, array_view, NULL);
     vkDestroyImageView(device, cube_view, NULL);

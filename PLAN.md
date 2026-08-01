@@ -740,6 +740,14 @@ ordering.
 
 ### Milestone 6 current progress
 
+- The first general format expansion exposes all 14 BC1-BC7 Vulkan formats for
+  sampled/filter/transfer use through native OpenAGC layouts and descriptors.
+  Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete
+  and nonzero-base mip views, and D24/ASTC/ETC fail-closed behavior pass both
+  40/40 normal and ASAN/UBSAN suites plus a clean Prospero library build.
+  Exact hardware BC sampling/copy qualification remains pending; the next
+  format slice expands Eden-required uncompressed formats without introducing
+  application-specific aliases.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined
   VS/TCS/TES/GS pipeline. The fused primitive recorder now permits and
   preserves its vertex resource table before descriptor-set tables. Both

@@ -153,6 +153,28 @@ static int ps5_depth_format(VkFormat format) {
     }
 }
 
+static int ps5_bc_format(VkFormat format) {
+    switch (format) {
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+    case VK_FORMAT_BC2_UNORM_BLOCK:
+    case VK_FORMAT_BC2_SRGB_BLOCK:
+    case VK_FORMAT_BC3_UNORM_BLOCK:
+    case VK_FORMAT_BC3_SRGB_BLOCK:
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void *ps5_alloc(const VkAllocationCallbacks *allocator, size_t size,
                        size_t alignment, VkSystemAllocationScope scope) {
     if (allocator && allocator->pfnAllocation)
@@ -887,10 +909,12 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     AgcDeviceProperties capabilities = ps5_capabilities();
     int color_index = ps5_color_format(format);
     int depth_index = ps5_depth_format(format);
+    int bc_format = ps5_bc_format(format);
     (void)physicalDevice;
     if (!pFormatProperties) return;
     memset(pFormatProperties, 0, sizeof(*pFormatProperties));
-    if ((color_index < 0 || !(capabilities.color_target_format_mask &
+    if (!bc_format &&
+        (color_index < 0 || !(capabilities.color_target_format_mask &
                               (1ull << (uint32_t)color_index))) &&
         (depth_index < 0 || !(capabilities.depth_stencil_format_mask &
                               (1u << (uint32_t)depth_index))))
@@ -908,6 +932,23 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     const VkFormatFeatureFlags depth = transfer |
         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
     switch (format) {
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+    case VK_FORMAT_BC2_UNORM_BLOCK:
+    case VK_FORMAT_BC2_SRGB_BLOCK:
+    case VK_FORMAT_BC3_UNORM_BLOCK:
+    case VK_FORMAT_BC3_SRGB_BLOCK:
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+        pFormatProperties->linearTilingFeatures = sampled | transfer;
+        pFormatProperties->optimalTilingFeatures = sampled | transfer;
+        break;
     case VK_FORMAT_R8G8B8A8_UNORM:
         pFormatProperties->linearTilingFeatures = storage_color;
         pFormatProperties->optimalTilingFeatures = color;
@@ -962,6 +1003,7 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     if (!pImageFormatProperties) return VK_ERROR_INITIALIZATION_FAILED;
     memset(pImageFormatProperties, 0, sizeof(*pImageFormatProperties));
     if (type < VK_IMAGE_TYPE_1D || type > VK_IMAGE_TYPE_3D ||
+        (ps5_bc_format(format) && type == VK_IMAGE_TYPE_3D) ||
         (flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                   VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT |
                   VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
@@ -992,7 +1034,8 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
         if (type != VK_IMAGE_TYPE_2D ||
-            (format != VK_FORMAT_R8G8B8A8_UNORM &&
+            (!ps5_bc_format(format) &&
+             format != VK_FORMAT_R8G8B8A8_UNORM &&
              format != VK_FORMAT_B8G8R8A8_UNORM) ||
             !(usage & VK_IMAGE_USAGE_SAMPLED_BIT))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -1003,7 +1046,17 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
         capabilities.max_image_dimension_2d;
     pImageFormatProperties->maxExtent.depth = type == VK_IMAGE_TYPE_3D ?
         capabilities.max_image_dimension_3d : 1;
+    uint32_t max_dimension = pImageFormatProperties->maxExtent.width;
+    if (pImageFormatProperties->maxExtent.height > max_dimension)
+        max_dimension = pImageFormatProperties->maxExtent.height;
+    if (pImageFormatProperties->maxExtent.depth > max_dimension)
+        max_dimension = pImageFormatProperties->maxExtent.depth;
     pImageFormatProperties->maxMipLevels = 1;
+    while (max_dimension > 1u &&
+           pImageFormatProperties->maxMipLevels < 15u) {
+        max_dimension >>= 1u;
+        ++pImageFormatProperties->maxMipLevels;
+    }
     pImageFormatProperties->maxArrayLayers = type == VK_IMAGE_TYPE_3D ? 1 :
         capabilities.max_image_array_layers;
     pImageFormatProperties->sampleCounts = VK_SAMPLE_COUNT_1_BIT;

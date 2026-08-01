@@ -151,6 +151,34 @@ static bool native_image_format(VkFormat format, AgcFormat *native) {
         *native = AGC_FORMAT_RGBA32_FLOAT; return true;
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
         *native = AGC_FORMAT_R11G11B10_FLOAT; return true;
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC1_UNORM; return true;
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+        *native = AGC_FORMAT_BC1_SRGB; return true;
+    case VK_FORMAT_BC2_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC2_UNORM; return true;
+    case VK_FORMAT_BC2_SRGB_BLOCK:
+        *native = AGC_FORMAT_BC2_SRGB; return true;
+    case VK_FORMAT_BC3_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC3_UNORM; return true;
+    case VK_FORMAT_BC3_SRGB_BLOCK:
+        *native = AGC_FORMAT_BC3_SRGB; return true;
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC4_UNORM; return true;
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+        *native = AGC_FORMAT_BC4_SNORM; return true;
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC5_UNORM; return true;
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+        *native = AGC_FORMAT_BC5_SNORM; return true;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+        *native = AGC_FORMAT_BC6_UFLOAT; return true;
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+        *native = AGC_FORMAT_BC6_SFLOAT; return true;
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+        *native = AGC_FORMAT_BC7_UNORM; return true;
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+        *native = AGC_FORMAT_BC7_SRGB; return true;
     case VK_FORMAT_D16_UNORM: *native = AGC_FORMAT_D16_UNORM; return true;
     case VK_FORMAT_D32_SFLOAT: *native = AGC_FORMAT_D32_FLOAT; return true;
     case VK_FORMAT_S8_UINT: *native = AGC_FORMAT_S8_UINT; return true;
@@ -188,6 +216,14 @@ static bool native_image_is_depth(VkFormat format) {
         format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_S8_UINT ||
         format == VK_FORMAT_D16_UNORM_S8_UINT ||
         format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+}
+
+static bool native_image_is_bc(VkFormat format) {
+    AgcFormat native_format;
+    if (!native_image_format(format, &native_format))
+        return false;
+    return native_format >= AGC_FORMAT_BC1_UNORM &&
+        native_format <= AGC_FORMAT_BC7_SRGB;
 }
 
 static VkResult initialize_native_image_layout(VkDevice device,
@@ -301,6 +337,8 @@ typedef struct VkPs5ImageView {
     VkImageViewType view_type;
     VkFormat format;
     VkComponentMapping components;
+    uint32_t base_mip_level;
+    uint32_t mip_level_count;
     uint32_t base_array_layer;
     uint32_t layer_count;
     AgcImageView native_view;
@@ -316,8 +354,8 @@ static VkResult ensure_native_image_view(VkPs5ImageView *view) {
     AgcImageViewDesc desc = AGC_IMAGE_VIEW_DESC_INIT;
     desc.image = image->native_image;
     desc.format = native_format;
-    desc.base_mip_level = 0u;
-    desc.mip_level_count = 1u;
+    desc.base_mip_level = view->base_mip_level;
+    desc.mip_level_count = view->mip_level_count;
     desc.base_array_layer = view->base_array_layer;
     desc.array_layer_count = view->layer_count;
     switch (view->view_type) {
@@ -1632,11 +1670,12 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     if (!device || !pCreateInfo || !pImage ||
         pCreateInfo->sType != VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO ||
         !pCreateInfo->extent.width || !pCreateInfo->extent.height ||
-        !pCreateInfo->extent.depth || pCreateInfo->mipLevels != 1 ||
+        !pCreateInfo->extent.depth || !pCreateInfo->mipLevels ||
+        pCreateInfo->mipLevels > 15u ||
         !pCreateInfo->arrayLayers ||
         (pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT &&
          pCreateInfo->samples != VK_SAMPLE_COUNT_4_BIT) ||
-        !format_bytes(pCreateInfo->format) ||
+        !native_image_format(pCreateInfo->format, &(AgcFormat){0}) ||
         ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
          (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
           pCreateInfo->tiling != VK_IMAGE_TILING_LINEAR)) ||
@@ -1678,7 +1717,8 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
             pCreateInfo->arrayLayers > 0x2000u ||
             pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT ||
             !(pCreateInfo->usage & VK_IMAGE_USAGE_SAMPLED_BIT) ||
-            (pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM &&
+            (!native_image_is_bc(pCreateInfo->format) &&
+             pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM &&
              pCreateInfo->format != VK_FORMAT_B8G8R8A8_UNORM))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
@@ -1743,28 +1783,6 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         vk_ps5_device_free(device, pAllocator, image);
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
-    uint64_t row_bytes =
-        (uint64_t)image->extent.width * format_bytes(image->format);
-    if (row_bytes > UINT64_MAX - 255u) {
-        vk_ps5_device_free(device, pAllocator, image);
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
-    image->row_pitch = (row_bytes + 255u) & ~(VkDeviceSize)255u;
-    if (image->extent.height > UINT64_MAX / image->row_pitch) {
-        vk_ps5_device_free(device, pAllocator, image);
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
-    image->depth_pitch = image->row_pitch * image->extent.height;
-    if (image->extent.depth > UINT64_MAX / image->depth_pitch) {
-        vk_ps5_device_free(device, pAllocator, image);
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
-    image->array_pitch = image->depth_pitch * image->extent.depth;
-    if (image->array_layers > UINT64_MAX / image->array_pitch) {
-        vk_ps5_device_free(device, pAllocator, image);
-        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
-    image->size = image->array_pitch * image->array_layers;
     VkResult native_result = initialize_native_image_layout(device, image);
     if (native_result != VK_SUCCESS) {
         vk_ps5_device_free(device, pAllocator, image);
@@ -1849,14 +1867,51 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkGetImageSubresourceLayout(VkDevice device, VkImage image_handle,
                             const VkImageSubresource *pSubresource,
                             VkSubresourceLayout *pLayout) {
-    (void)device;
     VkPs5Image *image = (VkPs5Image *)image_handle;
     if (!image || !pSubresource || !pLayout) return;
-    pLayout->offset = image->array_pitch * pSubresource->arrayLayer;
-    pLayout->size = image->array_pitch;
-    pLayout->rowPitch = image->row_pitch;
-    pLayout->arrayPitch = image->array_pitch;
-    pLayout->depthPitch = image->depth_pitch;
+    memset(pLayout, 0, sizeof(*pLayout));
+    if (pSubresource->mipLevel >= image->mip_levels ||
+        pSubresource->arrayLayer >= image->array_layers)
+        return;
+    uint32_t plane = 0u;
+    if (native_image_is_depth(image->format)) {
+        if (pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT) {
+            if (image->format != VK_FORMAT_S8_UINT &&
+                image->format != VK_FORMAT_D16_UNORM_S8_UINT &&
+                image->format != VK_FORMAT_D32_SFLOAT_S8_UINT)
+                return;
+            plane = image->format == VK_FORMAT_S8_UINT ? 0u : 1u;
+        } else if (pSubresource->aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT) {
+            return;
+        }
+    } else if (pSubresource->aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+        return;
+    }
+    AgcImageSubresourceLayout native_layout =
+        AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
+    if (agcGetImageSubresourceLayout(vk_ps5_native_device(device),
+            &image->native_desc, pSubresource->mipLevel,
+            pSubresource->arrayLayer, plane, &native_layout) != AGC_OK)
+        return;
+    pLayout->offset = native_layout.offset;
+    pLayout->size = native_layout.size;
+    pLayout->rowPitch = native_layout.row_pitch;
+    pLayout->depthPitch = native_layout.slice_pitch;
+    pLayout->arrayPitch = native_layout.size;
+    if (image->array_layers > 1u) {
+        AgcImageSubresourceLayout adjacent =
+            AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
+        uint32_t adjacent_layer = pSubresource->arrayLayer + 1u <
+            image->array_layers ? pSubresource->arrayLayer + 1u :
+            pSubresource->arrayLayer - 1u;
+        if (agcGetImageSubresourceLayout(vk_ps5_native_device(device),
+                &image->native_desc, pSubresource->mipLevel,
+                adjacent_layer, plane, &adjacent) == AGC_OK) {
+            pLayout->arrayPitch = adjacent.offset > native_layout.offset ?
+                adjacent.offset - native_layout.offset :
+                native_layout.offset - adjacent.offset;
+        }
+    }
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -2260,7 +2315,8 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator, VkImageView *pView) {
     if (!device || !pCreateInfo || !pView ||
         pCreateInfo->sType != VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO ||
-        !pCreateInfo->image || !format_bytes(pCreateInfo->format))
+        !pCreateInfo->image ||
+        !native_image_format(pCreateInfo->format, &(AgcFormat){0}))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkPs5Image *image = (VkPs5Image *)pCreateInfo->image;
     VkImageAspectFlags valid_aspects = image->is_depth_surface ?
@@ -2285,8 +2341,9 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
           !mutable_color_format_pair(image->format, pCreateInfo->format))) ||
         !pCreateInfo->subresourceRange.aspectMask ||
         (pCreateInfo->subresourceRange.aspectMask & ~valid_aspects) ||
-        pCreateInfo->subresourceRange.baseMipLevel != 0u ||
-        level_count != 1u || !layer_count ||
+        !level_count || !layer_count ||
+        level_count > image->mip_levels -
+            pCreateInfo->subresourceRange.baseMipLevel ||
         layer_count > image->array_layers -
             pCreateInfo->subresourceRange.baseArrayLayer)
         return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -2321,6 +2378,8 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
     view->view_type = pCreateInfo->viewType;
     view->format = pCreateInfo->format;
     view->components = pCreateInfo->components;
+    view->base_mip_level = pCreateInfo->subresourceRange.baseMipLevel;
+    view->mip_level_count = level_count;
     view->base_array_layer = pCreateInfo->subresourceRange.baseArrayLayer;
     view->layer_count = layer_count;
     VkResult native_result = ensure_native_image_view(view);

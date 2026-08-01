@@ -1,7 +1,8 @@
 # Eden Compatibility Profile
 
-This is the live Milestone 6 gap matrix for `../eden-ps5` revision
-`39763e7321`. The Eden checkout was inspected read-only; its existing deleted
+This is the live Milestone 6 gap matrix for upstream `../eden-ps5` revision
+`612409c7ba` (the checkout head also contains the PS5 plan commit
+`b5cdae421b`). The Eden checkout was inspected read-only; its existing deleted
 `AGENTS.md`/`CLAUDE.md` and untracked `.serena/` state were not changed.
 
 Run the profile probe in reporting mode through CTest. `--strict` also exits
@@ -347,11 +348,22 @@ warning. The public Prospero ELF SHA-256 is
 | Area | Current evidence | State |
 | --- | --- | --- |
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
-| Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD currently exposes 19 uncompressed/depth formats, no BC formats, no D24, and no storage-image feature bits | Major gap |
+| Formats | Eden snapshots roughly 150 guest-relevant formats. The ICD exposes its existing uncompressed/depth subset plus all 14 BC1-BC7 UNORM/SNORM/SRGB/UFLOAT/SFLOAT formats for sampled, filtered, and transfer use. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified. D24, ASTC, and ETC remain fail-closed | Partial; broader uncompressed coverage and hardware BC sampling remain |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
+
+The BC slice is application-neutral Vulkan behavior, not an Eden override.
+`vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer
+contract for all 14 formats, while image-format queries reject BC 3D images.
+OpenAGC supplies exact block-aware layouts for every mip and layer. Vulkan
+image views preserve complete allocation `MAX_MIP` metadata and program an
+independent nonzero `BASE_LEVEL`/`LAST_LEVEL` interval. Normal and ASAN/UBSAN
+suites pass 40/40, including VVL-clean five-mip BC7 cube views and exact linear
+subresource layout checks; the full static/shared Prospero libraries build
+without warnings. Hardware sampling and transfer qualification for this exact
+candidate remains pending, so the audit does not claim it yet.
 
 The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
@@ -392,7 +404,10 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    query and device-create paths. The rejected packet experiments, GPU-reset
    evidence, both root causes, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
-3. Expand qualified uncompressed and BC format support, with D24 fallback kept
-   honest and ASTC/ETC remaining unsupported until conversion is implemented.
+3. Continue the general format matrix after the host-qualified 14-format BC
+   slice: expand required uncompressed formats and run exact BC sampling/copy
+   gates on both firmware endpoints. Keep D24 fail-closed until a correct
+   fallback exists, and keep ASTC/ETC unsupported until conversion or native
+   execution is implemented and qualified.
 4. Add only the allowed Eden changes: Prospero surface creation, build/link
    integration, and static Vulkan entrypoint location.

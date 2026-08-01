@@ -1250,9 +1250,13 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   and precise command recording are host-tested, and the standard query sample
   requests the feature and flag normally. The live profile is now two
   extension plus 25 feature gaps, total 27.
-- Runtime audit also identifies missing Eden VMA-pattern coverage, a 19-format
-  subset with no BC/D24/storage-image support, and the still-missing Prospero
-  surface/build/static-entrypoint integration in Eden itself.
+- The compatibility audit is refreshed against upstream Eden revision
+  `612409c7ba`. VMA and the hard startup profile pass, and the format subset now
+  includes all 14 BC1-BC7 variants with multi-mip cube/cube-array and nonzero
+  mip-view coverage. D24, ASTC, and ETC remain fail-closed; broader
+  uncompressed coverage and the Prospero surface/build/static-entrypoint
+  integration in Eden itself are still missing. Both 40/40 normal and
+  ASAN/UBSAN suites pass, and the static/shared Prospero libraries build clean.
 - `analysis/eden-compatibility.md` records the evidence, prevents Eden's
   continue-after-unsuitable behavior from being mistaken for support, and
   defines the application-neutral implementation order.

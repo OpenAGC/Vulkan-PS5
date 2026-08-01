@@ -472,6 +472,75 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures == 0);
+    const VkFormat unsupported_compressed_formats[] = {
+        VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
+        VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK,
+    };
+    for (size_t i = 0u;
+         i < sizeof(unsupported_compressed_formats) /
+             sizeof(unsupported_compressed_formats[0]); ++i) {
+        vkGetPhysicalDeviceFormatProperties(physical,
+            unsupported_compressed_formats[i], &format_properties);
+        assert(format_properties.linearTilingFeatures == 0u);
+        assert(format_properties.optimalTilingFeatures == 0u);
+        assert(format_properties.bufferFeatures == 0u);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            unsupported_compressed_formats[i], VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, 0u,
+            &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
+    }
+    vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_D24_UNORM_S8_UINT,
+                                        &format_properties);
+    assert(format_properties.linearTilingFeatures == 0u);
+    assert(format_properties.optimalTilingFeatures == 0u);
+    assert(format_properties.bufferFeatures == 0u);
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_D24_UNORM_S8_UINT, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0u,
+        &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
+
+    const VkFormat bc_formats[] = {
+        VK_FORMAT_BC1_RGBA_UNORM_BLOCK,
+        VK_FORMAT_BC1_RGBA_SRGB_BLOCK,
+        VK_FORMAT_BC2_UNORM_BLOCK,
+        VK_FORMAT_BC2_SRGB_BLOCK,
+        VK_FORMAT_BC3_UNORM_BLOCK,
+        VK_FORMAT_BC3_SRGB_BLOCK,
+        VK_FORMAT_BC4_UNORM_BLOCK,
+        VK_FORMAT_BC4_SNORM_BLOCK,
+        VK_FORMAT_BC5_UNORM_BLOCK,
+        VK_FORMAT_BC5_SNORM_BLOCK,
+        VK_FORMAT_BC6H_UFLOAT_BLOCK,
+        VK_FORMAT_BC6H_SFLOAT_BLOCK,
+        VK_FORMAT_BC7_UNORM_BLOCK,
+        VK_FORMAT_BC7_SRGB_BLOCK,
+    };
+    const VkFormatFeatureFlags bc_features =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+        VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    for (size_t i = 0u;
+         i < sizeof(bc_formats) / sizeof(bc_formats[0]); ++i) {
+        vkGetPhysicalDeviceFormatProperties(physical, bc_formats[i],
+                                            &format_properties);
+        assert(format_properties.linearTilingFeatures == bc_features);
+        assert(format_properties.optimalTilingFeatures == bc_features);
+        assert(format_properties.bufferFeatures == 0u);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            bc_formats[i], VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+            &image_format_properties) == VK_SUCCESS);
+        assert(image_format_properties.maxMipLevels >= 5u);
+        assert(image_format_properties.maxArrayLayers >= 6u);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            bc_formats[i], VK_IMAGE_TYPE_3D, VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT, 0u,
+            &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
+    }
 
     uint32_t family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &family_count, NULL);
