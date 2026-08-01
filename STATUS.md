@@ -397,8 +397,22 @@ which passed all 38 formats and 152 exact result components twice on FW
 5.500.008 with bounded waits and clean teardown. The unsafe, Mesa-inferred
 `CS_PARTIAL_FLUSH` event experiment is retired after a user-observed kernel
 panic; it is not part of the runtime. See
-`analysis/fw550_format_sampling_20260802.md`. Integer attachment exports and
-the final FW 11.60 replay remain separate gates.
+`analysis/fw550_format_sampling_20260802.md`.
+
+Scalar/vector attachment execution is now FW 5.500.008-qualified. The ICD
+supplies each dynamic-rendering attachment's required SPI export format to
+PSBC, preserves integer component classes through late NIR export lowering,
+and queries the exact command-buffer image subresource state for the final
+host-read transition. The first bounded run failed safely at RGB10A2 UINT and
+exposed OpenAGC's `COLOR_10_10_10_2`/`COLOR_2_10_10_10` target mismatch. With
+the corrected `0x09` CB encoding, final ELF
+`e4e2f72bc4356cc8b5a08d3a8f6968069d13456e3ee7b273b98991134fbf3bb5`
+passed all 36 formats and 36 bit-exact pixels twice (`20260801T190225Z`,
+`20260801T190248Z`) with two-second fence bounds, normal teardown, exact-PID
+absence, immediate relaunch, and only the accepted raw-ELF `0x4000` warning.
+Normal and ASan/UBSan suites pass 59/59, including the zero-direct-call native
+migration audit. See `analysis/fw550_format_attachments_20260802.md`; the
+identical-byte FW 11.60 replay remains deferred to the final endpoint gate.
 
 The next fourteen Eden formats are host/Prospero qualified through OpenAGC
 API 48: R/RG 16-bit UNORM, SNORM, UINT, and SINT; RGBA16 UNORM and SNORM; and

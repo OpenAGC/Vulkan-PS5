@@ -274,7 +274,8 @@ the native-runtime migration.
   immediate relaunch. The attempted Mesa-inferred `CS_PARTIAL_FLUSH` event
   sequence is permanently retired after a user-observed kernel panic; the
   runtime must not emit that unqualified packet. Scalar/vector attachment
-  exports remain the next format execution gate.
+  exports are now qualified by a 36-format, bit-exact FW 5.500.008 gate; the
+  identical-byte FW 11.60 replay remains deferred to the final endpoint gate.
 
 - Milestone 1 is complete: host lifecycle, dispatch, conservative gfx1013
   capabilities, memory/resources, packaging, and loader/VVL tests.

@@ -125,9 +125,11 @@ examples/run_fw550_integer_formats.sh`. A separate formatless-storage gate
 writes all 30 storage-capable audited formats through float, unsigned, and
 signed compute shaders and verifies 480 exact pixels. A nearest-sampling gate
 then samples all 38 formats through numeric-class-matched compute shaders and
-passes 152 exact result components twice from one pinned ELF. Integer
-attachment exports remain a separate hardware gate. See
-`analysis/fw550_format_sampling_20260802.md`.
+passes 152 exact result components twice from one pinned ELF. The attachment
+gate renders all 36 color-attachment formats through float, unsigned, and
+signed fragment exports and reads back 36 bit-exact pixels twice on FW
+5.500.008. See `analysis/fw550_format_sampling_20260802.md` and
+`analysis/fw550_format_attachments_20260802.md`.
 
 OpenAGC API 48 adds the related R/RG 16-bit normalized and integer, RGBA16
 normalized, and R/RG 32-bit integer image forms. Their Vulkan queries preserve
@@ -137,8 +139,9 @@ host and Prospero gates cover exact native descriptors, scalar/vector render
 exports, image/view creation, and clear packing. The expanded bounded FW 5.50
 probe passes all eighteen new formats and 1,152 exact clear/readback pixels
 twice with immediate relaunch. Storage-image execution is now qualified as
-part of the 30-format gate, and sampled-image execution is qualified by the
-38-format gate. Attachment exports remain next.
+part of the 30-format gate, sampled-image execution is qualified by the
+38-format gate, and the 36-format attachment-export gate is qualified on FW
+5.500.008.
 
 OpenAGC API 49 adds exact native R8/RG8 SNORM, UINT, and SINT layouts,
 descriptors, color targets, and pipeline compatibility. Vulkan advertises

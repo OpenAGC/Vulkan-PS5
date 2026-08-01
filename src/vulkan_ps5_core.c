@@ -1460,6 +1460,53 @@ static bool color_target_format(
     return true;
 }
 
+static bool color_export_format(
+    VkFormat format, OpenAgcPsbcColorExportFormat *export_format)
+{
+    AgcGfx1013ColorTargetFormat target_format;
+
+    if (!export_format || !color_target_format(format, &target_format))
+        return false;
+    switch (target_format) {
+    case AGC_GFX1013_RT_FORMAT_R8_UINT:
+    case AGC_GFX1013_RT_FORMAT_RG8_UINT:
+    case AGC_GFX1013_RT_FORMAT_RGBA8_UINT:
+    case AGC_GFX1013_RT_FORMAT_RGB10A2_UINT:
+    case AGC_GFX1013_RT_FORMAT_R16_UINT:
+    case AGC_GFX1013_RT_FORMAT_RG16_UINT:
+    case AGC_GFX1013_RT_FORMAT_RGBA16_UINT:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_UINT16_ABGR;
+        break;
+    case AGC_GFX1013_RT_FORMAT_R8_SINT:
+    case AGC_GFX1013_RT_FORMAT_RG8_SINT:
+    case AGC_GFX1013_RT_FORMAT_RGBA8_SINT:
+    case AGC_GFX1013_RT_FORMAT_R16_SINT:
+    case AGC_GFX1013_RT_FORMAT_RG16_SINT:
+    case AGC_GFX1013_RT_FORMAT_RGBA16_SINT:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_SINT16_ABGR;
+        break;
+    case AGC_GFX1013_RT_FORMAT_R32_FLOAT:
+    case AGC_GFX1013_RT_FORMAT_R32_UINT:
+    case AGC_GFX1013_RT_FORMAT_R32_SINT:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_32_R;
+        break;
+    case AGC_GFX1013_RT_FORMAT_RG32_FLOAT:
+    case AGC_GFX1013_RT_FORMAT_RG32_UINT:
+    case AGC_GFX1013_RT_FORMAT_RG32_SINT:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_32_GR;
+        break;
+    case AGC_GFX1013_RT_FORMAT_RGBA32_FLOAT:
+    case AGC_GFX1013_RT_FORMAT_RGBA32_UINT:
+    case AGC_GFX1013_RT_FORMAT_RGBA32_SINT:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_32_ABGR;
+        break;
+    default:
+        *export_format = OPENAGC_PSBC_COLOR_EXPORT_FP16_ABGR;
+        break;
+    }
+    return true;
+}
+
 static bool depth_surface_format(
     VkFormat format, AgcGfx1013DepthSurfaceFormat *depth_format)
 {
@@ -4340,6 +4387,24 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (!color_blend_state(blend, color_attachment_count, &color_blend,
                                &dual_source_blend))
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        OpenAgcPsbcColorExportFormat
+            color_export_formats[AGC_GFX1013_MAX_COLOR_TARGETS] = {0};
+        for (uint32_t attachment = 0;
+             attachment < color_attachment_count; ++attachment) {
+            VkFormat format;
+            if (render_pass) {
+                const uint32_t index = render_pass->subpasses[create->subpass].
+                    color_attachments[attachment];
+                if (index == VK_ATTACHMENT_UNUSED)
+                    continue;
+                format = render_pass->attachments[index].format;
+            } else {
+                format = rendering->pColorAttachmentFormats[attachment];
+            }
+            if (!color_export_format(format,
+                    &color_export_formats[attachment]))
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
         AgcGfx1013DepthStencilState depth_stencil = {0};
         if (has_depth_stencil) {
             const VkPipelineDepthStencilStateCreateInfo *depth =
@@ -4386,6 +4451,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .robust_buffer_access =
                 vk_ps5_device_robust_buffer_access(device),
         };
+        memcpy(context.color_export_formats, color_export_formats,
+            sizeof(color_export_formats));
         if (multisample->sampleShadingEnable &&
             multisample->rasterizationSamples == VK_SAMPLE_COUNT_4_BIT) {
             const float minimum = multisample->minSampleShading * 4.0f;
@@ -4849,6 +4916,19 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                             reflection->inline_push_constant_mask,
                         reflection->vertex_input_count,
                         reflection->user_sgpr_count);
+                    for (uint32_t export_index = 0u;
+                         export_index < reflection->color_export_count;
+                         ++export_index) {
+                        const AgcShaderColorExport *color_export =
+                            &reflection->color_exports[export_index];
+                        fprintf(stderr,
+                            "vulkan-ps5: native stage[%u] export[%u] "
+                            "location=%u format=%u class=%u mask=0x%x\n",
+                            stage_index, export_index,
+                            color_export->location, color_export->format,
+                            color_export->component_class,
+                            color_export->write_mask);
+                    }
                     for (uint32_t sgpr_index = 0u;
                          sgpr_index < reflection->user_sgpr_count;
                          ++sgpr_index) {
@@ -7609,28 +7689,32 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
     for (uint32_t index = 0u; index < in; ++index) {
         const VkImageMemoryBarrier *barrier = &i[index];
         VkPs5Image *image = (VkPs5Image *)barrier->image;
-        AgcResourceUsage before;
         AgcResourceUsage after;
+        AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
         AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
-        (void)native_usage_from_access(barrier->srcAccessMask,
-                                       barrier->oldLayout, &before);
         (void)native_usage_from_access(barrier->dstAccessMask,
                                        barrier->newLayout, &after);
         transition.resource_type = kAgcResourceTypeImage;
-        AgcResourceUsage current =
-            native_image_recorded_usage(command, image);
-        AgcResourceUsage effective_before = before ==
-            kAgcResourceUsageUndefined ? current : before;
-        AgcResourceUsage effective_after = after ==
-            kAgcResourceUsageUndefined ? effective_before : after;
-        transition.before = effective_before;
-        transition.after = effective_after;
-        transition.before_owner = native_owner_for_usage(transition.before);
-        transition.after_owner = native_owner_for_usage(transition.after);
         transition.image = image->native_image;
         (void)native_image_range(image, &barrier->subresourceRange,
                                  &transition.image_range);
-        int32_t result = AGC_OK;
+        int32_t result = agcGetCommandBufferImageSubresourceStateInfo(
+            command->native_graphics_command_buffer, image->native_image,
+            &transition.image_range, &state);
+        if (result != AGC_OK) {
+            command->record_error = native_command_result(result);
+            return;
+        }
+        /* Access masks define synchronization scopes and may restate stale
+         * prior usage. Query the native command stream's exact subresource
+         * state, including ownership, just as buffer barriers do. */
+        const AgcResourceUsage effective_before = state.usage;
+        const AgcResourceUsage effective_after = after ==
+            kAgcResourceUsageUndefined ? effective_before : after;
+        transition.before = effective_before;
+        transition.after = effective_after;
+        transition.before_owner = state.owner;
+        transition.after_owner = native_owner_for_usage(transition.after);
         if (transition.before != transition.after ||
             transition.before_owner != transition.after_owner) {
             result = agcCmdTransitionResources(

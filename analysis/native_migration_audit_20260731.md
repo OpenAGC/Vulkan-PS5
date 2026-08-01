@@ -347,8 +347,11 @@ missing-copy-contract statements are resolved historical context.
 
 ## 4. Bottom line
 
-WSI and transfer-image migration are complete, and the shader-execution slice
-has reduced the authoritative inventory to **26 audited direct symbols** while
-preserving the single ordered graphics stream. Proceed with descriptor and
-tessellation-resource ownership, then delete the legacy encoder and submission
-path. The TSV audit must reach exactly zero before migration completion.
+WSI, transfer-image, descriptor, tessellation-resource, command-recording, and
+submission migration are complete. The authoritative TSV now contains only
+its schema header, and `native_migration_audit.py` reports exactly **zero**
+direct low-level symbols. The scalar/vector attachment slice preserves that
+closure: Vulkan maps typed attachment formats to PSBC export contracts without
+calling `agcGfx1013*`, while command recording uses native runtime state
+queries and transitions. Any new low-level call is therefore an immediate
+audit failure rather than newly inventoried migration debt.
