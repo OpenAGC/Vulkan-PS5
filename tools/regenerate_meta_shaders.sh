@@ -11,7 +11,7 @@ trap 'rm -rf "$temporary"' EXIT HUP INT TERM
     -o "$temporary/clear_color.spv"
 for shader in clear_attachment.vert clear_attachment_color.frag \
     clear_attachment_depth.frag clear_attachment_stencil.frag blit.frag \
-    resolve.frag; do
+    blit_3d.frag resolve.frag; do
     "$glslang" -V --target-env vulkan1.1 \
         "$root/src/meta/$shader" -o "$temporary/$shader.spv"
 done
@@ -39,6 +39,7 @@ for record in \
     "clear_attachment_depth.frag:vulkan_ps5_meta_clear_attachment_depth_frag_spv:clear_attachment_depth_frag_spv.h" \
     "clear_attachment_stencil.frag:vulkan_ps5_meta_clear_attachment_stencil_frag_spv:clear_attachment_stencil_frag_spv.h" \
     "blit.frag:vulkan_ps5_meta_blit_frag_spv:blit_frag_spv.h" \
+    "blit_3d.frag:vulkan_ps5_meta_blit_3d_frag_spv:blit_3d_frag_spv.h" \
     "resolve.frag:vulkan_ps5_meta_resolve_frag_spv:resolve_frag_spv.h"; do
     shader=${record%%:*}
     remainder=${record#*:}
@@ -62,13 +63,13 @@ if test "${1:-}" = --check; then
         "$root/examples/resolve/source_frag_spv.h"
     for shader in clear_attachment.vert clear_attachment_color.frag \
         clear_attachment_depth.frag clear_attachment_stencil.frag blit.frag \
-        resolve.frag; do
+        blit_3d.frag resolve.frag; do
         cmp "$temporary/$shader.spv" "$root/src/meta/$shader.spv"
     done
     for header in clear_attachment_vert_spv.h \
         clear_attachment_color_frag_spv.h clear_attachment_depth_frag_spv.h \
         clear_attachment_stencil_frag_spv.h blit_frag_spv.h \
-        resolve_frag_spv.h; do
+        blit_3d_frag_spv.h resolve_frag_spv.h; do
         cmp "$temporary/$header" "$root/src/meta/$header"
     done
 else
@@ -84,13 +85,13 @@ else
         "$root/examples/resolve/source_frag_spv.h"
     for shader in clear_attachment.vert clear_attachment_color.frag \
         clear_attachment_depth.frag clear_attachment_stencil.frag blit.frag \
-        resolve.frag; do
+        blit_3d.frag resolve.frag; do
         cp "$temporary/$shader.spv" "$root/src/meta/$shader.spv"
     done
     for header in clear_attachment_vert_spv.h \
         clear_attachment_color_frag_spv.h clear_attachment_depth_frag_spv.h \
         clear_attachment_stencil_frag_spv.h blit_frag_spv.h \
-        resolve_frag_spv.h; do
+        blit_3d_frag_spv.h resolve_frag_spv.h; do
         cp "$temporary/$header" "$root/src/meta/$header"
     done
 fi

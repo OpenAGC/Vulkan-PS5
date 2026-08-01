@@ -764,8 +764,10 @@ ordering.
   filtering, scaled and reversed regions, mip/layer selection, BC or
   uncompressed sources, and uncompressed destinations. Normal and sanitizer
   suites pass 48/48, Prospero static/shared builds are clean, and one pinned
-  exact-pixel probe passed twice on both FW 5.50 and FW 11.60. Extend the path
-  to valid self/3D forms next.
+  exact-pixel probe passed twice on both FW 5.50 and FW 11.60. The path now
+  also records 3D-to-3D, mixed 2D/3D, and disjoint-subresource 2D self-image
+  forms. Their shader regeneration, 48/48 normal and sanitizer suites, and
+  Prospero static/shared builds pass; qualify exact pixels on FW 5.50 next.
 - General 4x-to-1x 2D color resolves now use a reproducible graphics-meta
   shader with strict subresource, usage, layout, format, and bounds validation.
   Normal and sanitizer suites pass 48/48, Prospero static/shared builds are

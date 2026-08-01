@@ -61,6 +61,7 @@ typedef struct VkPs5MetaAttachmentPipeline {
 
 typedef struct VkPs5MetaBlitPipeline {
     VkFormat format;
+    VkBool32 source_3d;
     VkPipelineLayout layout;
     VkPipeline pipeline;
 } VkPs5MetaBlitPipeline;
@@ -306,8 +307,8 @@ VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device_handle,
 }
 
 VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
-    VkFormat format, VkFilter filter, VkPipeline *pipeline_out,
-    VkSampler *sampler_out)
+    VkFormat format, VkFilter filter, VkBool32 source_3d,
+    VkPipeline *pipeline_out, VkSampler *sampler_out)
 {
     VkPs5Device *device = (VkPs5Device *)device_handle;
     const uint32_t sampler_index = filter == VK_FILTER_NEAREST ? 0u :
@@ -338,7 +339,8 @@ VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
     VkPs5MetaBlitPipeline *entry = NULL;
     for (uint32_t index = 0u; result == VK_SUCCESS &&
          index < device->meta_blit_count; ++index) {
-        if (device->meta_blits[index].format == format) {
+        if (device->meta_blits[index].format == format &&
+            device->meta_blits[index].source_3d == source_3d) {
             entry = &device->meta_blits[index];
             break;
         }
@@ -349,9 +351,10 @@ VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
         } else {
             entry = &device->meta_blits[device->meta_blit_count];
             result = vk_ps5_initialize_meta_blit(device_handle, format,
-                &entry->layout, &entry->pipeline);
+                source_3d, &entry->layout, &entry->pipeline);
             if (result == VK_SUCCESS) {
                 entry->format = format;
+                entry->source_3d = source_3d;
                 device->meta_blit_count++;
             }
         }

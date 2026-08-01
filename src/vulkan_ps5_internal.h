@@ -55,7 +55,8 @@ VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device);
 VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device,
     VkFormat format, VkImageAspectFlags aspects, VkPipeline *pipeline_out);
 VkResult vk_ps5_device_meta_blit_resources(VkDevice device, VkFormat format,
-    VkFilter filter, VkPipeline *pipeline_out, VkSampler *sampler_out);
+    VkFilter filter, VkBool32 source_3d, VkPipeline *pipeline_out,
+    VkSampler *sampler_out);
 VkResult vk_ps5_device_meta_resolve_pipeline(VkDevice device, VkFormat format,
     VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_clear(VkDevice device,
@@ -64,7 +65,8 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
     VkFormat format, VkImageAspectFlags aspects,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
-    VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
+    VkBool32 source_3d, VkPipelineLayout *layout_out,
+    VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_resolve(VkDevice device, VkFormat format,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_queue_submit_native(VkQueue queue,

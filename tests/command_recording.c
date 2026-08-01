@@ -40,6 +40,24 @@ static VkShaderModule shader_module(VkDevice device, const char *path)
     return module;
 }
 
+static void create_bound_test_image(VkDevice device,
+    const VkImageCreateInfo *create_info, VkImage *image_out,
+    VkDeviceMemory *memory_out)
+{
+    assert(vkCreateImage(device, create_info, NULL, image_out) == VK_SUCCESS);
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, *image_out, &requirements);
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = 0u,
+    };
+    assert(vkAllocateMemory(device, &allocation, NULL, memory_out) ==
+        VK_SUCCESS);
+    assert(vkBindImageMemory(device, *image_out, *memory_out, 0u) ==
+        VK_SUCCESS);
+}
+
 #if 0 /* Removed with the remaining legacy command-stream encoder. */
 static bool has_register_value(const uint32_t *commands, uint32_t used,
                                uint32_t opcode, uint32_t offset,
@@ -621,6 +639,34 @@ int main(int argc, char **argv)
     VkImageView color_view_1;
     assert(vkCreateImageView(device, &image_view_info_1, NULL,
                              &color_view_1) == VK_SUCCESS);
+    const VkImageCreateInfo image_3d_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_3D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {32u, 24u, 4u},
+        .mipLevels = 1u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+    };
+    VkImage image_3d_source;
+    VkImage image_3d_destination;
+    VkDeviceMemory image_3d_source_memory;
+    VkDeviceMemory image_3d_destination_memory;
+    create_bound_test_image(device, &image_3d_info, &image_3d_source,
+        &image_3d_source_memory);
+    create_bound_test_image(device, &image_3d_info, &image_3d_destination,
+        &image_3d_destination_memory);
+    VkImageCreateInfo self_blit_image_info = image_info;
+    self_blit_image_info.mipLevels = 2u;
+    VkImage self_blit_image;
+    VkDeviceMemory self_blit_memory;
+    create_bound_test_image(device, &self_blit_image_info, &self_blit_image,
+        &self_blit_memory);
     VkImageCreateInfo resolve_source_info = image_info;
     resolve_source_info.samples = VK_SAMPLE_COUNT_4_BIT;
     resolve_source_info.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -1664,6 +1710,62 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkEndCommandBuffer(blit_command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(blit_command) == 2u);
 
+    VkCommandBuffer self_blit_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &self_blit_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(self_blit_command, &begin_info) ==
+        VK_SUCCESS);
+    const VkImageBlit self_blit_region = {
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .srcOffsets = {{16, 24, 0}, {144, 152, 1}},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 1u, 0u, 1u},
+        .dstOffsets = {{8, 12, 0}, {72, 76, 1}},
+    };
+    vkCmdBlitImage(self_blit_command, self_blit_image,
+        VK_IMAGE_LAYOUT_GENERAL, self_blit_image, VK_IMAGE_LAYOUT_GENERAL,
+        1u, &self_blit_region, VK_FILTER_LINEAR);
+    assert(vk_ps5_command_buffer_record_error(self_blit_command) ==
+        VK_SUCCESS);
+    assert(vkEndCommandBuffer(self_blit_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(self_blit_command) == 1u);
+
+    VkCommandBuffer blit_3d_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &blit_3d_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(blit_3d_command, &begin_info) == VK_SUCCESS);
+    const VkImageBlit blit_3d_regions[] = {
+        {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .srcOffsets = {{0, 0, 0}, {32, 24, 4}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .dstOffsets = {{0, 0, 0}, {16, 12, 2}},
+        },
+        {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .srcOffsets = {{0, 0, 0}, {32, 24, 1}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .dstOffsets = {{16, 12, 2}, {32, 24, 4}},
+        },
+        {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .srcOffsets = {{0, 0, 0}, {32, 24, 4}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .dstOffsets = {{0, 0, 0}, {32, 24, 1}},
+        },
+    };
+    vkCmdBlitImage(blit_3d_command, image_3d_source,
+        VK_IMAGE_LAYOUT_GENERAL, image_3d_destination,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &blit_3d_regions[0], VK_FILTER_LINEAR);
+    vkCmdBlitImage(blit_3d_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, image_3d_destination,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &blit_3d_regions[1], VK_FILTER_NEAREST);
+    vkCmdBlitImage(blit_3d_command, image_3d_source,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &blit_3d_regions[2], VK_FILTER_LINEAR);
+    assert(vk_ps5_command_buffer_record_error(blit_3d_command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(blit_3d_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(blit_3d_command) == 5u);
+
     VkCommandBuffer resolve_command;
     assert(vkAllocateCommandBuffers(device, &allocate_info,
         &resolve_command) == VK_SUCCESS);
@@ -1821,6 +1923,24 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
            VK_SUCCESS);
+    VkImageBlit crossed_self_blits[] = {
+        self_blit_region,
+        self_blit_region,
+    };
+    crossed_self_blits[1].srcSubresource.mipLevel = 1u;
+    crossed_self_blits[1].srcOffsets[0] = (VkOffset3D){8, 12, 0};
+    crossed_self_blits[1].srcOffsets[1] = (VkOffset3D){72, 76, 1};
+    crossed_self_blits[1].dstSubresource.mipLevel = 0u;
+    crossed_self_blits[1].dstOffsets[0] = (VkOffset3D){160, 160, 0};
+    crossed_self_blits[1].dstOffsets[1] = (VkOffset3D){224, 224, 1};
+    vkCmdBlitImage(invalid_copy_command, self_blit_image,
+        VK_IMAGE_LAYOUT_GENERAL, self_blit_image, VK_IMAGE_LAYOUT_GENERAL,
+        2u, crossed_self_blits, VK_FILTER_NEAREST);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
     vkCmdClearColorImage(invalid_copy_command, depth_image,
         VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1u, &color_range);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
@@ -1831,6 +1951,28 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkCmdBlitImage(invalid_copy_command, color_image,
         VK_IMAGE_LAYOUT_GENERAL, color_image_1, VK_IMAGE_LAYOUT_GENERAL,
         0u, NULL, VK_FILTER_NEAREST);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    VkImageBlit invalid_3d_blit = blit_3d_regions[0];
+    invalid_3d_blit.srcOffsets[1].z = 5;
+    vkCmdBlitImage(invalid_copy_command, image_3d_source,
+        VK_IMAGE_LAYOUT_GENERAL, image_3d_destination,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &invalid_3d_blit, VK_FILTER_NEAREST);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    VkImageBlit feedback_blit = self_blit_region;
+    feedback_blit.dstSubresource.mipLevel = 0u;
+    feedback_blit.dstOffsets[0] = (VkOffset3D){160, 160, 0};
+    feedback_blit.dstOffsets[1] = (VkOffset3D){224, 224, 1};
+    vkCmdBlitImage(invalid_copy_command, self_blit_image,
+        VK_IMAGE_LAYOUT_GENERAL, self_blit_image, VK_IMAGE_LAYOUT_GENERAL,
+        1u, &feedback_blit, VK_FILTER_NEAREST);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
@@ -1931,6 +2073,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
            AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(blit_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vk_ps5_command_buffer_native_state(blit_3d_command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(resolve_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
 
@@ -1960,6 +2104,12 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkFreeMemory(device, image_memory_1, NULL);
     vkDestroyImage(device, resolve_source_image, NULL);
     vkFreeMemory(device, resolve_source_memory, NULL);
+    vkDestroyImage(device, image_3d_destination, NULL);
+    vkFreeMemory(device, image_3d_destination_memory, NULL);
+    vkDestroyImage(device, image_3d_source, NULL);
+    vkFreeMemory(device, image_3d_source_memory, NULL);
+    vkDestroyImage(device, self_blit_image, NULL);
+    vkFreeMemory(device, self_blit_memory, NULL);
     vkDestroyImageView(device, color_view, NULL);
     vkDestroyImage(device, color_image, NULL);
     vkFreeMemory(device, image_memory, NULL);

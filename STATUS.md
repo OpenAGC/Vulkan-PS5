@@ -69,9 +69,10 @@ Migration status:
   deleted. Image-region and
   buffer/image color transfers now record through OpenAGC API 41. General
   uncompressed color and single-sample depth/stencil image clears use public
-  OpenAGC compute commands; attachment clears and 2D color blits use public
-  OpenAGC graphics-meta paths. Unsupported 3D/self/depth-stencil blits,
-  depth/stencil transfer, and resolve forms fail closed. Indirect draw,
+  OpenAGC compute commands; attachment clears and color blits use public
+  OpenAGC graphics-meta paths. Blits cover 2D, 3D, mixed 2D/3D, and disjoint-
+  subresource 2D self-image forms. Same-subresource/depth-stencil blits,
+  depth/stencil transfer, and unsupported resolve forms fail closed. Indirect draw,
   indexed draw, and dispatch now use typed native argument buffers; the
   superseded Vulkan-side multi-draw encoder has been removed.
 - **WSI migration:** host-complete. Swapchain images are dedicated native
@@ -254,13 +255,18 @@ FTP round-trip SHA-256 remained identical. Evidence is in the
 qualifies color attachment/load clears. Depth/stencil attachment pixels remain
 unqualified.
 
-General 2D color blits are host-complete through public OpenAGC pipelines,
+General color blits are host-complete through public OpenAGC pipelines,
 descriptors, image views, samplers, transitions, and draws. Nearest/linear,
 scaled, reversed-axis, mip/layer, BC-source, and uncompressed-source forms are
-recorded; uncompressed color destinations are supported. 3D, self,
+recorded; uncompressed color destinations are supported. A reproducible
+`sampler3D` meta shader and per-slice color bindings cover 3D-to-3D and mixed
+2D/3D regions. Self-image 2D blits query recording-time OpenAGC subresource
+state, transition disjoint source and destination mip/layer sets concurrently,
+then restore their exact prior states. Same-subresource feedback,
 depth/stencil, and compressed-destination forms remain fail-closed. Normal and
 ASAN/UBSAN suites pass 48/48, shader regeneration is byte-stable, and Prospero
-static/shared libraries build clean. Candidate ELF
+static/shared libraries build clean. The 3D/mixed/self exact-pixel FW 5.50
+gate remains pending. The earlier 2D candidate ELF
 `a2ad727201bea7ad40d1fa85e5bda566d27255a6999d1cf96006e0fcdeecd82d`
 passed twice on FW 5.500.008 with exact `pixels=256 guards=144 nearest=2x`,
 cleanup-first teardown, and immediate relaunch. The same bytes then passed

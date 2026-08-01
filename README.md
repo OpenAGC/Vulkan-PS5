@@ -156,15 +156,24 @@ attachment pixels remain pending.
 reproducible graphics-meta shader and public OpenAGC objects. It supports
 nearest and linear filtering, scaled and axis-reversed regions, mip/layer
 selection, BC or uncompressed sampled sources, and uncompressed color
-destinations. Format queries advertise `BLIT_SRC` for BC formats and both blit
-directions for the supported uncompressed color matrix. 3D, depth/stencil,
-self-blits, and compressed destinations remain fail-closed. The pinned
+destinations. The same path now covers 3D-to-3D and mixed 2D/3D blits by
+sampling a typed 3D view and drawing each selected destination depth slice.
+Self-image 2D blits are supported when the complete source and destination
+subresource sets are disjoint; feedback through one mip/layer remains
+fail-closed. Format queries advertise `BLIT_SRC` for BC formats and both blit
+directions for the supported uncompressed color matrix. Depth/stencil and
+compressed destinations remain fail-closed. The original 2D pinned
 Prospero ELF SHA-256 is
 `a2ad727201bea7ad40d1fa85e5bda566d27255a6999d1cf96006e0fcdeecd82d`;
 two cleanup-first FW 5.500.008 runs each read back exactly 256 nearest-scaled
 pixels and 144 untouched guards with immediate relaunch. The identical ELF
 then passed the same oracle twice on FW 11.600.005; its FTP round-trip SHA-256
 remained identical.
+
+The 3D/mixed/self extension is host-verified by all 48 normal and sanitizer
+suites, has byte-reproducible shader artifacts, and builds cleanly as static
+and shared Prospero libraries. Exact FW 5.50 pixels are the remaining gate;
+FW 11.60 replay stays deferred to the final pinned release candidate.
 
 `vkCmdResolveImage` now implements application-neutral 4x-to-1x 2D color
 resolves through a reproducible `sampler2DMS` graphics-meta shader. It validates
