@@ -376,9 +376,9 @@ below are the implementation and qualification ledger.
 
 The Eden `612409c7ba` format audit is now revision-frozen rather than
 approximate: 112 guest rows map to 109 unique Vulkan formats. The committed
-inventory classifies 67 unique direct formats after adding the API 51 packed
-8/16-bit group, with 2 remaining unique uncompressed gaps, 28 ASTC plus 10 ETC2/EAC
-transcode-required forms, and two fail-closed D24 forms. The four RGBA integer
+inventory classifies 68 unique direct image formats through API 52, no genuine
+uncompressed image gaps, 28 ASTC plus 10 ETC2/EAC transcode-required forms,
+two fail-closed D24 forms, and RGB32 as deliberately buffer-only. The four RGBA integer
 formats expose sampled, storage, color-attachment, and transfer use without
 unsupported filtering, blit, or texel-buffer claims. Exact format queries,
 image/view creation, signed and
