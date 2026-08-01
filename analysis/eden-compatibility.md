@@ -462,8 +462,9 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
 4. Complete the remaining native command forms in dependency order:
-   finish valid self/3D blit forms, then 4x resolves. General 2D color blits
-   are host-complete and exact-pixel qualified on both endpoints. Partial attachment clears are
+   finish valid self/3D blit forms. General 2D color blits and 4x-to-1x 2D
+   color resolves are host-complete and exact-pixel qualified on both
+   endpoints. Partial attachment clears are
    implemented; their color/load-clear path is identically qualified on FW
    5.50 and FW 11.60, while depth/stencil pixel gates remain. General
    uncompressed color and single-sample depth/stencil image clears are

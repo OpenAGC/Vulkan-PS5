@@ -166,6 +166,17 @@ pixels and 144 untouched guards with immediate relaunch. The identical ELF
 then passed the same oracle twice on FW 11.600.005; its FTP round-trip SHA-256
 remained identical.
 
+`vkCmdResolveImage` now implements application-neutral 4x-to-1x 2D color
+resolves through a reproducible `sampler2DMS` graphics-meta shader. It validates
+Vulkan usage, layouts, formats, aspects, mip/layer ranges, offsets, extents,
+and bounds; unsupported depth/stencil, 3D, self, compressed, and non-4x forms
+fail closed. The pinned Prospero ELF SHA-256 is
+`acd7aaf9b536f9335d1d69609eaa5a80d366ad040df6e7ce48fe8f6ddfb211de`.
+Two cleanup-first runs on each of FW 5.500.008 and FW 11.600.005 read back all
+1,024 pixels as the exact four-sample average `0xff00ff80`, self-exited, and
+allowed immediate relaunch. Development qualification now uses FW 5.50 per
+slice; FW 11.60 is reserved for the final pinned release-candidate replay.
+
 Graphics pipeline creation accepts the Vulkan depth-only form: dynamic
 rendering may declare zero color formats, `VkPipelineColorBlendStateCreateInfo`
 may contain zero attachments, and a depth/stencil pipeline is still translated

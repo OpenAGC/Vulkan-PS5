@@ -5,6 +5,7 @@
 #include "meta/clear_attachment_depth_frag_spv.h"
 #include "meta/clear_attachment_stencil_frag_spv.h"
 #include "meta/blit_frag_spv.h"
+#include "meta/resolve_frag_spv.h"
 #include <openagc_psbc.h>
 #include <agc_cb.h>
 #include <agc_graphics.h>
@@ -268,11 +269,11 @@ static VkResult initialize_native_image_layout(VkDevice device,
      * Keep Vulkan usage validation at the command boundary while allowing the
      * native allocation/layout to support the sampled source and color-target
      * destination states needed internally. */
-    if (!native_image_is_depth(image->format) && image->samples ==
-            VK_SAMPLE_COUNT_1_BIT) {
+    if (!native_image_is_depth(image->format)) {
         if (image->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             image->native_desc.usage |= AGC_IMAGE_USAGE_SAMPLED_BIT;
-        if (image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) {
+        if (image->samples == VK_SAMPLE_COUNT_1_BIT &&
+            (image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
             AgcGfx1013ColorTargetFormat target_format;
             if (color_target_format(image->format, &target_format))
                 image->native_desc.usage |=
@@ -1781,9 +1782,11 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
             pCreateInfo->arrayLayers != 1u ||
             pCreateInfo->tiling != VK_IMAGE_TILING_OPTIMAL ||
             pCreateInfo->format != VK_FORMAT_R8G8B8A8_UNORM ||
-            !(pCreateInfo->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+            !(pCreateInfo->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) ||
             (pCreateInfo->usage & ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)) ||
+                                    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) ||
             is_depth_format ||
             !color_target_format(pCreateInfo->format, &target_format)) {
             vk_ps5_device_free(device, pAllocator, image);
@@ -3491,6 +3494,153 @@ VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = sizeof(vulkan_ps5_meta_blit_frag_spv),
         .pCode = vulkan_ps5_meta_blit_frag_spv,
+    };
+    VkShaderModule vertex = VK_NULL_HANDLE;
+    VkShaderModule fragment = VK_NULL_HANDLE;
+    result = vkCreateShaderModule(device, &vertex_create, NULL, &vertex);
+    if (result == VK_SUCCESS)
+        result = vkCreateShaderModule(device, &fragment_create, NULL,
+            &fragment);
+    const VkPipelineShaderStageCreateInfo stages[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertex,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragment,
+            .pName = "main",
+        },
+    };
+    const VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    };
+    const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    const VkPipelineViewportStateCreateInfo viewport = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1u,
+        .scissorCount = 1u,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineColorBlendAttachmentState color_attachment = {
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1u,
+        .pAttachments = &color_attachment,
+    };
+    const VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2u,
+        .pDynamicStates = dynamic_states,
+    };
+    const VkPipelineRenderingCreateInfo rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1u,
+        .pColorAttachmentFormats = &format,
+    };
+    const VkGraphicsPipelineCreateInfo pipeline_create = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &rendering,
+        .stageCount = 2u,
+        .pStages = stages,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pColorBlendState = &blend,
+        .pDynamicState = &dynamic,
+        .layout = *layout_out,
+    };
+    if (result == VK_SUCCESS)
+        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
+            &pipeline_create, NULL, pipeline_out);
+    vkDestroyShaderModule(device, fragment, NULL);
+    vkDestroyShaderModule(device, vertex, NULL);
+    if (result != VK_SUCCESS) {
+        vkDestroyPipelineLayout(device, *layout_out, NULL);
+        *layout_out = VK_NULL_HANDLE;
+        *pipeline_out = VK_NULL_HANDLE;
+    }
+    (void)native_format;
+    return result;
+}
+
+VkResult vk_ps5_initialize_meta_resolve(VkDevice device, VkFormat format,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    AgcGfx1013ColorTargetFormat native_format;
+    if (!device || !layout_out || !pipeline_out ||
+        !color_target_format(format, &native_format))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    *layout_out = VK_NULL_HANDLE;
+    *pipeline_out = VK_NULL_HANDLE;
+
+    const VkDescriptorSetLayoutBinding source_binding = {
+        .binding = 0u,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1u,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo set_create = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1u,
+        .pBindings = &source_binding,
+    };
+    VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
+    VkResult result = vkCreateDescriptorSetLayout(device, &set_create, NULL,
+        &set_layout);
+    if (result != VK_SUCCESS)
+        return result;
+    const VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0u,
+        .size = 8u,
+    };
+    const VkPipelineLayoutCreateInfo layout_create = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1u,
+        .pSetLayouts = &set_layout,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &push_range,
+    };
+    result = vkCreatePipelineLayout(device, &layout_create, NULL, layout_out);
+    vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+    if (result != VK_SUCCESS)
+        return result;
+
+    const VkShaderModuleCreateInfo vertex_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_meta_clear_attachment_vert_spv),
+        .pCode = vulkan_ps5_meta_clear_attachment_vert_spv,
+    };
+    const VkShaderModuleCreateInfo fragment_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_meta_resolve_frag_spv),
+        .pCode = vulkan_ps5_meta_resolve_frag_spv,
     };
     VkShaderModule vertex = VK_NULL_HANDLE;
     VkShaderModule fragment = VK_NULL_HANDLE;
@@ -9174,8 +9324,234 @@ vkCmdClearAttachments(VkCommandBuffer c, uint32_t n, const VkClearAttachment *a,
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                   VkImageLayout dl, uint32_t n, const VkImageResolve *r) {
-    IGNORE(s); IGNORE(sl); IGNORE(d); IGNORE(dl); IGNORE(n); IGNORE(r);
-    reject_unsupported_command(c);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    VkPs5Image *source = (VkPs5Image *)s;
+    VkPs5Image *destination = (VkPs5Image *)d;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    AgcGfx1013ColorTargetFormat destination_format;
+    if (!source || !destination || source == destination ||
+        command->active_render_pass || !n || !r ||
+        source->type != VK_IMAGE_TYPE_2D ||
+        destination->type != VK_IMAGE_TYPE_2D ||
+        source->samples != VK_SAMPLE_COUNT_4_BIT ||
+        destination->samples != VK_SAMPLE_COUNT_1_BIT ||
+        source->format != destination->format ||
+        source->is_depth_surface || destination->is_depth_surface ||
+        !source->native_image || !destination->native_image ||
+        !(source->usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ||
+        !(destination->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
+        (sl != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL &&
+         sl != VK_IMAGE_LAYOUT_GENERAL) ||
+        (dl != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+         dl != VK_IMAGE_LAYOUT_GENERAL) ||
+        !color_target_format(destination->format, &destination_format) ||
+        !(source->native_desc.usage & AGC_IMAGE_USAGE_SAMPLED_BIT) ||
+        !(destination->native_desc.usage &
+            AGC_IMAGE_USAGE_COLOR_TARGET_BIT)) {
+        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        return;
+    }
+    for (uint32_t index = 0u; index < n; ++index) {
+        const VkImageResolve *region = &r[index];
+        if (region->srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+            region->dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+            region->srcSubresource.mipLevel >= source->mip_levels ||
+            region->dstSubresource.mipLevel >= destination->mip_levels ||
+            !region->srcSubresource.layerCount ||
+            region->srcSubresource.layerCount !=
+                region->dstSubresource.layerCount ||
+            region->srcSubresource.baseArrayLayer >= source->array_layers ||
+            region->srcSubresource.layerCount > source->array_layers -
+                region->srcSubresource.baseArrayLayer ||
+            region->dstSubresource.baseArrayLayer >=
+                destination->array_layers ||
+            region->dstSubresource.layerCount > destination->array_layers -
+                region->dstSubresource.baseArrayLayer ||
+            region->srcOffset.x < 0 || region->srcOffset.y < 0 ||
+            region->srcOffset.z != 0 || region->dstOffset.x < 0 ||
+            region->dstOffset.y < 0 || region->dstOffset.z != 0 ||
+            !region->extent.width || !region->extent.height ||
+            region->extent.depth != 1u) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        const uint32_t source_width = native_mip_dimension(
+            source->extent.width, region->srcSubresource.mipLevel);
+        const uint32_t source_height = native_mip_dimension(
+            source->extent.height, region->srcSubresource.mipLevel);
+        const uint32_t destination_width = native_mip_dimension(
+            destination->extent.width, region->dstSubresource.mipLevel);
+        const uint32_t destination_height = native_mip_dimension(
+            destination->extent.height, region->dstSubresource.mipLevel);
+        if ((uint32_t)region->srcOffset.x > source_width ||
+            region->extent.width > source_width -
+                (uint32_t)region->srcOffset.x ||
+            (uint32_t)region->srcOffset.y > source_height ||
+            region->extent.height > source_height -
+                (uint32_t)region->srcOffset.y ||
+            (uint32_t)region->dstOffset.x > destination_width ||
+            region->extent.width > destination_width -
+                (uint32_t)region->dstOffset.x ||
+            (uint32_t)region->dstOffset.y > destination_height ||
+            region->extent.height > destination_height -
+                (uint32_t)region->dstOffset.y) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+    }
+    if (!native_require_complete_stream(command)) {
+        command->record_error = command->record_error == VK_SUCCESS ?
+            VK_ERROR_INITIALIZATION_FAILED : command->record_error;
+        return;
+    }
+    VkPipeline pipeline_handle = VK_NULL_HANDLE;
+    command->record_error = vk_ps5_device_meta_resolve_pipeline(
+        command->device, destination->format, &pipeline_handle);
+    if (command->record_error != VK_SUCCESS || !pipeline_handle) {
+        if (command->record_error == VK_SUCCESS)
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    command->record_error = native_transition_whole_image(command, source,
+        native_image_recorded_usage(command, source),
+        kAgcResourceUsageShaderRead);
+    if (command->record_error == VK_SUCCESS)
+        command->record_error = native_transition_whole_image(command,
+            destination, native_image_recorded_usage(command, destination),
+            kAgcResourceUsageColorTarget);
+    if (command->record_error != VK_SUCCESS)
+        return;
+
+    VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+    const char *native_step = "bind pipeline";
+    int32_t native_result = agcCmdBindGraphicsPipeline(
+        command->native_graphics_command_buffer,
+        pipeline->native_graphics_pipeline);
+    if (native_result == AGC_OK) {
+        command->native_bound_graphics = pipeline->native_graphics_pipeline;
+        command->native_descriptor_graphics_pipeline = NULL;
+        command->native_vertex_graphics_pipeline = NULL;
+        command->native_attachments_render_pass = NULL;
+        command->native_attachments_framebuffer = NULL;
+    }
+    for (uint32_t index = 0u; index < n && native_result == AGC_OK; ++index) {
+        const VkImageResolve *region = &r[index];
+        const int32_t delta[2] = {
+            region->srcOffset.x - region->dstOffset.x,
+            region->srcOffset.y - region->dstOffset.y,
+        };
+        native_step = "push constants";
+        native_result = agcCmdPushConstants(
+            command->native_graphics_command_buffer,
+            1u << kAgcShaderStagePs, 0u, sizeof(delta), delta);
+        const uint32_t destination_width = native_mip_dimension(
+            destination->extent.width, region->dstSubresource.mipLevel);
+        const uint32_t destination_height = native_mip_dimension(
+            destination->extent.height, region->dstSubresource.mipLevel);
+        AgcViewport viewport = AGC_VIEWPORT_INIT;
+        viewport.width = (float)destination_width;
+        viewport.height = (float)destination_height;
+        viewport.max_depth = 1.0f;
+        AgcScissor scissor = AGC_SCISSOR_INIT;
+        scissor.x = region->dstOffset.x;
+        scissor.y = region->dstOffset.y;
+        scissor.width = region->extent.width;
+        scissor.height = region->extent.height;
+        if (native_result == AGC_OK) {
+            native_step = "viewport/scissor";
+            native_result = agcCmdSetViewportScissors(
+                command->native_graphics_command_buffer, 1u,
+                &viewport, &scissor);
+        }
+        for (uint32_t layer = 0u; native_result == AGC_OK &&
+             layer < region->srcSubresource.layerCount; ++layer) {
+            VkPs5ImageView source_view = {
+                .image = (VkImage)source,
+                .view_type = VK_IMAGE_VIEW_TYPE_2D,
+                .format = source->format,
+                .components = {
+                    VK_COMPONENT_SWIZZLE_IDENTITY,
+                    VK_COMPONENT_SWIZZLE_IDENTITY,
+                    VK_COMPONENT_SWIZZLE_IDENTITY,
+                    VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .base_mip_level = region->srcSubresource.mipLevel,
+                .mip_level_count = 1u,
+                .base_array_layer =
+                    region->srcSubresource.baseArrayLayer + layer,
+                .layer_count = 1u,
+            };
+            command->record_error = ensure_native_image_view(&source_view);
+            if (command->record_error != VK_SUCCESS)
+                return;
+            AgcDescriptorWrite write = AGC_DESCRIPTOR_WRITE_INIT;
+            write.type = AGC_SHADER_DESCRIPTOR_COMBINED_IMAGE_SAMPLER;
+            write.image_view = source_view.native_view;
+            native_step = "source descriptor";
+            native_result = agcCmdBindDescriptors(
+                command->native_graphics_command_buffer, 1u, &write);
+            if (native_result == AGC_OK)
+                command->native_descriptor_bind_count++;
+            AgcColorTargetBinding target = AGC_COLOR_TARGET_BINDING_INIT;
+            target.image = destination->native_image;
+            target.mip_level = region->dstSubresource.mipLevel;
+            target.array_layer =
+                region->dstSubresource.baseArrayLayer + layer;
+            if (native_result == AGC_OK) {
+                native_step = "destination attachment";
+                native_result = agcCmdBindColorTargets(
+                    command->native_graphics_command_buffer, 1u, &target);
+            }
+            if (native_result == AGC_OK) {
+                native_step = "draw";
+                native_result = agcCmdDraw(
+                    command->native_graphics_command_buffer,
+                    3u, 1u, 0u, 0u);
+            }
+            if (native_result == AGC_OK)
+                command->native_draw_count++;
+            if (source_view.native_view)
+                vk_ps5_destroy_or_defer_native(command->device,
+                    VK_PS5_NATIVE_IMAGE_VIEW, source_view.native_view);
+        }
+    }
+    if (native_result != AGC_OK) {
+        AgcDebugMessage message = AGC_DEBUG_MESSAGE_INIT;
+        const int32_t debug_result = agcGetLastDebugMessage(
+            vk_ps5_native_device(command->device), &message);
+        fprintf(stderr,
+            "vulkan-ps5: native resolve recording failed step=%s "
+            "result=0x%x%s%s\n",
+            native_step, (unsigned)native_result,
+            debug_result == AGC_OK ? ": " : "",
+            debug_result == AGC_OK ? message.message : "");
+        command->record_error = native_command_result(native_result);
+        return;
+    }
+    command->record_error = native_transition_whole_image(command, source,
+        kAgcResourceUsageShaderRead, kAgcResourceUsageCopySource);
+    if (command->record_error == VK_SUCCESS)
+        command->record_error = native_transition_whole_image(command,
+            destination, kAgcResourceUsageColorTarget,
+            kAgcResourceUsageCopyDestination);
+    if (command->record_error != VK_SUCCESS)
+        return;
+    command->native_bound_graphics = NULL;
+    command->native_descriptor_graphics_pipeline = NULL;
+    command->native_vertex_graphics_pipeline = NULL;
+    command->native_attachments_render_pass = NULL;
+    command->native_attachments_framebuffer = NULL;
+    if (command->bound_graphics)
+        vkCmdBindPipeline(c, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            (VkPipeline)command->bound_graphics);
+    if (command->record_error != VK_SUCCESS)
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdResolveImage failed result=%d regions=%u "
+            "source_format=%u destination_format=%u\n",
+            command->record_error, n, source->format, destination->format);
+    (void)destination_format;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL

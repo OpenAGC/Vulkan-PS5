@@ -765,7 +765,14 @@ ordering.
   uncompressed sources, and uncompressed destinations. Normal and sanitizer
   suites pass 48/48, Prospero static/shared builds are clean, and one pinned
   exact-pixel probe passed twice on both FW 5.50 and FW 11.60. Extend the path
-  to valid self/3D forms and implement 4x resolves next.
+  to valid self/3D forms next.
+- General 4x-to-1x 2D color resolves now use a reproducible graphics-meta
+  shader with strict subresource, usage, layout, format, and bounds validation.
+  Normal and sanitizer suites pass 48/48, Prospero static/shared builds are
+  clean, and one pinned exact-pixel probe passed twice on both FW 5.50 and FW
+  11.60. Preserve those results; qualify subsequent development slices on FW
+  5.50 and defer the next identical-byte FW 11.60 replay to the final release
+  candidate.
 - The graphics-pipeline translator now accepts valid depth-only dynamic
   rendering with zero color formats and zero blend attachments. A D32 pipeline
   exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;

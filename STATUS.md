@@ -267,6 +267,20 @@ cleanup-first teardown, and immediate relaunch. The same bytes then passed
 twice on FW 11.600.005 with identical pixels and lifecycle behavior; an FTP
 download matched the pinned SHA-256 exactly.
 
+General 4x-to-1x 2D color resolves are host- and hardware-complete through a
+reproducible graphics-meta shader and public OpenAGC objects. The implementation
+validates usage/layout, format/aspect compatibility, mip/layer selection,
+offsets, extents, and bounds; it creates per-layer multisample source views,
+records a scissored draw into the destination subresource, and restores the
+application pipeline. Unsupported depth/stencil, 3D, self, compressed, and
+non-4x forms fail closed. Normal and ASan/UBSan suites pass 48/48, shader
+regeneration is byte-stable, and Prospero static/shared builds are clean. The
+pinned ELF
+`acd7aaf9b536f9335d1d69609eaa5a80d366ad040df6e7ce48fe8f6ddfb211de`
+passed twice on FW 5.500.008 and twice on FW 11.600.005 with exact
+`pixels=1024 color=ff00ff80 samples=4`, clean self-exit, and immediate relaunch.
+Evidence is recorded in `analysis/fw550_fw1160_color_resolve_20260801.md`.
+
 The shader-execution migration removes eight more audited symbols. Vulkan no
 longer allocates, relocates, flushes, frees, or fuses shader binaries itself;
 `AgcShader` owns those bytes through pipeline destruction. Compute dispatch and

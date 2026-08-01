@@ -50,6 +50,7 @@ struct VkPs5Queue {
 
 #define VK_PS5_META_ATTACHMENT_PIPELINE_COUNT 32u
 #define VK_PS5_META_BLIT_PIPELINE_COUNT 16u
+#define VK_PS5_META_RESOLVE_PIPELINE_COUNT 16u
 
 typedef struct VkPs5MetaAttachmentPipeline {
     VkFormat format;
@@ -63,6 +64,12 @@ typedef struct VkPs5MetaBlitPipeline {
     VkPipelineLayout layout;
     VkPipeline pipeline;
 } VkPs5MetaBlitPipeline;
+
+typedef struct VkPs5MetaResolvePipeline {
+    VkFormat format;
+    VkPipelineLayout layout;
+    VkPipeline pipeline;
+} VkPs5MetaResolvePipeline;
 
 struct VkPs5Device {
     VK_LOADER_DATA loader_data;
@@ -85,6 +92,9 @@ struct VkPs5Device {
     uint32_t meta_blit_count;
     VkPs5MetaBlitPipeline meta_blits[VK_PS5_META_BLIT_PIPELINE_COUNT];
     VkSampler meta_blit_samplers[2];
+    uint32_t meta_resolve_count;
+    VkPs5MetaResolvePipeline meta_resolves[
+        VK_PS5_META_RESOLVE_PIPELINE_COUNT];
     atomic_uint memory_allocation_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
@@ -350,6 +360,44 @@ VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
         *pipeline_out = entry->pipeline;
         *sampler_out = device->meta_blit_samplers[sampler_index];
     }
+    atomic_flag_clear_explicit(&device->meta_attachment_lock,
+        memory_order_release);
+    return result;
+}
+
+VkResult vk_ps5_device_meta_resolve_pipeline(VkDevice device_handle,
+    VkFormat format, VkPipeline *pipeline_out)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !pipeline_out)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *pipeline_out = VK_NULL_HANDLE;
+    while (atomic_flag_test_and_set_explicit(&device->meta_attachment_lock,
+            memory_order_acquire)) {}
+    VkPs5MetaResolvePipeline *entry = NULL;
+    for (uint32_t index = 0u; index < device->meta_resolve_count; ++index) {
+        if (device->meta_resolves[index].format == format) {
+            entry = &device->meta_resolves[index];
+            break;
+        }
+    }
+    VkResult result = VK_SUCCESS;
+    if (!entry) {
+        if (device->meta_resolve_count >=
+                VK_PS5_META_RESOLVE_PIPELINE_COUNT) {
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        } else {
+            entry = &device->meta_resolves[device->meta_resolve_count];
+            result = vk_ps5_initialize_meta_resolve(device_handle, format,
+                &entry->layout, &entry->pipeline);
+            if (result == VK_SUCCESS) {
+                entry->format = format;
+                device->meta_resolve_count++;
+            }
+        }
+    }
+    if (result == VK_SUCCESS)
+        *pipeline_out = entry->pipeline;
     atomic_flag_clear_explicit(&device->meta_attachment_lock,
         memory_order_release);
     return result;
@@ -1958,6 +2006,12 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     }
     vkDestroySampler(device_handle, device->meta_blit_samplers[0], NULL);
     vkDestroySampler(device_handle, device->meta_blit_samplers[1], NULL);
+    for (uint32_t index = 0u; index < device->meta_resolve_count; ++index) {
+        vkDestroyPipeline(device_handle,
+            device->meta_resolves[index].pipeline, NULL);
+        vkDestroyPipelineLayout(device_handle,
+            device->meta_resolves[index].layout, NULL);
+    }
     vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
     vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
     vk_ps5_collect_deferred_native(device_handle);

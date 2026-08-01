@@ -621,6 +621,31 @@ int main(int argc, char **argv)
     VkImageView color_view_1;
     assert(vkCreateImageView(device, &image_view_info_1, NULL,
                              &color_view_1) == VK_SUCCESS);
+    VkImageCreateInfo resolve_source_info = image_info;
+    resolve_source_info.samples = VK_SAMPLE_COUNT_4_BIT;
+    resolve_source_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    resolve_source_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    resolve_source_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImage resolve_source_image;
+    const VkResult resolve_create_result = vkCreateImage(device,
+        &resolve_source_info, NULL, &resolve_source_image);
+    if (resolve_create_result != VK_SUCCESS)
+        fprintf(stderr, "resolve source create failed: %d\n",
+            resolve_create_result);
+    assert(resolve_create_result == VK_SUCCESS);
+    VkMemoryRequirements resolve_source_requirements;
+    vkGetImageMemoryRequirements(device, resolve_source_image,
+        &resolve_source_requirements);
+    const VkMemoryAllocateInfo resolve_source_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = resolve_source_requirements.size,
+        .memoryTypeIndex = 1u,
+    };
+    VkDeviceMemory resolve_source_memory;
+    assert(vkAllocateMemory(device, &resolve_source_memory_info, NULL,
+        &resolve_source_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, resolve_source_image,
+        resolve_source_memory, 0u) == VK_SUCCESS);
     const VkImageCreateInfo depth_image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -1639,6 +1664,24 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkEndCommandBuffer(blit_command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(blit_command) == 2u);
 
+    VkCommandBuffer resolve_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info,
+        &resolve_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(resolve_command, &begin_info) == VK_SUCCESS);
+    const VkImageResolve resolve_region = {
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .srcOffset = {24, 32, 0},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .dstOffset = {48, 64, 0},
+        .extent = {128u, 96u, 1u},
+    };
+    vkCmdResolveImage(resolve_command, resolve_source_image,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1, VK_IMAGE_LAYOUT_GENERAL,
+        1u, &resolve_region);
+    assert(vk_ps5_command_buffer_record_error(resolve_command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(resolve_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(resolve_command) == 1u);
+
     VkCommandBuffer unset_line_width_command;
     assert(vkAllocateCommandBuffers(device, &allocate_info,
         &unset_line_width_command) == VK_SUCCESS);
@@ -1888,6 +1931,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
            AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(blit_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vk_ps5_command_buffer_native_state(resolve_command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
 
     vkDestroyFence(device, fence, NULL);
     vkDestroyQueryPool(device, query_pool, NULL);
@@ -1913,6 +1958,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyImageView(device, color_view_1, NULL);
     vkDestroyImage(device, color_image_1, NULL);
     vkFreeMemory(device, image_memory_1, NULL);
+    vkDestroyImage(device, resolve_source_image, NULL);
+    vkFreeMemory(device, resolve_source_memory, NULL);
     vkDestroyImageView(device, color_view, NULL);
     vkDestroyImage(device, color_image, NULL);
     vkFreeMemory(device, image_memory, NULL);
