@@ -401,6 +401,21 @@ immediate relaunch. Its SHA-256 is
 see `analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling,
 storage-image operations, attachment exports, and FW 11.60 remain pending.
 
+The BC slice now has a real shader-execution gate rather than format-query-only
+coverage. Compute descriptor preparation realizes Vulkan samplers, combined
+image samplers, sampled images, storage images, and input attachments through
+public OpenAGC objects. Committed Mesa-codec assets provide one deterministic
+4x4 block for every BC1-BC7 UNORM/SNORM/SRGB/UFLOAT/SFLOAT format. A smoke run
+exposed BC5's missing-channel selector bug in OpenAGC; after the firmware-
+neutral selector fix, the full fourteen-format compute-sampling ELF passed
+twice back-to-back on FW 5.500.008. The pinned ELF SHA-256 is
+`601d0d2694c819e48140b429bb9e16b473ea91b5c9ad9eaac69bb8ae8624b639`;
+see `analysis/fw550_bc_sampling_20260801.md`. These runs were bounded, tore
+down normally, left no matching process, and immediately relaunched. They do
+not yet qualify BC image copies or mip copies, or the final FW 11.60 replay.
+The complete normal and ASAN/UBSAN suites now pass 54/54, including full and
+smoke command recording plus deterministic asset regeneration.
+
 ## SDL/Zink capability slice (2026-07-31)
 
 The pinned Mesa GL 2.1 Zink reporter and its exact remaining contract are

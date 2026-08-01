@@ -786,9 +786,13 @@ ordering.
   Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete
   and nonzero-base mip views, and D24/ASTC/ETC fail-closed behavior pass both
   40/40 normal and ASAN/UBSAN suites plus a clean Prospero library build.
-  Exact hardware BC sampling/copy qualification remains pending; the next
-  format slice expands Eden-required uncompressed formats without introducing
-  application-specific aliases. The first RGBA16/32 signed/unsigned integer
+  A deterministic compute gate now samples all fourteen encodings through
+  native sampler and combined-image-sampler descriptors and passes twice on
+  FW 5.50 with one pinned ELF. Preserve its absent-channel regression and
+  reproducible Mesa-codec assets. Exact BC image-copy and mip-copy hardware
+  gates remain pending; the next format slice expands Eden-required
+  uncompressed formats without introducing application-specific aliases. The
+  first RGBA16/32 signed/unsigned integer
   slice now passes exact clear/readback twice on FW 5.50 with bounded waits and
   immediate relaunch. The following API 48 slice adds fourteen R/RG
   scalar/vector normalized and integer forms and now passes its expanded

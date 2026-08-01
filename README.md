@@ -86,6 +86,16 @@ than being aliased to incompatible hardware formats. This is a general Vulkan
 contract used by Eden and other applications; `analysis/eden-compatibility.md`
 tracks Eden only as one demanding consumer.
 
+`vulkan_ps5_bc_sampling_probe` executes a compute shader that samples one
+committed deterministic 4x4 block in each advertised BC format through Vulkan
+sampler and combined-image-sampler descriptors. Regenerate or verify the
+Mesa-codec-derived assets with `tools/regenerate_bc_probe_assets.sh --write`
+or `tools/regenerate_bc_probe_assets.sh --check`. The guarded FW 5.50 runner is
+`examples/run_fw550_bc_sampling.sh`; its twice-passed ELF is pinned at SHA-256
+`601d0d2694c819e48140b429bb9e16b473ea91b5c9ad9eaac69bb8ae8624b639`.
+This qualifies direct-upload linear-image sampling with nearest filtering;
+BC image-copy/mip-copy execution and the final FW 11.60 replay remain pending.
+
 `vkCmdClearColorImage` has an application-neutral, range-aware implementation
 for every advertised uncompressed color format. A committed, reproducible meta
 compute shader writes packed patterns through a placed storage-buffer alias;
