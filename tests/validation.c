@@ -269,6 +269,28 @@ int main(void) {
     assert(vkCreateImageView(device, &bc_view_info, NULL, &bc_mip_view) ==
            VK_SUCCESS);
 
+    VkImageCreateInfo clear_info = image_info;
+    clear_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    clear_info.extent = (VkExtent3D){16u, 8u, 1u};
+    clear_info.mipLevels = 4u;
+    clear_info.arrayLayers = 2u;
+    clear_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImage clear_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &clear_info, NULL, &clear_image) == VK_SUCCESS);
+    VkMemoryRequirements clear_requirements;
+    vkGetImageMemoryRequirements(device, clear_image, &clear_requirements);
+    VkMemoryAllocateInfo clear_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = clear_requirements.size,
+        .memoryTypeIndex = find_memory_type(physical,
+            clear_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    VkDeviceMemory clear_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &clear_allocation, NULL, &clear_memory) ==
+           VK_SUCCESS);
+    assert(vkBindImageMemory(device, clear_image, clear_memory, 0u) ==
+           VK_SUCCESS);
+
     VkAttachmentDescription attachment = {
         .format = image_info.format,
         .samples = VK_SAMPLE_COUNT_4_BIT,
@@ -326,6 +348,30 @@ int main(void) {
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
     };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    const VkImageMemoryBarrier clear_barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = 0u,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = clear_image,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 4u, 0u, 2u,
+        },
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &clear_barrier);
+    const VkClearColorValue clear_value = {
+        .float32 = {0.25f, 0.5f, 0.75f, 1.0f},
+    };
+    const VkImageSubresourceRange clear_range = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 1u, 2u, 1u, 1u,
+    };
+    vkCmdClearColorImage(command, clear_image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, 1u, &clear_range);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     VkFenceCreateInfo fence_info = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
     VkFence fence = VK_NULL_HANDLE;
@@ -343,6 +389,8 @@ int main(void) {
     vkDestroyCommandPool(device, pool, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyImage(device, clear_image, NULL);
+    vkFreeMemory(device, clear_memory, NULL);
     vkDestroyImageView(device, bc_mip_view, NULL);
     vkDestroyImageView(device, bc_view, NULL);
     vkDestroyImage(device, bc_image, NULL);

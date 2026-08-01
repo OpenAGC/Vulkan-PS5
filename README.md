@@ -86,6 +86,14 @@ than being aliased to incompatible hardware formats. This is a general Vulkan
 contract used by Eden and other applications; `analysis/eden-compatibility.md`
 tracks Eden only as one demanding consumer.
 
+`vkCmdClearColorImage` currently has a native, range-aware implementation for
+the six supported 32-bit RGBA/BGRA UNORM/SRGB formats. It handles arbitrary
+clear values, SRGB conversion, nonzero mip/layer intervals, and GENERAL or
+TRANSFER_DST layouts using only public OpenAGC transition/layout/fill APIs.
+Other advertised color formats still require the planned general patterned
+meta-clear path; they are not silently treated as RGBA8 and no zero-only
+application shortcut is used.
+
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping
 must not be advertised until its host and exact-firmware gates pass.

@@ -1695,6 +1695,20 @@ vkCmdEndRenderPass2(command, &subpass_end);
            VK_SUCCESS);
     vkCmdClearColorImage(invalid_copy_command, color_image,
         VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1u, &color_range);
+    assert(vkEndCommandBuffer(invalid_copy_command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdClearColorImage(invalid_copy_command, color_image,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, &clear_color, 1u,
+        &color_range);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    vkCmdClearColorImage(invalid_copy_command, depth_image,
+        VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1u, &color_range);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);

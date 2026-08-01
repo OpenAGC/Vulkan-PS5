@@ -226,6 +226,16 @@ static bool native_image_is_bc(VkFormat format) {
         native_format <= AGC_FORMAT_BC7_SRGB;
 }
 
+static bool native_image_is_rgba8_clearable(VkFormat format)
+{
+    return format == VK_FORMAT_R8G8B8A8_UNORM ||
+        format == VK_FORMAT_R8G8B8A8_SRGB ||
+        format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 ||
+        format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
+        format == VK_FORMAT_B8G8R8A8_UNORM ||
+        format == VK_FORMAT_B8G8R8A8_SRGB;
+}
+
 static VkResult initialize_native_image_layout(VkDevice device,
                                                 VkPs5Image *image) {
     AgcFormat format;
@@ -1841,7 +1851,9 @@ vkBindImageMemory(VkDevice device, VkImage image_handle, VkDeviceMemory memory,
     if (result != AGC_OK)
         return result == AGC_ERROR_OUT_OF_MEMORY ?
             VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-    if (image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
+    if ((image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+        ((image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+         native_image_is_rgba8_clearable(image->format))) {
         AgcBufferDesc alias_desc = AGC_BUFFER_DESC_INIT;
         alias_desc.size = image->size;
         alias_desc.usage = AGC_BUFFER_USAGE_TRANSFER_SRC_BIT |
@@ -5310,6 +5322,34 @@ static uint32_t native_unorm8(float value)
     return (uint32_t)(value * 255.0f + 0.5f);
 }
 
+static bool native_pack_rgba8_clear(VkFormat format,
+                                    const VkClearColorValue *clear,
+                                    uint32_t *value_out)
+{
+    if (!clear || !value_out || !native_image_is_rgba8_clearable(format))
+        return false;
+    float red = clear->float32[0];
+    float green = clear->float32[1];
+    float blue = clear->float32[2];
+    const bool srgb = format == VK_FORMAT_R8G8B8A8_SRGB ||
+        format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
+        format == VK_FORMAT_B8G8R8A8_SRGB;
+    if (srgb) {
+        red = native_srgb_encode(red);
+        green = native_srgb_encode(green);
+        blue = native_srgb_encode(blue);
+    }
+    const uint32_t r = native_unorm8(red);
+    const uint32_t g = native_unorm8(green);
+    const uint32_t b = native_unorm8(blue);
+    const uint32_t a = native_unorm8(clear->float32[3]);
+    *value_out = format == VK_FORMAT_B8G8R8A8_UNORM ||
+        format == VK_FORMAT_B8G8R8A8_SRGB ?
+        b | (g << 8u) | (r << 16u) | (a << 24u) :
+        r | (g << 8u) | (b << 16u) | (a << 24u);
+    return true;
+}
+
 static VkResult native_clear_color_attachment(
     VkPs5CommandBuffer *command, VkPs5ImageView *view,
     const VkRect2D *render_area, const VkClearColorValue *clear)
@@ -5332,25 +5372,9 @@ static VkResult native_clear_color_attachment(
     if (!native_require_complete_stream(command))
         return command->record_error;
 
-    float red = clear->float32[0];
-    float green = clear->float32[1];
-    float blue = clear->float32[2];
-    const bool srgb = view->format == VK_FORMAT_R8G8B8A8_SRGB ||
-        view->format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
-        view->format == VK_FORMAT_B8G8R8A8_SRGB;
-    if (srgb) {
-        red = native_srgb_encode(red);
-        green = native_srgb_encode(green);
-        blue = native_srgb_encode(blue);
-    }
-    const uint32_t r = native_unorm8(red);
-    const uint32_t g = native_unorm8(green);
-    const uint32_t b = native_unorm8(blue);
-    const uint32_t a = native_unorm8(clear->float32[3]);
-    const uint32_t value = view->format == VK_FORMAT_B8G8R8A8_UNORM ||
-        view->format == VK_FORMAT_B8G8R8A8_SRGB ?
-        b | (g << 8u) | (r << 16u) | (a << 24u) :
-        r | (g << 8u) | (b << 16u) | (a << 24u);
+    uint32_t value;
+    if (!native_pack_rgba8_clear(view->format, clear, &value))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     if (image->array_layers > UINT64_MAX / image->array_pitch)
         return VK_ERROR_OUT_OF_DEVICE_MEMORY;
     const uint64_t clear_size = image->array_pitch * image->array_layers;
@@ -5388,6 +5412,86 @@ static VkResult native_clear_color_attachment(
     return native_transition_whole_image(command, image,
         native_image_recorded_usage(command, image),
         kAgcResourceUsageColorTarget);
+}
+
+static VkResult native_clear_rgba8_image(
+    VkPs5CommandBuffer *command, VkPs5Image *image, VkImageLayout layout,
+    const VkClearColorValue *clear, uint32_t range_count,
+    const VkImageSubresourceRange *ranges)
+{
+    uint32_t value;
+    if (!command || !image || !image->native_image ||
+        !image->native_clear_buffer || !clear || !range_count || !ranges ||
+        image->samples != VK_SAMPLE_COUNT_1_BIT || image->is_depth_surface ||
+        (image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0u ||
+        (layout != VK_IMAGE_LAYOUT_GENERAL &&
+         layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) ||
+        !native_pack_rgba8_clear(image->format, clear, &value))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!native_require_complete_stream(command))
+        return command->record_error;
+
+    for (uint32_t range_index = 0u; range_index < range_count; ++range_index) {
+        AgcImageSubresourceRange native_range;
+        if (!native_image_range(image, &ranges[range_index], &native_range) ||
+            native_range.aspect_mask != AGC_IMAGE_ASPECT_COLOR_BIT)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        for (uint32_t layer = 0u; layer < native_range.array_layer_count;
+             ++layer) {
+            for (uint32_t mip = 0u; mip < native_range.mip_level_count; ++mip) {
+                AgcImageSubresourceLayout subresource =
+                    AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
+                int32_t result = agcGetImageSubresourceLayout(
+                    vk_ps5_native_device(command->device), &image->native_desc,
+                    native_range.base_mip_level + mip,
+                    native_range.base_array_layer + layer, 0u, &subresource);
+                if (result != AGC_OK || !subresource.size ||
+                    (subresource.offset & 3u) != 0u ||
+                    (subresource.size & 3u) != 0u ||
+                    subresource.offset > image->size ||
+                    subresource.size > image->size - subresource.offset)
+                    return result == AGC_OK ? VK_ERROR_INITIALIZATION_FAILED :
+                        native_command_result(result);
+
+                AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
+                result = agcGetCommandBufferRangeStateInfo(
+                    command->native_graphics_command_buffer,
+                    image->native_clear_buffer, subresource.offset,
+                    subresource.size, &state);
+                if (result != AGC_OK)
+                    return native_command_result(result);
+                AgcResourceTransition transition =
+                    AGC_RESOURCE_TRANSITION_INIT;
+                transition.before = state.usage;
+                transition.after = kAgcResourceUsageCopyDestination;
+                transition.before_owner = state.owner;
+                transition.after_owner = kAgcResourceOwnerGraphics;
+                transition.buffer = image->native_clear_buffer;
+                transition.buffer_offset = subresource.offset;
+                transition.buffer_size = subresource.size;
+                result = agcCmdTransitionResources(
+                    command->native_graphics_command_buffer, 1u, &transition);
+                if (result == AGC_OK)
+                    result = agcCmdFillBuffer(
+                        command->native_graphics_command_buffer,
+                        image->native_clear_buffer, subresource.offset,
+                        subresource.size, value);
+                if (result == AGC_OK) {
+                    transition.before = kAgcResourceUsageCopyDestination;
+                    transition.after = kAgcResourceUsageCopySource;
+                    transition.before_owner = kAgcResourceOwnerGraphics;
+                    result = agcCmdTransitionResources(
+                        command->native_graphics_command_buffer, 1u,
+                        &transition);
+                }
+                if (result != AGC_OK)
+                    return native_command_result(result);
+            }
+        }
+    }
+    return native_transition_whole_image(command, image,
+        native_image_recorded_usage(command, image),
+        kAgcResourceUsageCopyDestination);
 }
 
 static bool native_image_supports_usage(const VkPs5Image *image,
@@ -6222,8 +6326,13 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
                      const VkClearColorValue *v, uint32_t n,
                      const VkImageSubresourceRange *r) {
-    IGNORE(i); IGNORE(l); IGNORE(v); IGNORE(n); IGNORE(r);
-    reject_unsupported_command(c);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdClearColorImage");
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    command->record_error = native_clear_rgba8_image(command,
+        (VkPs5Image *)i, l, v, n, r);
 }
 
 static VkPs5DescriptorValue *descriptor_value(

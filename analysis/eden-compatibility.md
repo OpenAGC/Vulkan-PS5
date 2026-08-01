@@ -365,6 +365,18 @@ subresource layout checks; the full static/shared Prospero libraries build
 without warnings. Hardware sampling and transfer qualification for this exact
 candidate remains pending, so the audit does not claim it yet.
 
+The first native command-form slice implements `vkCmdClearColorImage` for the
+six 32-bit RGBA/BGRA UNORM/SRGB encodings. It expands remaining-mip/layer
+ranges, queries every OpenAGC subresource layout, transitions and fills only
+the selected byte intervals through public native commands, preserves SRGB
+encoding and BGRA byte order, and rejects invalid layouts or depth images
+without recording a partial usable command buffer. VVL covers a nonzero
+two-mip/single-layer clear with a nontrivial color; normal and ASAN/UBSAN suites
+pass 40/40 and Prospero static/shared libraries build clean. Eden's present
+effects use RGBA16F, so this does not close their clear requirement: the next
+meta-operation must support complete 1/2/4/8/16-byte color patterns rather
+than special-casing Eden's current zero value.
+
 The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
 guard bytes. Prospero ELF SHA-256 is
@@ -409,5 +421,10 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    gates on both firmware endpoints. Keep D24 fail-closed until a correct
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
-4. Add only the allowed Eden changes: Prospero surface creation, build/link
+4. Complete native command forms in dependency order: arbitrary-format color
+   clear, depth/stencil image and attachment clears, unscaled/scaled blits,
+   then 4x resolves. The RGBA8 clear subset is complete; RGBA16F and the other
+   advertised transfer-destination formats remain required before the command
+   is generally complete.
+5. Add only the allowed Eden changes: Prospero surface creation, build/link
    integration, and static Vulkan entrypoint location.

@@ -1257,6 +1257,14 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   uncompressed coverage and the Prospero surface/build/static-entrypoint
   integration in Eden itself are still missing. Both 40/40 normal and
   ASAN/UBSAN suites pass, and the static/shared Prospero libraries build clean.
+- The first application-neutral clear command is implemented:
+  `vkCmdClearColorImage` supports arbitrary values over selected mip/layer
+  intervals for all six 32-bit RGBA/BGRA UNORM/SRGB encodings, including SRGB
+  conversion and BGRA byte order. It records only public OpenAGC layout,
+  transition, and fill commands. A VVL-clean nonzero-range regression and
+  fail-closed layout/depth cases pass both 40/40 normal and sanitizer suites;
+  Prospero static/shared builds pass. RGBA16F and other pattern widths remain
+  pending and are not approximated with a zero-only Eden special case.
 - `analysis/eden-compatibility.md` records the evidence, prevents Eden's
   continue-after-unsuitable behavior from being mistaken for support, and
   defines the application-neutral implementation order.
