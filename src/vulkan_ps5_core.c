@@ -8106,6 +8106,7 @@ static VkResult prepare_native_compute_descriptors(
             if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
                 mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER) {
                 VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
+                AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
                 AgcResourceUsage usage;
                 uint64_t range;
                 if (!buffer) {
@@ -8121,7 +8122,17 @@ static VkResult prepare_native_compute_descriptors(
                     buffer->size - value->buffer.offset : value->buffer.range;
                 if (!range || range > buffer->size - value->buffer.offset)
                     return VK_ERROR_INITIALIZATION_FAILED;
-                usage = native_buffer_recorded_usage(command, buffer);
+                int32_t state_result = agcGetCommandBufferRangeStateInfo(
+                    command->native_graphics_command_buffer,
+                    buffer->native_buffer, value->buffer.offset, range,
+                    &state);
+                if (state_result != AGC_OK)
+                    return native_command_result(state_result);
+                /* A descriptor may cover only part of a Vulkan buffer.  The
+                 * whole-buffer mirror deliberately becomes Undefined after
+                 * a partial transition, so validate the exact bound range
+                 * against OpenAGC's command-stream state instead. */
+                usage = state.usage;
                 if (usage != kAgcResourceUsageShaderRead &&
                     !(mapping->type ==
                         OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&

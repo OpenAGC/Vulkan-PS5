@@ -1484,8 +1484,8 @@ int main(int argc, char **argv)
                             0, 1, &descriptor_sets[1], 0, NULL);
     vkCmdDispatch(command, 3, 5, 7);
     assert(vk_ps5_command_buffer_record_error(command) ==
-           VK_ERROR_INITIALIZATION_FAILED);
-    assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
 
     /* The same missing-state failure is stable before a later native copy. */
@@ -1502,6 +1502,44 @@ int main(int argc, char **argv)
            VK_ERROR_INITIALIZATION_FAILED);
     assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    /* Descriptor readiness must use the exact bound range. A partial buffer
+     * barrier intentionally leaves the coarse whole-buffer mirror undefined. */
+    const VkDescriptorBufferInfo partial_output_info = {
+        output_buffer, 16u, 24u,
+    };
+    const VkWriteDescriptorSet partial_output_write = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_sets[1],
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .pBufferInfo = &partial_output_info,
+    };
+    vkUpdateDescriptorSets(device, 1u, &partial_output_write, 0u, NULL);
+    const VkBufferMemoryBarrier partial_compute_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = output_buffer,
+        .offset = 16u,
+        .size = 24u,
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u,
+                         0u, NULL, 1u, &partial_compute_barrier, 0u, NULL);
+    vkCmdPushConstants(command, layout, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0u, sizeof(push_addend), &push_addend);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout,
+                            0, 1, &descriptor_sets[1], 0, NULL);
+    vkCmdDispatch(command, 1, 1, 1);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_dispatch_count(command) == 1u);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    vkUpdateDescriptorSets(device, 0, NULL, 1, &descriptor_copy);
 
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,

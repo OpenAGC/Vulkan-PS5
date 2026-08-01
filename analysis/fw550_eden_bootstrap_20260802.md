@@ -60,3 +60,27 @@ FW 11.60 replay remains deferred until the final Vulkan/Eden qualification
 sequence, as requested. Visible presentation still needs the user's display
 confirmation; the runner proves submission, presentation returns, teardown,
 and relaunch but cannot inspect the television output.
+
+## Production quad-index compute follow-up
+
+The next Eden-owned gate compiles
+`src/video_core/host_shaders/vulkan_quad_indexed.comp`, uses Eden's pinned
+VMA implementation for its input/output/readback buffers, binds both reflected
+storage descriptors and the 12-byte push-constant range, and round-trips a
+Vulkan pipeline-cache header before recreating the compute pipeline.
+
+The first FW 5.50 attempt failed closed at command recording because partial
+buffer barriers deliberately invalidate Vulkan-PS5's coarse whole-buffer
+state mirror while descriptor preparation still consulted that mirror. The
+driver now queries the exact native command-buffer range represented by each
+descriptor. The focused partial-range regression and the full 59-test generic
+suite pass. A second FW 5.50 attempt proved that the corrected command reached
+native submission, then returned a deterministic readback mismatch: the
+1024-thread production shader left the pre-dispatch VMA pattern unchanged.
+This was neither reported nor treated as a kernel panic.
+
+Investigation found that OpenAGC still emits a hardcoded all-ones
+`COMPUTE_RESOURCE_LIMITS` value, whereas gfx10 requires wave-count-derived
+SIMD distribution for this 32-wave workgroup. That separate OpenAGC correction
+is host-tested but remains hardware-unqualified and therefore is not part of
+the completed Vulkan descriptor-range slice.

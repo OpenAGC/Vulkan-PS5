@@ -158,6 +158,12 @@ journals, and explicitly transitioned two-region copies record through the
 native copy API while preserving every legacy command result. A separate
 storage-buffer regression proves typed shader-write transition, native
 descriptor bind, and a 3x5x7 native dispatch are recorded exactly once.
+Descriptor preparation now queries the exact OpenAGC command-buffer range
+covered by each buffer descriptor. This preserves valid partial-range
+barriers after the coarse whole-buffer mirror becomes undefined; a focused
+host regression records a partial 24-byte storage descriptor and FW 5.50
+proved that Eden's matching command advances through native dispatch
+submission instead of failing during command recording.
 OpenAGC's
 graphics-DCB compute regression also proves shader-write resource state is
 legal on that ordered stream. This is a host-qualified foundation, not a
