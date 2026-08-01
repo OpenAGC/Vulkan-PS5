@@ -1852,10 +1852,9 @@ vkBindImageMemory(VkDevice device, VkImage image_handle, VkDeviceMemory memory,
     if (result != AGC_OK)
         return result == AGC_ERROR_OUT_OF_MEMORY ?
             VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_INITIALIZATION_FAILED;
-    if ((image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
-        ((image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
-         format_bytes(image->format) != 0u &&
-         !native_image_is_depth(image->format))) {
+    if ((image->usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT)) != 0u &&
+        format_bytes(image->format) != 0u) {
         AgcBufferDesc alias_desc = AGC_BUFFER_DESC_INIT;
         alias_desc.size = image->size;
         alias_desc.usage = AGC_BUFFER_USAGE_TRANSFER_SRC_BIT |
@@ -5596,6 +5595,43 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
     return VK_TRUE;
 }
 
+VkBool32 vk_ps5_pack_depth_stencil_clear(VkFormat format,
+    VkImageAspectFlagBits aspect, const VkClearDepthStencilValue *clear,
+    uint32_t pattern[4], uint32_t *pattern_word_count, uint32_t *plane)
+{
+    if (!clear || !pattern || !pattern_word_count || !plane ||
+        (aspect != VK_IMAGE_ASPECT_DEPTH_BIT &&
+         aspect != VK_IMAGE_ASPECT_STENCIL_BIT))
+        return VK_FALSE;
+    memset(pattern, 0, 4u * sizeof(*pattern));
+    *pattern_word_count = 1u;
+    *plane = 0u;
+    if (aspect == VK_IMAGE_ASPECT_DEPTH_BIT) {
+        if (!(clear->depth >= 0.0f && clear->depth <= 1.0f))
+            return VK_FALSE;
+        if (format == VK_FORMAT_D16_UNORM ||
+            format == VK_FORMAT_D16_UNORM_S8_UINT) {
+            const uint32_t depth = native_unorm(clear->depth, UINT16_MAX);
+            pattern[0] = depth | (depth << 16u);
+            return VK_TRUE;
+        }
+        if (format == VK_FORMAT_D32_SFLOAT ||
+            format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+            memcpy(&pattern[0], &clear->depth, sizeof(pattern[0]));
+            return VK_TRUE;
+        }
+        return VK_FALSE;
+    }
+    if (format != VK_FORMAT_S8_UINT &&
+        format != VK_FORMAT_D16_UNORM_S8_UINT &&
+        format != VK_FORMAT_D32_SFLOAT_S8_UINT)
+        return VK_FALSE;
+    const uint32_t stencil = clear->stencil & UINT8_MAX;
+    pattern[0] = stencil * 0x01010101u;
+    *plane = format == VK_FORMAT_S8_UINT ? 0u : 1u;
+    return VK_TRUE;
+}
+
 static VkResult native_clear_color_attachment(
     VkPs5CommandBuffer *command, VkPs5ImageView *view,
     const VkRect2D *render_area, const VkClearColorValue *clear)
@@ -5733,7 +5769,8 @@ static VkResult native_clear_buffer_pattern(
 
 static VkResult native_clear_layer_layout(VkDevice device,
     const VkPs5Image *image, const AgcImageSubresourceRange *range,
-    uint32_t mip_index, AgcImageSubresourceLayout *base_out,
+    uint32_t mip_index, uint32_t plane,
+    AgcImageSubresourceLayout *base_out,
     uint64_t *layer_stride_out)
 {
     AgcImageSubresourceLayout base = AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
@@ -5747,7 +5784,7 @@ static VkResult native_clear_layer_layout(VkDevice device,
         int32_t result = agcGetImageSubresourceLayout(
             vk_ps5_native_device(device), &image->native_desc,
             range->base_mip_level + mip_index,
-            range->base_array_layer + layer, 0u, &current);
+            range->base_array_layer + layer, plane, &current);
         if (result != AGC_OK || !current.size ||
             (current.offset & 3u) != 0u || (current.size & 3u) != 0u ||
             current.offset > image->size ||
@@ -5807,7 +5844,7 @@ static VkResult native_clear_color_image(
             AgcImageSubresourceLayout base;
             uint64_t layer_stride;
             VkResult result = native_clear_layer_layout(command->device,
-                image, &native_range, mip, &base, &layer_stride);
+                image, &native_range, mip, 0u, &base, &layer_stride);
             if (result != VK_SUCCESS)
                 return result;
         }
@@ -5841,7 +5878,7 @@ static VkResult native_clear_color_image(
             AgcImageSubresourceLayout base;
             uint64_t layer_stride;
             VkResult result = native_clear_layer_layout(command->device,
-                image, &native_range, mip, &base, &layer_stride);
+                image, &native_range, mip, 0u, &base, &layer_stride);
             if (result != VK_SUCCESS)
                 return result;
             result = native_clear_buffer_pattern(command,
@@ -5851,6 +5888,131 @@ static VkResult native_clear_color_image(
                 &compute_bound);
             if (result != VK_SUCCESS)
                 return result;
+        }
+    }
+    compute_transition.before = kAgcResourceUsageShaderWrite;
+    compute_transition.after = kAgcResourceUsageCopySource;
+    compute_transition.before_owner = kAgcResourceOwnerGraphics;
+    native_result = agcCmdTransitionResources(
+        command->native_graphics_command_buffer, 1u, &compute_transition);
+    command->native_bound_compute = NULL;
+    command->native_bound_graphics = NULL;
+    if (native_result != AGC_OK)
+        return native_command_result(native_result);
+    VkResult transition_result = native_transition_whole_image(command, image,
+        native_image_recorded_usage(command, image),
+        kAgcResourceUsageCopyDestination);
+    if (transition_result != VK_SUCCESS)
+        return transition_result;
+    if (command->bound_graphics) {
+        vkCmdBindPipeline((VkCommandBuffer)command,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            (VkPipeline)command->bound_graphics);
+        if (command->record_error != VK_SUCCESS)
+            return command->record_error;
+    }
+    return VK_SUCCESS;
+}
+
+static VkResult native_clear_depth_stencil_image(
+    VkPs5CommandBuffer *command, VkPs5Image *image, VkImageLayout layout,
+    const VkClearDepthStencilValue *clear, uint32_t range_count,
+    const VkImageSubresourceRange *ranges)
+{
+    if (!command || !image || !image->native_image ||
+        !image->native_clear_buffer || !clear || !range_count || !ranges ||
+        image->samples != VK_SAMPLE_COUNT_1_BIT || !image->is_depth_surface ||
+        (image->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0u ||
+        (layout != VK_IMAGE_LAYOUT_GENERAL &&
+         layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!native_require_complete_stream(command))
+        return command->record_error;
+    if ((image->size & 3u) != 0u)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    /* Validate every selected plane and layout before recording commands. */
+    for (uint32_t range_index = 0u; range_index < range_count; ++range_index) {
+        AgcImageSubresourceRange native_range;
+        if (!native_image_range(image, &ranges[range_index], &native_range))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const VkImageAspectFlagBits aspects[] = {
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT
+        };
+        for (uint32_t aspect_index = 0u; aspect_index < 2u; ++aspect_index) {
+            const VkImageAspectFlagBits aspect = aspects[aspect_index];
+            if ((ranges[range_index].aspectMask & aspect) == 0u)
+                continue;
+            uint32_t pattern[4];
+            uint32_t pattern_word_count;
+            uint32_t plane;
+            if (!vk_ps5_pack_depth_stencil_clear(image->format, aspect,
+                    clear, pattern, &pattern_word_count, &plane))
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            for (uint32_t mip = 0u; mip < native_range.mip_level_count;
+                 ++mip) {
+                AgcImageSubresourceLayout base;
+                uint64_t layer_stride;
+                VkResult result = native_clear_layer_layout(command->device,
+                    image, &native_range, mip, plane, &base, &layer_stride);
+                if (result != VK_SUCCESS)
+                    return result;
+            }
+        }
+    }
+
+    AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
+    int32_t native_result = agcGetCommandBufferRangeStateInfo(
+        command->native_graphics_command_buffer, image->native_clear_buffer,
+        0u, image->size, &state);
+    if (native_result != AGC_OK)
+        return native_command_result(native_result);
+    AgcResourceTransition compute_transition = AGC_RESOURCE_TRANSITION_INIT;
+    compute_transition.before = state.usage;
+    compute_transition.after = kAgcResourceUsageShaderWrite;
+    compute_transition.before_owner = state.owner;
+    compute_transition.after_owner = kAgcResourceOwnerGraphics;
+    compute_transition.buffer = image->native_clear_buffer;
+    compute_transition.buffer_size = image->size;
+    native_result = agcCmdTransitionResources(
+        command->native_graphics_command_buffer, 1u, &compute_transition);
+    if (native_result != AGC_OK)
+        return native_command_result(native_result);
+
+    bool compute_bound = false;
+    for (uint32_t range_index = 0u; range_index < range_count; ++range_index) {
+        AgcImageSubresourceRange native_range;
+        if (!native_image_range(image, &ranges[range_index], &native_range))
+            return VK_ERROR_INITIALIZATION_FAILED;
+        const VkImageAspectFlagBits aspects[] = {
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT
+        };
+        for (uint32_t aspect_index = 0u; aspect_index < 2u; ++aspect_index) {
+            const VkImageAspectFlagBits aspect = aspects[aspect_index];
+            if ((ranges[range_index].aspectMask & aspect) == 0u)
+                continue;
+            uint32_t pattern[4];
+            uint32_t pattern_word_count;
+            uint32_t plane;
+            if (!vk_ps5_pack_depth_stencil_clear(image->format, aspect,
+                    clear, pattern, &pattern_word_count, &plane))
+                return VK_ERROR_INITIALIZATION_FAILED;
+            for (uint32_t mip = 0u; mip < native_range.mip_level_count;
+                 ++mip) {
+                AgcImageSubresourceLayout base;
+                uint64_t layer_stride;
+                VkResult result = native_clear_layer_layout(command->device,
+                    image, &native_range, mip, plane, &base, &layer_stride);
+                if (result != VK_SUCCESS)
+                    return result;
+                result = native_clear_buffer_pattern(command,
+                    image->native_clear_buffer, base.offset, base.size,
+                    image->size, pattern, pattern_word_count,
+                    native_range.array_layer_count, layer_stride,
+                    &compute_bound);
+                if (result != VK_SUCCESS)
+                    return result;
+            }
         }
     }
     compute_transition.before = kAgcResourceUsageShaderWrite;
@@ -8202,8 +8364,12 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearDepthStencilImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
                             const VkClearDepthStencilValue *v, uint32_t n,
                             const VkImageSubresourceRange *r) {
-    IGNORE(i); IGNORE(l); IGNORE(v); IGNORE(n); IGNORE(r);
-    reject_unsupported_command(c);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    command->record_error = native_clear_depth_stencil_image(command,
+        (VkPs5Image *)i, l, v, n, r);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearAttachments(VkCommandBuffer c, uint32_t n, const VkClearAttachment *a,

@@ -77,6 +77,10 @@ VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer);
 VkBool32 vk_ps5_pack_clear_color(VkFormat format,
     const VkClearColorValue *clear, uint32_t pattern[4],
     uint32_t *pattern_word_count);
+VkBool32 vk_ps5_pack_depth_stencil_clear(VkFormat format,
+    VkImageAspectFlagBits aspect, const VkClearDepthStencilValue *clear,
+    uint32_t pattern[4], uint32_t *pattern_word_count,
+    uint32_t *plane);
 VkBool32 vk_ps5_command_buffer_push_constant_word(
     VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
     uint32_t *value);

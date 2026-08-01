@@ -67,6 +67,31 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_BC1_RGBA_UNORM_BLOCK, &clear, pattern, &words));
 }
 
+static void test_depth_stencil_pattern_packing(void)
+{
+    const VkClearDepthStencilValue clear = {0.5f, 0x123u};
+    uint32_t pattern[4];
+    uint32_t words;
+    uint32_t plane;
+    assert(vk_ps5_pack_depth_stencil_clear(VK_FORMAT_D16_UNORM,
+        VK_IMAGE_ASPECT_DEPTH_BIT, &clear, pattern, &words, &plane));
+    assert(words == 1u && plane == 0u && pattern[0] == 0x80008000u);
+    assert(vk_ps5_pack_depth_stencil_clear(VK_FORMAT_D32_SFLOAT,
+        VK_IMAGE_ASPECT_DEPTH_BIT, &clear, pattern, &words, &plane));
+    assert(words == 1u && plane == 0u && pattern[0] == 0x3f000000u);
+    assert(vk_ps5_pack_depth_stencil_clear(VK_FORMAT_D16_UNORM_S8_UINT,
+        VK_IMAGE_ASPECT_STENCIL_BIT, &clear, pattern, &words, &plane));
+    assert(words == 1u && plane == 1u && pattern[0] == 0x23232323u);
+    assert(vk_ps5_pack_depth_stencil_clear(VK_FORMAT_S8_UINT,
+        VK_IMAGE_ASPECT_STENCIL_BIT, &clear, pattern, &words, &plane));
+    assert(words == 1u && plane == 0u && pattern[0] == 0x23232323u);
+    assert(!vk_ps5_pack_depth_stencil_clear(VK_FORMAT_D16_UNORM,
+        VK_IMAGE_ASPECT_STENCIL_BIT, &clear, pattern, &words, &plane));
+    const VkClearDepthStencilValue invalid_depth = {1.01f, 0u};
+    assert(!vk_ps5_pack_depth_stencil_clear(VK_FORMAT_D32_SFLOAT,
+        VK_IMAGE_ASPECT_DEPTH_BIT, &invalid_depth, pattern, &words, &plane));
+}
+
 static void test_multidword_clear_recording(void)
 {
     const VkInstanceCreateInfo instance_create = {
@@ -159,9 +184,103 @@ static void test_multidword_clear_recording(void)
     vkDestroyInstance(instance, NULL);
 }
 
+static void test_depth_stencil_clear_recording(void)
+{
+    const VkInstanceCreateInfo instance_create = {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+    };
+    VkInstance instance = VK_NULL_HANDLE;
+    assert(vkCreateInstance(&instance_create, NULL, &instance) == VK_SUCCESS);
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
+    VkDevice device = create_device(instance, &physical);
+
+    const VkImageCreateInfo image_create = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .extent = {64u, 32u, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 70u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &image_create, NULL, &image) == VK_SUCCESS);
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, image, &requirements);
+    assert((requirements.memoryTypeBits & 0x2u) != 0u);
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = 1u,
+    };
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &allocation, NULL, &memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, image, memory, 0u) == VK_SUCCESS);
+
+    const VkCommandPoolCreateInfo pool_create = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = 0u,
+    };
+    VkCommandPool pool = VK_NULL_HANDLE;
+    assert(vkCreateCommandPool(device, &pool_create, NULL, &pool) ==
+        VK_SUCCESS);
+    const VkCommandBufferAllocateInfo command_allocate = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1u,
+    };
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    assert(vkAllocateCommandBuffers(device, &command_allocate, &command) ==
+        VK_SUCCESS);
+    const VkCommandBufferBeginInfo begin = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    assert(vkBeginCommandBuffer(command, &begin) == VK_SUCCESS);
+    const VkImageMemoryBarrier barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = 0u,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+            0u, VK_REMAINING_MIP_LEVELS, 0u, VK_REMAINING_ARRAY_LAYERS,
+        },
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL,
+        1u, &barrier);
+    const VkClearDepthStencilValue clear = {0.25f, 0x5au};
+    const VkImageSubresourceRange range = {
+        VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+        0u, 1u, 0u, 70u,
+    };
+    vkCmdClearDepthStencilImage(command, image, VK_IMAGE_LAYOUT_GENERAL,
+        &clear, 1u, &range);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_dispatch_count(command) == 2u);
+
+    vkDestroyCommandPool(device, pool, NULL);
+    vkDestroyImage(device, image, NULL);
+    vkFreeMemory(device, memory, NULL);
+    vkDestroyDevice(device, NULL);
+    vkDestroyInstance(instance, NULL);
+}
+
 int main(void)
 {
     test_clear_pattern_packing();
+    test_depth_stencil_pattern_packing();
     test_multidword_clear_recording();
+    test_depth_stencil_clear_recording();
     return 0;
 }

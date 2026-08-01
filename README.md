@@ -128,7 +128,16 @@ and Vulkan object destruction is deferred until OpenAGC command recycling
 releases native references. Two immediate guarded runs returned exact RGBA
 `64,128,191,255`, presented, completed native teardown, self-exited, and
 relaunched without reboot. The identical final libraries subsequently passed
-three FW 11.60 runs and two FW 5.50 replays; the host suite remains 47/47.
+three FW 11.60 runs and two FW 5.50 replays; the host suite remains 48/48.
+
+The general clear path now also implements `vkCmdClearDepthStencilImage` for
+D16, D32, S8, D16+S8, and D32+S8 transfer-destination images. Depth and stencil
+planes use their independently queried OpenAGC subresource layouts, arbitrary
+selected mip/layer ranges are supported, and regular array layers batch into
+one compute dispatch per selected plane and mip. D24 remains unadvertised, 4x
+depth/stencil clears remain fail-closed, and partial render-area attachment
+clears still require the planned graphics-meta path. Exact hardware pixels for
+this command slice are not yet qualified.
 
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline

@@ -67,8 +67,10 @@ Migration status:
   `agcQueueSubmit` with a finite native fence wait. Unsupported command
   mixtures fail closed; the duplicate encoder and fallback submission path are
   deleted. Image-region and
-  buffer/image color transfers now record through OpenAGC API 41; unsupported
-  clear, blit, depth/stencil transfer, and resolve forms fail closed. Indirect draw,
+  buffer/image color transfers now record through OpenAGC API 41. General
+  uncompressed color and single-sample depth/stencil image clears use public
+  OpenAGC compute commands; unsupported blit, depth/stencil transfer,
+  attachment-clear, and resolve forms fail closed. Indirect draw,
   indexed draw, and dispatch now use typed native argument buffers; the
   superseded Vulkan-side multi-draw encoder has been removed.
 - **WSI migration:** host-complete. Swapchain images are dedicated native
@@ -223,8 +225,10 @@ offsets, and extents through typed native records. The ICD conservatively
 transitions the image and buffer objects to queue-owned copy usage; OpenAGC
 then validates subresource layouts, BC block rules, footprints, retention, and
 command capacity. The command-recording gate covers a partial image copy and
-a strided buffer→image→buffer chain. Color clear, blit, depth/stencil clear,
-attachment clear, and resolve fail closed instead of silently succeeding. The
+a strided buffer→image→buffer chain. This paragraph records the original
+transfer migration baseline; color and depth/stencil image clears have since
+moved to native meta-compute paths, while blit, attachment clear, and resolve
+still fail closed instead of silently succeeding. The
 direct-call audit remains 34 because these `agcCmd*` calls replace no audited
 low-level symbol.
 
@@ -1268,6 +1272,16 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   41/41, including VVL RGBA16F coverage, allocation-failure cleanup, and
   fail-closed compressed/depth cases; Prospero static/shared builds pass.
   Hardware pixel execution for this exact slice remains pending.
+- `vkCmdClearDepthStencilImage` is host-complete for the advertised D16, D32,
+  S8, D16+S8, and D32+S8 single-sample formats. It validates Vulkan layout,
+  usage, aspects, normalized depth, and complete selected ranges before
+  recording; independently queried depth/stencil planes are filled through the
+  same public-OpenAGC meta compute pipeline, with regular array layers batched
+  per plane and mip. A 70-layer D32+S8 gate records exactly two dispatches for
+  one selected mip. Both 48/48 normal and ASAN/UBSAN suites pass, and the
+  Prospero static/shared libraries build clean. D24, multisampled clears,
+  partial attachment clears, and exact hardware pixels remain fail-closed or
+  pending as applicable.
 - `analysis/eden-compatibility.md` records the evidence, prevents Eden's
   continue-after-unsuitable behavior from being mistaken for support, and
   defines the application-neutral implementation order.

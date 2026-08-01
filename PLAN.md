@@ -746,8 +746,14 @@ ordering.
   shortcut and batches regular array layers per mip. Exact mip/layer
   layouts, state snapshot/restoration, format packing, VVL RGBA16F coverage,
   and fail-closed compressed/depth cases pass 41/41 normal and sanitizer suites
-  plus the Prospero build. Hardware pixels remain pending. The next command
-  forms are depth/stencil and attachment clears, blits, and resolves.
+  plus the Prospero build. Hardware pixels remain pending.
+- `vkCmdClearDepthStencilImage` now records single-sample D16, D32, S8,
+  D16+S8, and D32+S8 selected mip/layer ranges through exact per-plane OpenAGC
+  layouts and the same reproducible meta-compute pipeline. A 70-layer combined
+  image batches to one dispatch per selected plane/mip; 48/48 normal and
+  sanitizer suites plus the Prospero static/shared build pass. D24 and 4x
+  depth/stencil remain fail-closed, and hardware pixels are pending. The next
+  command forms are graphics-meta attachment clears, blits, and resolves.
 - The first general format expansion exposes all 14 BC1-BC7 Vulkan formats for
   sampled/filter/transfer use through native OpenAGC layouts and descriptors.
   Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete

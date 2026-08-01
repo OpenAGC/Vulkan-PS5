@@ -381,6 +381,16 @@ libraries build clean. This closes the host clear requirement generally, not
 only Eden's current zero clear. Exact hardware pixel execution is still
 pending.
 
+`vkCmdClearDepthStencilImage` now covers the advertised D16, D32, S8,
+D16+S8, and D32+S8 single-sample formats without an Eden-specific path. Each
+selected plane, mip, and layer interval uses its queried native layout, and
+regular array layers batch into one compute dispatch per plane and mip. The
+host gate uses a 70-layer combined D32+S8 image and records exactly two
+dispatches for one selected mip. Normal and ASAN/UBSAN suites pass 48/48 and
+the Prospero libraries build clean. D24 stays unadvertised; multisampled and
+partial attachment clears remain fail-closed pending their general Vulkan
+implementations, and exact hardware pixels for this slice remain unqualified.
+
 The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
 guard bytes. Prospero ELF SHA-256 is
@@ -425,9 +435,9 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    gates on both firmware endpoints. Keep D24 fail-closed until a correct
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
-4. Complete the remaining native command forms in dependency order:
-   depth/stencil image and attachment clears, unscaled/scaled blits, then 4x
-   resolves. General uncompressed color clear is host-complete and awaits its
-   hardware pixel oracle.
+4. Complete the remaining native command forms in dependency order: partial
+   attachment clears, unscaled/scaled blits, then 4x resolves. General
+   uncompressed color and single-sample depth/stencil image clears are
+   host-complete and await their hardware pixel oracles.
 5. Add only the allowed Eden changes: Prospero surface creation, build/link
    integration, and static Vulkan entrypoint location.
