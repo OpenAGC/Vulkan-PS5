@@ -736,6 +736,63 @@ int main(int argc, char **argv)
     VkFramebuffer framebuffer;
     assert(vkCreateFramebuffer(device, &framebuffer_info, NULL,
                                &framebuffer) == VK_SUCCESS);
+    const VkFormat imageless_color_formats[] = {
+        VK_FORMAT_R8G8B8A8_UNORM,
+    };
+    const VkFormat imageless_depth_formats[] = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+    };
+    const VkFramebufferAttachmentImageInfo imageless_attachment_infos[] = {
+        {
+            .sType =
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
+            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .width = 256u,
+            .height = 256u,
+            .layerCount = 1u,
+            .viewFormatCount = 1u,
+            .pViewFormats = imageless_color_formats,
+        },
+        {
+            .sType =
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
+            .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .width = 256u,
+            .height = 256u,
+            .layerCount = 1u,
+            .viewFormatCount = 1u,
+            .pViewFormats = imageless_color_formats,
+        },
+        {
+            .sType =
+                VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO,
+            .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+            .width = 256u,
+            .height = 256u,
+            .layerCount = 1u,
+            .viewFormatCount = 1u,
+            .pViewFormats = imageless_depth_formats,
+        },
+    };
+    const VkFramebufferAttachmentsCreateInfo imageless_attachments_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
+        .attachmentImageInfoCount = 3u,
+        .pAttachmentImageInfos = imageless_attachment_infos,
+    };
+    VkFramebufferCreateInfo imageless_framebuffer_info = framebuffer_info;
+    imageless_framebuffer_info.pNext = &imageless_attachments_info;
+    imageless_framebuffer_info.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;
+    imageless_framebuffer_info.pAttachments = NULL;
+    VkFramebufferCreateInfo missing_imageless_info =
+        imageless_framebuffer_info;
+    missing_imageless_info.pNext = NULL;
+    VkFramebuffer invalid_imageless_framebuffer = VK_NULL_HANDLE;
+    assert(vkCreateFramebuffer(device, &missing_imageless_info, NULL,
+        &invalid_imageless_framebuffer) == VK_ERROR_INITIALIZATION_FAILED);
+    assert(invalid_imageless_framebuffer == VK_NULL_HANDLE);
+    VkFramebuffer imageless_framebuffer;
+    assert(vkCreateFramebuffer(device, &imageless_framebuffer_info, NULL,
+                               &imageless_framebuffer) == VK_SUCCESS);
     const VkPipelineShaderStageCreateInfo graphics_stages[] = {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_VERTEX_BIT, vertex, "main", NULL},
@@ -1360,6 +1417,18 @@ int main(int argc, char **argv)
         .framebuffer = framebuffer,
         .renderArea = {{0, 0}, {256, 256}},
     };
+    const VkRenderPassAttachmentBeginInfo imageless_attachment_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO,
+        .attachmentCount = 3u,
+        .pAttachments = framebuffer_attachments,
+    };
+    const VkRenderPassBeginInfo imageless_render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = &imageless_attachment_begin,
+        .renderPass = render_pass,
+        .framebuffer = imageless_framebuffer,
+        .renderArea = {{0, 0}, {256, 256}},
+    };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
@@ -1405,6 +1474,11 @@ int main(int argc, char **argv)
     vkCmdBindIndexBuffer(command, index_buffer, 0u, VK_INDEX_TYPE_UINT16);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdDrawIndexed(command, 3u, 1u, 0u, 0, 0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdBeginRenderPass(command, &imageless_render_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdEndRenderPass(command);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
@@ -2127,6 +2201,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyPipeline(device, color_only_dynamic_pipeline, NULL);
+    vkDestroyFramebuffer(device, imageless_framebuffer, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);
     vkDestroyImage(device, depth_image, NULL);

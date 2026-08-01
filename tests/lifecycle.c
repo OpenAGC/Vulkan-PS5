@@ -350,6 +350,16 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &depth_clip_features2);
     assert(depth_clip_features.depthClipEnable == VK_TRUE);
+    VkPhysicalDeviceImagelessFramebufferFeatures imageless_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 imageless_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &imageless_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &imageless_features2);
+    assert(imageless_features.imagelessFramebuffer == VK_TRUE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -362,6 +372,7 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     assert(features12.scalarBlockLayout == VK_TRUE);
     assert(features12.hostQueryReset == VK_TRUE);
     assert(features12.timelineSemaphore == VK_TRUE);
+    assert(features12.imagelessFramebuffer == VK_TRUE);
     assert(features12.drawIndirectCount == VK_FALSE);
     assert(features12.bufferDeviceAddress == VK_FALSE);
 VkPhysicalDeviceLineRasterizationFeatures line_features = {
@@ -784,6 +795,18 @@ enabled_timeline.pNext = &enabled_depth_clip;
                           &shader_draw_device) == VK_SUCCESS);
     assert(shader_draw_device != VK_NULL_HANDLE);
     vkDestroyDevice(shader_draw_device, NULL);
+    VkPhysicalDeviceImagelessFramebufferFeatures enabled_imageless = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES,
+        .imagelessFramebuffer = VK_TRUE,
+    };
+    VkDeviceCreateInfo imageless_device_info = device_info;
+    imageless_device_info.pNext = &enabled_imageless;
+    VkDevice imageless_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &imageless_device_info, NULL,
+                          &imageless_device) == VK_SUCCESS);
+    assert(imageless_device != VK_NULL_HANDLE);
+    vkDestroyDevice(imageless_device, NULL);
     VkPhysicalDeviceVariablePointersFeatures enabled_variable_pointers = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
         .variablePointers = VK_TRUE,

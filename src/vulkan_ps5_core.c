@@ -561,12 +561,26 @@ typedef struct VkPs5RenderPass {
     } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
 
+typedef struct VkPs5FramebufferAttachmentInfo {
+    VkImageCreateFlags flags;
+    VkImageUsageFlags usage;
+    uint32_t width;
+    uint32_t height;
+    uint32_t layer_count;
+    uint32_t view_format_count;
+    uint32_t view_format_offset;
+} VkPs5FramebufferAttachmentInfo;
+
 typedef struct VkPs5Framebuffer {
     VkPs5RenderPass *render_pass;
     uint32_t attachment_count;
     uint32_t width;
     uint32_t height;
     uint32_t layers;
+    VkBool32 imageless;
+    VkPs5FramebufferAttachmentInfo
+        attachment_infos[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkFormat *view_formats;
     VkPs5ImageView *attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
 } VkPs5Framebuffer;
 
@@ -728,6 +742,7 @@ typedef struct VkPs5CommandBuffer {
     VkBool32 active_dynamic_rendering;
     VkPs5RenderPass dynamic_render_pass;
     VkPs5Framebuffer dynamic_framebuffer;
+    VkPs5Framebuffer imageless_framebuffer;
     uint32_t active_subpass;
     float dynamic_line_width;
     VkBool32 dynamic_line_width_set;
@@ -5223,26 +5238,104 @@ VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
                     const VkAllocationCallbacks *pAllocator,
                     VkFramebuffer *pFramebuffer) {
+    const VkBool32 imageless = pCreateInfo &&
+        (pCreateInfo->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) != 0u;
     if (!device || !pCreateInfo || !pFramebuffer ||
         pCreateInfo->sType != VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO ||
         !pCreateInfo->renderPass || !pCreateInfo->width ||
         !pCreateInfo->height || pCreateInfo->layers != 1u ||
+        (pCreateInfo->flags & ~VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) ||
         pCreateInfo->attachmentCount > VK_PS5_MAX_RENDER_ATTACHMENTS ||
-        (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments))
+        (!imageless && pCreateInfo->attachmentCount &&
+         !pCreateInfo->pAttachments))
         return VK_ERROR_INITIALIZATION_FAILED;
     VkPs5RenderPass *render_pass =
         (VkPs5RenderPass *)pCreateInfo->renderPass;
     if (pCreateInfo->attachmentCount != render_pass->attachment_count)
         return VK_ERROR_INITIALIZATION_FAILED;
+    const VkFramebufferAttachmentsCreateInfo *attachments_info = NULL;
+    for (const VkBaseInStructure *next =
+             (const VkBaseInStructure *)pCreateInfo->pNext;
+         next; next = next->pNext) {
+        if (next->sType ==
+            VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO) {
+            if (attachments_info)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            attachments_info =
+                (const VkFramebufferAttachmentsCreateInfo *)next;
+        }
+    }
+    if (imageless && (!attachments_info ||
+        attachments_info->attachmentImageInfoCount !=
+            pCreateInfo->attachmentCount ||
+        (pCreateInfo->attachmentCount &&
+         !attachments_info->pAttachmentImageInfos)))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    size_t view_format_count = 0u;
+    if (imageless) {
+        for (uint32_t i = 0u; i < pCreateInfo->attachmentCount; ++i) {
+            const VkFramebufferAttachmentImageInfo *info =
+                &attachments_info->pAttachmentImageInfos[i];
+            if (info->sType !=
+                    VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO ||
+                info->width < pCreateInfo->width ||
+                info->height < pCreateInfo->height ||
+                info->layerCount < pCreateInfo->layers ||
+                !info->viewFormatCount || !info->pViewFormats ||
+                info->viewFormatCount > SIZE_MAX - view_format_count ||
+                info->viewFormatCount > UINT32_MAX - view_format_count)
+                return VK_ERROR_INITIALIZATION_FAILED;
+            VkBool32 render_format_found = VK_FALSE;
+            for (uint32_t j = 0u; j < info->viewFormatCount; ++j)
+                render_format_found |= info->pViewFormats[j] ==
+                    render_pass->attachments[i].format;
+            if (!render_format_found)
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            const VkImageUsageFlags required_usage =
+                native_image_is_depth(render_pass->attachments[i].format) ?
+                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            if (!(info->usage & required_usage))
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            view_format_count += info->viewFormatCount;
+        }
+    }
+    if (view_format_count >
+        (SIZE_MAX - sizeof(VkPs5Framebuffer)) / sizeof(VkFormat))
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    const size_t framebuffer_size = sizeof(VkPs5Framebuffer) +
+        view_format_count * sizeof(VkFormat);
     VkPs5Framebuffer *framebuffer = alloc_object(
-        device, pAllocator, sizeof(*framebuffer), _Alignof(VkPs5Framebuffer));
+        device, pAllocator, framebuffer_size, _Alignof(VkPs5Framebuffer));
     if (!framebuffer) return VK_ERROR_OUT_OF_HOST_MEMORY;
     framebuffer->render_pass = render_pass;
     framebuffer->attachment_count = pCreateInfo->attachmentCount;
     framebuffer->width = pCreateInfo->width;
     framebuffer->height = pCreateInfo->height;
     framebuffer->layers = pCreateInfo->layers;
+    framebuffer->imageless = imageless;
+    framebuffer->view_formats = view_format_count ?
+        (VkFormat *)(framebuffer + 1) : NULL;
+    size_t view_format_offset = 0u;
     for (uint32_t i = 0; i < framebuffer->attachment_count; ++i) {
+        if (imageless) {
+            const VkFramebufferAttachmentImageInfo *info =
+                &attachments_info->pAttachmentImageInfos[i];
+            framebuffer->attachment_infos[i].flags = info->flags;
+            framebuffer->attachment_infos[i].usage = info->usage;
+            framebuffer->attachment_infos[i].width = info->width;
+            framebuffer->attachment_infos[i].height = info->height;
+            framebuffer->attachment_infos[i].layer_count = info->layerCount;
+            framebuffer->attachment_infos[i].view_format_count =
+                info->viewFormatCount;
+            framebuffer->attachment_infos[i].view_format_offset =
+                (uint32_t)view_format_offset;
+            memcpy(framebuffer->view_formats + view_format_offset,
+                info->pViewFormats,
+                (size_t)info->viewFormatCount * sizeof(VkFormat));
+            view_format_offset += info->viewFormatCount;
+            continue;
+        }
         VkPs5ImageView *view = (VkPs5ImageView *)pCreateInfo->pAttachments[i];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
         if (!view || !image || view->format != render_pass->attachments[i].format ||
@@ -10721,6 +10814,61 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     }
     VkPs5RenderPass *render_pass = (VkPs5RenderPass *)b->renderPass;
     VkPs5Framebuffer *framebuffer = (VkPs5Framebuffer *)b->framebuffer;
+    const VkRenderPassAttachmentBeginInfo *attachment_begin = NULL;
+    for (const VkBaseInStructure *next =
+             (const VkBaseInStructure *)b->pNext;
+         next; next = next->pNext) {
+        if (next->sType ==
+            VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO) {
+            if (attachment_begin) {
+                command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+                return;
+            }
+            attachment_begin =
+                (const VkRenderPassAttachmentBeginInfo *)next;
+        }
+    }
+    if (framebuffer->imageless) {
+        if (!attachment_begin ||
+            attachment_begin->attachmentCount !=
+                framebuffer->attachment_count ||
+            (framebuffer->attachment_count &&
+             !attachment_begin->pAttachments)) {
+            command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+            return;
+        }
+        command->imageless_framebuffer = *framebuffer;
+        command->imageless_framebuffer.imageless = VK_FALSE;
+        for (uint32_t i = 0u; i < framebuffer->attachment_count; ++i) {
+            VkPs5ImageView *view =
+                (VkPs5ImageView *)attachment_begin->pAttachments[i];
+            VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+            const VkPs5FramebufferAttachmentInfo *info =
+                &framebuffer->attachment_infos[i];
+            VkBool32 format_found = VK_FALSE;
+            if (view) {
+                for (uint32_t j = 0u; j < info->view_format_count; ++j)
+                    format_found |= view->format == framebuffer->view_formats[
+                        info->view_format_offset + j];
+            }
+            if (!view || !image || !format_found ||
+                (image->flags & info->flags) != info->flags ||
+                (image->usage & info->usage) != info->usage ||
+                native_mip_dimension(image->extent.width,
+                    view->base_mip_level) < framebuffer->width ||
+                native_mip_dimension(image->extent.height,
+                    view->base_mip_level) < framebuffer->height ||
+                view->layer_count < framebuffer->layers) {
+                command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+                return;
+            }
+            command->imageless_framebuffer.attachments[i] = view;
+        }
+        framebuffer = &command->imageless_framebuffer;
+    } else if (attachment_begin && attachment_begin->attachmentCount) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
     uint32_t color_count = render_pass->subpasses[0].color_attachment_count;
     if (framebuffer->render_pass != render_pass || !render_pass->subpass_count ||
         color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||

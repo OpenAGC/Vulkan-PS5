@@ -224,8 +224,11 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    sample-count property gap is host-closed with public OpenAGC 4x color,
    D16, D32, and S8 sampled-image support. Qualify sampled pixels on FW 5.50,
    then resolve the remaining mandatory Vulkan 1.2 feature failure before
-   broadening the case list. Keep the conformance version non-conformant until
-   the required suite supports a stronger claim.
+   broadening the case list. Core imageless framebuffers are now implemented
+   and removed from the CTS failure log; next close standard uniform-buffer
+   layout and separate depth/stencil layouts, then subgroup extended/dynamic
+   broadcast, multiview, and border-color swizzle. Keep the conformance version
+   non-conformant until the required suite supports a stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a
    game-like workload through one firmware-neutral build on FW 5.50 and FW
    11.60.

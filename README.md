@@ -431,6 +431,15 @@ descriptor path is host-tested through public OpenAGC APIs; hardware pixel
 execution is still pending. This is targeted discovery evidence, not a
 conformance claim; `conformanceVersion` remains `0.0.0.0`.
 
+Core `imagelessFramebuffer` is also implemented rather than query-only:
+`vkCreateFramebuffer` validates and retains
+`VkFramebufferAttachmentsCreateInfo`, and render-pass begin consumes
+`VkRenderPassAttachmentBeginInfo` to validate and bind the selected views.
+The official mandatory-feature probe confirms that both duplicated imageless
+requirements are closed. Border-color swizzle, multiview, dynamic subgroup
+broadcast, standard uniform-buffer layout, subgroup extended types, and
+separate depth/stencil layouts remain before the information group can pass.
+
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its
 build/install include interface and does not export that helper target as a

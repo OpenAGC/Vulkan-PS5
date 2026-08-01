@@ -26,6 +26,14 @@ Migration status:
   non-conformant `0.0.0.0` report. A fresh Debug build passes all 59 host tests,
   including loader/VVL creation of sampled 4x D32 and S8 images and views.
   Sampled-pixel execution remains pending FW 5.50 qualification.
+  The first mandatory-feature follow-up implements core 1.2
+  `imagelessFramebuffer`: framebuffer attachment metadata and format lists are
+  deep-copied at creation, render-pass begin supplies and validates the live
+  views, and command recording binds a command-local attachment set. Positive
+  recording plus missing-metadata fail-closed coverage passes in both the
+  normal and ASAN/UBSAN 59-test suites and in the Prospero build. The CTS
+  mandatory-feature log no longer lists either imageless-framebuffer
+  requirement; six unique feature gaps remain.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised
