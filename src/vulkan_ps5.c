@@ -49,6 +49,7 @@ struct VkPs5Queue {
 };
 
 #define VK_PS5_META_ATTACHMENT_PIPELINE_COUNT 32u
+#define VK_PS5_META_BLIT_PIPELINE_COUNT 16u
 
 typedef struct VkPs5MetaAttachmentPipeline {
     VkFormat format;
@@ -56,6 +57,12 @@ typedef struct VkPs5MetaAttachmentPipeline {
     VkPipelineLayout layout;
     VkPipeline pipeline;
 } VkPs5MetaAttachmentPipeline;
+
+typedef struct VkPs5MetaBlitPipeline {
+    VkFormat format;
+    VkPipelineLayout layout;
+    VkPipeline pipeline;
+} VkPs5MetaBlitPipeline;
 
 struct VkPs5Device {
     VK_LOADER_DATA loader_data;
@@ -75,6 +82,9 @@ struct VkPs5Device {
     uint32_t meta_attachment_count;
     VkPs5MetaAttachmentPipeline meta_attachments[
         VK_PS5_META_ATTACHMENT_PIPELINE_COUNT];
+    uint32_t meta_blit_count;
+    VkPs5MetaBlitPipeline meta_blits[VK_PS5_META_BLIT_PIPELINE_COUNT];
+    VkSampler meta_blit_samplers[2];
     atomic_uint memory_allocation_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
@@ -279,6 +289,66 @@ VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device_handle,
         entry->aspects = aspects;
         *pipeline_out = entry->pipeline;
         device->meta_attachment_count++;
+    }
+    atomic_flag_clear_explicit(&device->meta_attachment_lock,
+        memory_order_release);
+    return result;
+}
+
+VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
+    VkFormat format, VkFilter filter, VkPipeline *pipeline_out,
+    VkSampler *sampler_out)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    const uint32_t sampler_index = filter == VK_FILTER_NEAREST ? 0u :
+        filter == VK_FILTER_LINEAR ? 1u : UINT32_MAX;
+    if (!device || !pipeline_out || !sampler_out ||
+        sampler_index == UINT32_MAX)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *pipeline_out = VK_NULL_HANDLE;
+    *sampler_out = VK_NULL_HANDLE;
+    while (atomic_flag_test_and_set_explicit(&device->meta_attachment_lock,
+            memory_order_acquire)) {}
+    VkResult result = VK_SUCCESS;
+    if (!device->meta_blit_samplers[sampler_index]) {
+        const VkSamplerCreateInfo sampler_create = {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = filter,
+            .minFilter = filter,
+            .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .maxLod = 0.0f,
+            .borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK,
+        };
+        result = vkCreateSampler(device_handle, &sampler_create, NULL,
+            &device->meta_blit_samplers[sampler_index]);
+    }
+    VkPs5MetaBlitPipeline *entry = NULL;
+    for (uint32_t index = 0u; result == VK_SUCCESS &&
+         index < device->meta_blit_count; ++index) {
+        if (device->meta_blits[index].format == format) {
+            entry = &device->meta_blits[index];
+            break;
+        }
+    }
+    if (result == VK_SUCCESS && !entry) {
+        if (device->meta_blit_count >= VK_PS5_META_BLIT_PIPELINE_COUNT) {
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+        } else {
+            entry = &device->meta_blits[device->meta_blit_count];
+            result = vk_ps5_initialize_meta_blit(device_handle, format,
+                &entry->layout, &entry->pipeline);
+            if (result == VK_SUCCESS) {
+                entry->format = format;
+                device->meta_blit_count++;
+            }
+        }
+    }
+    if (result == VK_SUCCESS) {
+        *pipeline_out = entry->pipeline;
+        *sampler_out = device->meta_blit_samplers[sampler_index];
     }
     atomic_flag_clear_explicit(&device->meta_attachment_lock,
         memory_order_release);
@@ -984,8 +1054,9 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     const VkFormatFeatureFlags sampled =
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-    const VkFormatFeatureFlags color = sampled | transfer |
-        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    const VkFormatFeatureFlags blit_source = VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+    const VkFormatFeatureFlags color = sampled | transfer | blit_source |
+        VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
     const VkFormatFeatureFlags storage_color = color |
         VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
     const VkFormatFeatureFlags depth = transfer |
@@ -1005,8 +1076,10 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     case VK_FORMAT_BC6H_SFLOAT_BLOCK:
     case VK_FORMAT_BC7_UNORM_BLOCK:
     case VK_FORMAT_BC7_SRGB_BLOCK:
-        pFormatProperties->linearTilingFeatures = sampled | transfer;
-        pFormatProperties->optimalTilingFeatures = sampled | transfer;
+        pFormatProperties->linearTilingFeatures = sampled | transfer |
+            blit_source;
+        pFormatProperties->optimalTilingFeatures = sampled | transfer |
+            blit_source;
         break;
     case VK_FORMAT_R8G8B8A8_UNORM:
         pFormatProperties->linearTilingFeatures = storage_color;
@@ -1877,6 +1950,14 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
         vkDestroyPipelineLayout(device_handle,
             device->meta_attachments[index].layout, NULL);
     }
+    for (uint32_t index = 0u; index < device->meta_blit_count; ++index) {
+        vkDestroyPipeline(device_handle, device->meta_blits[index].pipeline,
+            NULL);
+        vkDestroyPipelineLayout(device_handle,
+            device->meta_blits[index].layout, NULL);
+    }
+    vkDestroySampler(device_handle, device->meta_blit_samplers[0], NULL);
+    vkDestroySampler(device_handle, device->meta_blit_samplers[1], NULL);
     vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
     vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
     vk_ps5_collect_deferred_native(device_handle);

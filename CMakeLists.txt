@@ -1081,6 +1081,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     VULKAN_PS5_INDIRECT_PARAMETERS_PROBE=1)
   add_executable(vulkan_ps5_buffer_copy_example
     examples/buffer_copy/main.c)
+  add_executable(vulkan_ps5_blit_probe
+    examples/blit/main.c)
   if(CMAKE_CROSSCOMPILING)
     set_target_properties(vulkan_ps5_compute_example
       vulkan_ps5_storage_image_probe
@@ -1117,7 +1119,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_dual_src_blend_probe
       vulkan_ps5_vertex_divisor_probe vulkan_ps5_sampler_anisotropy_probe
       vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
-      vulkan_ps5_buffer_copy_example
+      vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       PROPERTIES SUFFIX ".elf")
   endif()
   foreach(example_target IN ITEMS
@@ -1156,7 +1158,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_dual_src_blend_probe
       vulkan_ps5_vertex_divisor_probe vulkan_ps5_sampler_anisotropy_probe
       vulkan_ps5_indirect_draw_probe vulkan_ps5_indirect_parameters_probe
-      vulkan_ps5_buffer_copy_example)
+      vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
     target_compile_options(${example_target} PRIVATE -Wall -Wextra -Wpedantic)
     target_include_directories(${example_target} PRIVATE
@@ -1238,6 +1240,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_indirect_parameters_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_buffer_copy_example PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_blit_probe PRIVATE
       SceSystemService)
     add_executable(vulkan_ps5_process_cleanup examples/process_cleanup/main.c)
     set_target_properties(vulkan_ps5_process_cleanup PROPERTIES SUFFIX ".elf")

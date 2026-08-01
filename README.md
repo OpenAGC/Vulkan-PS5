@@ -147,9 +147,24 @@ D16, D32, S8, D16+S8, and D32+S8 transfer-destination images. Depth and stencil
 planes use their independently queried OpenAGC subresource layouts, arbitrary
 selected mip/layer ranges are supported, and regular array layers batch into
 one compute dispatch per selected plane and mip. D24 remains unadvertised, 4x
-depth/stencil clears remain fail-closed, and partial render-area attachment
-clears still require the planned graphics-meta path. Exact hardware pixels for
-this command slice are not yet qualified.
+depth/stencil clears remain fail-closed, and exact hardware pixels for this
+command slice are not yet qualified. Partial render-area color attachment
+clears are separately qualified on both firmware endpoints; depth/stencil
+attachment pixels remain pending.
+
+`vkCmdBlitImage` now records application-neutral 2D color blits through a
+reproducible graphics-meta shader and public OpenAGC objects. It supports
+nearest and linear filtering, scaled and axis-reversed regions, mip/layer
+selection, BC or uncompressed sampled sources, and uncompressed color
+destinations. Format queries advertise `BLIT_SRC` for BC formats and both blit
+directions for the supported uncompressed color matrix. 3D, depth/stencil,
+self-blits, and compressed destinations remain fail-closed. The pinned
+Prospero ELF SHA-256 is
+`a2ad727201bea7ad40d1fa85e5bda566d27255a6999d1cf96006e0fcdeecd82d`;
+two cleanup-first FW 5.500.008 runs each read back exactly 256 nearest-scaled
+pixels and 144 untouched guards with immediate relaunch. The identical ELF
+then passed the same oracle twice on FW 11.600.005; its FTP round-trip SHA-256
+remained identical.
 
 Graphics pipeline creation accepts the Vulkan depth-only form: dynamic
 rendering may declare zero color formats, `VkPipelineColorBlendStateCreateInfo`

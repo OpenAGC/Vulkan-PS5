@@ -69,8 +69,9 @@ Migration status:
   deleted. Image-region and
   buffer/image color transfers now record through OpenAGC API 41. General
   uncompressed color and single-sample depth/stencil image clears use public
-  OpenAGC compute commands; unsupported blit, depth/stencil transfer,
-  attachment-clear, and resolve forms fail closed. Indirect draw,
+  OpenAGC compute commands; attachment clears and 2D color blits use public
+  OpenAGC graphics-meta paths. Unsupported 3D/self/depth-stencil blits,
+  depth/stencil transfer, and resolve forms fail closed. Indirect draw,
   indexed draw, and dispatch now use typed native argument buffers; the
   superseded Vulkan-side multi-draw encoder has been removed.
 - **WSI migration:** host-complete. Swapchain images are dedicated native
@@ -228,7 +229,8 @@ command capacity. The command-recording gate covers a partial image copy and
 a strided buffer→image→buffer chain. This paragraph records the original
 transfer migration baseline; color and depth/stencil image clears have since
 moved to native meta-compute paths, and attachment clears now use a
-graphics-meta path, while blit and resolve still fail closed instead of
+graphics-meta path. General 2D color blits now use a separate graphics-meta
+path, while unsupported blit forms and resolves fail closed instead of
 silently succeeding. The
 direct-call audit remains 34 because these `agcCmd*` calls replace no audited
 low-level symbol.
@@ -251,6 +253,19 @@ FTP round-trip SHA-256 remained identical. Evidence is in the
 `analysis/fw550_fw1160_attachment_clear_20260801.md`. This cross-firmware
 qualifies color attachment/load clears. Depth/stencil attachment pixels remain
 unqualified.
+
+General 2D color blits are host-complete through public OpenAGC pipelines,
+descriptors, image views, samplers, transitions, and draws. Nearest/linear,
+scaled, reversed-axis, mip/layer, BC-source, and uncompressed-source forms are
+recorded; uncompressed color destinations are supported. 3D, self,
+depth/stencil, and compressed-destination forms remain fail-closed. Normal and
+ASAN/UBSAN suites pass 48/48, shader regeneration is byte-stable, and Prospero
+static/shared libraries build clean. Candidate ELF
+`a2ad727201bea7ad40d1fa85e5bda566d27255a6999d1cf96006e0fcdeecd82d`
+passed twice on FW 5.500.008 with exact `pixels=256 guards=144 nearest=2x`,
+cleanup-first teardown, and immediate relaunch. The same bytes then passed
+twice on FW 11.600.005 with identical pixels and lifecycle behavior; an FTP
+download matched the pinned SHA-256 exactly.
 
 The shader-execution migration removes eight more audited symbols. Vulkan no
 longer allocates, relocates, flushes, frees, or fuses shader binaries itself;

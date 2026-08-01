@@ -54,10 +54,14 @@ VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
 VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device);
 VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device,
     VkFormat format, VkImageAspectFlags aspects, VkPipeline *pipeline_out);
+VkResult vk_ps5_device_meta_blit_resources(VkDevice device, VkFormat format,
+    VkFilter filter, VkPipeline *pipeline_out, VkSampler *sampler_out);
 VkResult vk_ps5_initialize_meta_clear(VkDevice device,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
     VkFormat format, VkImageAspectFlags aspects,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
+VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_queue_submit_native(VkQueue queue,
     uint32_t command_buffer_count,

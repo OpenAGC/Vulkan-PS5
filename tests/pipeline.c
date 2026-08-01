@@ -113,6 +113,20 @@ int main(int argc, char **argv) {
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_depth_stencil));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_combined_depth));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_combined_stencil));
+    VkPipeline meta_blit = VK_NULL_HANDLE;
+    VkPipeline meta_blit_again = VK_NULL_HANDLE;
+    VkSampler meta_nearest = VK_NULL_HANDLE;
+    VkSampler meta_linear = VK_NULL_HANDLE;
+    assert(vk_ps5_device_meta_blit_resources(device,
+        VK_FORMAT_R16G16B16A16_SFLOAT, VK_FILTER_NEAREST,
+        &meta_blit, &meta_nearest) == VK_SUCCESS);
+    assert(vk_ps5_device_meta_blit_resources(device,
+        VK_FORMAT_R16G16B16A16_SFLOAT, VK_FILTER_LINEAR,
+        &meta_blit_again, &meta_linear) == VK_SUCCESS);
+    assert(meta_blit_again == meta_blit);
+    assert(meta_nearest != VK_NULL_HANDLE && meta_linear != VK_NULL_HANDLE &&
+        meta_nearest != meta_linear);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(meta_blit));
 
     VkShaderModule vertex = shader_module(device, argv[1]);
     VkShaderModule fragment = shader_module(device, argv[2]);

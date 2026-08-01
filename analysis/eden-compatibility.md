@@ -401,6 +401,16 @@ immediate relaunch on both FW 5.500.008 and FW 11.600.005 using one pinned ELF.
 Depth/stencil hardware pixels remain pending, so cross-firmware qualification
 currently applies only to color attachment/load clears.
 
+General 2D color blits are also application-neutral. The ICD uses a committed
+graphics-meta shader with public OpenAGC pipelines, descriptors, views,
+samplers, transitions, and draws for nearest/linear scaling, reversed axes,
+mips, and array layers. BC and uncompressed color sources are accepted;
+destinations use the supported uncompressed color-target matrix. The exact
+nearest 2x readback probe passed twice on FW 5.500.008 with 256 copied pixels
+and 144 guards, then the same ELF passed twice on FW 11.600.005 with an exact
+FTP round-trip hash. 3D, self, depth/stencil, and compressed-destination blits
+stay fail-closed.
+
 Depth-only dynamic-rendering pipelines no longer require a fictitious color
 attachment. A zero-color `VkPipelineRenderingCreateInfo` and zero-attachment
 color-blend state now compile a depth-exporting fragment shader into a native
@@ -452,7 +462,8 @@ bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
    fallback exists, and keep ASTC/ETC unsupported until conversion or native
    execution is implemented and qualified.
 4. Complete the remaining native command forms in dependency order:
-   unscaled/scaled blits, then 4x resolves. Partial attachment clears are
+   finish valid self/3D blit forms, then 4x resolves. General 2D color blits
+   are host-complete and exact-pixel qualified on both endpoints. Partial attachment clears are
    implemented; their color/load-clear path is identically qualified on FW
    5.50 and FW 11.60, while depth/stencil pixel gates remain. General
    uncompressed color and single-sample depth/stencil image clears are

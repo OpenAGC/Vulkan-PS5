@@ -192,7 +192,9 @@ quick win.
 The command-recording gate covers partial color copies and a strided
 buffer→image→buffer chain. `vkCmdClearColorImage`,
 `vkCmdClearDepthStencilImage`, and `vkCmdClearAttachments` now use public
-OpenAGC meta paths; `vkCmdBlitImage` and `vkCmdResolveImage` fail closed. The
+OpenAGC meta paths. `vkCmdBlitImage` now uses a public-OpenAGC graphics-meta
+path for general 2D color forms; unsupported blits and `vkCmdResolveImage`
+fail closed. The
 detailed bullets below are retained as
 the pre-implementation rationale and hazard checklist; their silent-stub and
 missing-copy-contract statements are resolved historical context.

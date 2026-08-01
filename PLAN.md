@@ -760,7 +760,12 @@ ordering.
   Normal and sanitizer suites pass 48/48; one pinned ELF produced identical
   exact color pixels twice on both FW 5.50 and FW 11.60 with teardown and
   immediate relaunch. Depth/stencil pixels remain before full qualification.
-  Blit is the next command form.
+- General 2D color blits now use a graphics-meta path with nearest/linear
+  filtering, scaled and reversed regions, mip/layer selection, BC or
+  uncompressed sources, and uncompressed destinations. Normal and sanitizer
+  suites pass 48/48, Prospero static/shared builds are clean, and one pinned
+  exact-pixel probe passed twice on both FW 5.50 and FW 11.60. Extend the path
+  to valid self/3D forms and implement 4x resolves next.
 - The graphics-pipeline translator now accepts valid depth-only dynamic
   rendering with zero color formats and zero blend attachments. A D32 pipeline
   exporting only `gl_FragDepth` creates a native OpenAGC graphics pipeline;

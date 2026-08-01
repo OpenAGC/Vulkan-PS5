@@ -447,6 +447,9 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures &
            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+    assert((format_properties.optimalTilingFeatures &
+        (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT)) ==
+        (VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT));
     assert(format_properties.linearTilingFeatures &
            VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
     assert(!(format_properties.optimalTilingFeatures &
@@ -520,7 +523,8 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
         VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
-        VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+        VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
+        VK_FORMAT_FEATURE_BLIT_SRC_BIT;
     for (size_t i = 0u;
          i < sizeof(bc_formats) / sizeof(bc_formats[0]); ++i) {
         vkGetPhysicalDeviceFormatProperties(physical, bc_formats[i],

@@ -1611,6 +1611,34 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vk_ps5_command_buffer_native_draw_count(
         depth_only_rendering_command) == 1u);
 
+    VkCommandBuffer blit_command;
+    assert(vkAllocateCommandBuffers(device, &allocate_info, &blit_command) ==
+        VK_SUCCESS);
+    assert(vkBeginCommandBuffer(blit_command, &begin_info) == VK_SUCCESS);
+    const VkImageBlit blit_regions[] = {
+        {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .srcOffsets = {{16, 32, 0}, {144, 160, 1}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .dstOffsets = {{32, 48, 0}, {224, 208, 1}},
+        },
+        {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .srcOffsets = {{192, 32, 0}, {64, 160, 1}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+            .dstOffsets = {{224, 224, 0}, {96, 96, 1}},
+        },
+    };
+    vkCmdBlitImage(blit_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &blit_regions[0], VK_FILTER_NEAREST);
+    vkCmdBlitImage(blit_command, color_image,
+        VK_IMAGE_LAYOUT_GENERAL, color_image_1,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &blit_regions[1], VK_FILTER_LINEAR);
+    assert(vk_ps5_command_buffer_record_error(blit_command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(blit_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(blit_command) == 2u);
+
     VkCommandBuffer unset_line_width_command;
     assert(vkAllocateCommandBuffers(device, &allocate_info,
         &unset_line_width_command) == VK_SUCCESS);
@@ -1857,6 +1885,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vk_ps5_command_buffer_native_state(dynamic_rendering_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(depth_only_rendering_command) ==
+           AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vk_ps5_command_buffer_native_state(blit_command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
 
     vkDestroyFence(device, fence, NULL);
