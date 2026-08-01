@@ -2492,6 +2492,8 @@ static PFN_vkVoidFunction find_proc(const ProcEntry *entries, size_t count, cons
 VK_PS5_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vkGetDeviceProcAddr(VkDevice device, const char *pName) {
     if (!device) return NULL;
+    if (pName && strcmp(pName, "vkGetDeviceProcAddr") == 0)
+        return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
     return find_proc(device_procs, sizeof(device_procs) / sizeof(device_procs[0]), pName);
 }
 

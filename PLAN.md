@@ -218,9 +218,12 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
 
 1. Re-run every currently advertised feature and extension through the native
    path. Preserve fail-closed behavior for unqualified formats or operations.
-2. Add focused CTS/deqp coverage for the advertised subset and keep the
-   conformance version non-conformant until the required suite supports a
-   stronger claim.
+2. Continue the focused CTS/deqp gate from the official
+   `vulkan-cts-1.4.6.1` discovery baseline. Its information group now completes
+   without a dispatcher crash (17 pass, two `NotSupported`, two fail). Resolve
+   the sample-count limit and mandatory Vulkan 1.2 feature failures before
+   broadening the case list. Keep the conformance version non-conformant until
+   the required suite supports a stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a
    game-like workload through one firmware-neutral build on FW 5.50 and FW
    11.60.

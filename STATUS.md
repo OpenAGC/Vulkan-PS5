@@ -14,6 +14,14 @@ qualification concern.
 
 Migration status:
 
+- **CTS discovery:** official `vulkan-cts-1.4.6.1` commit
+  `5c8aae22885448d70a2873e94a93b24b49505c32` now loads the host ICD directly
+  and completes `dEQP-VK.info.*` without a crash. A missing
+  `vkGetDeviceProcAddr` self-query caused the initial null dispatch and is now
+  lifecycle-tested. The current result is 17 pass, two `NotSupported`, and
+  two fail. Remaining failures identify required sample-count limit bits and
+  mandatory Vulkan 1.2 features; this is discovery evidence only and does not
+  change the non-conformant `0.0.0.0` report.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised

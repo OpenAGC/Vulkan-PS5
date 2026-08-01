@@ -407,6 +407,27 @@ sufficient—the packages must be built and installed into the SDK prefix.
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
 
+### Targeted Vulkan CTS
+
+The current host discovery baseline uses official Vulkan CTS tag
+`vulkan-cts-1.4.6.1` at commit
+`5c8aae22885448d70a2873e94a93b24b49505c32`. Load the host ICD directly so
+CTS negotiates Vulkan-PS5's advertised API version instead of the macOS
+loader's version:
+
+```sh
+deqp-vk \
+  --deqp-vk-library-path=/absolute/path/to/libvulkan_ps5.dylib \
+  '--deqp-case=dEQP-VK.info.*'
+```
+
+The first direct run exposed and now regression-tests
+`vkGetDeviceProcAddr(device, "vkGetDeviceProcAddr")` self-lookup. The current
+information group reaches completion: 17 pass, two correctly report
+`NotSupported`, and two fail on advertised sample-count limits and mandatory
+Vulkan 1.2 features. This is targeted discovery evidence, not a conformance
+claim; `conformanceVersion` remains `0.0.0.0`.
+
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its
 build/install include interface and does not export that helper target as a

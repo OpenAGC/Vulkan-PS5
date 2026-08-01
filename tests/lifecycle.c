@@ -981,6 +981,8 @@ enabled_timeline.pNext = &enabled_depth_clip;
 
     assert(vkGetInstanceProcAddr(instance, "vkCreateDevice") != NULL);
     assert(vkGetDeviceProcAddr(device, "vkAllocateMemory") != NULL);
+    assert(vkGetDeviceProcAddr(device, "vkGetDeviceProcAddr") ==
+           (PFN_vkVoidFunction)vkGetDeviceProcAddr);
     assert(vkGetDeviceProcAddr(device, "vkCreateImage") != NULL);
     assert(vkGetDeviceProcAddr(device, "vkCreateGraphicsPipelines") != NULL);
     assert(vkGetDeviceProcAddr(device, "vkResetQueryPoolEXT") != NULL);
