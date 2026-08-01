@@ -740,13 +740,14 @@ ordering.
 
 ### Milestone 6 current progress
 
-- `vkCmdClearColorImage` now records a complete public-OpenAGC path for all six
-  32-bit RGBA/BGRA UNORM/SRGB formats. It supports arbitrary values, SRGB/BGRA
-  packing, and selected mip/layer intervals, while invalid layouts and depth
-  images fail closed. VVL exercises a nonzero two-mip/single-layer clear; both
-  40/40 normal and sanitizer suites plus the Prospero build pass. This is the
-  first command-form slice, not the end state: arbitrary 1/2/4/8/16-byte color
-  patterns, depth/stencil and attachment clears, blits, and resolves remain.
+- `vkCmdClearColorImage` now records a complete public-OpenAGC path for every
+  advertised uncompressed color format. A reproducible meta compute pipeline
+  covers arbitrary 1/2/4/8/16-byte patterns without an application-specific
+  shortcut and batches regular array layers per mip. Exact mip/layer
+  layouts, state snapshot/restoration, format packing, VVL RGBA16F coverage,
+  and fail-closed compressed/depth cases pass 41/41 normal and sanitizer suites
+  plus the Prospero build. Hardware pixels remain pending. The next command
+  forms are depth/stencil and attachment clears, blits, and resolves.
 - The first general format expansion exposes all 14 BC1-BC7 Vulkan formats for
   sampled/filter/transfer use through native OpenAGC layouts and descriptors.
   Five-mip cube/cube-array images, exact per-mip/per-layer layouts, complete

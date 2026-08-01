@@ -51,6 +51,9 @@ void vk_ps5_destroy_or_defer_native(VkDevice device,
 void vk_ps5_collect_deferred_native(VkDevice device);
 uint32_t vk_ps5_deferred_native_count(VkDevice device);
 VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
+VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device);
+VkResult vk_ps5_initialize_meta_clear(VkDevice device,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_queue_submit_native(VkQueue queue,
     uint32_t command_buffer_count,
     const AgcCommandBuffer *command_buffers);
@@ -71,6 +74,9 @@ uint32_t vk_ps5_command_buffer_native_draw_count(
 VkBool32 vk_ps5_command_buffer_native_stream_complete(
     VkCommandBuffer command_buffer);
 VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer);
+VkBool32 vk_ps5_pack_clear_color(VkFormat format,
+    const VkClearColorValue *clear, uint32_t pattern[4],
+    uint32_t *pattern_word_count);
 VkBool32 vk_ps5_command_buffer_push_constant_word(
     VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
     uint32_t *value);

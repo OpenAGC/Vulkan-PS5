@@ -86,13 +86,16 @@ than being aliased to incompatible hardware formats. This is a general Vulkan
 contract used by Eden and other applications; `analysis/eden-compatibility.md`
 tracks Eden only as one demanding consumer.
 
-`vkCmdClearColorImage` currently has a native, range-aware implementation for
-the six supported 32-bit RGBA/BGRA UNORM/SRGB formats. It handles arbitrary
-clear values, SRGB conversion, nonzero mip/layer intervals, and GENERAL or
-TRANSFER_DST layouts using only public OpenAGC transition/layout/fill APIs.
-Other advertised color formats still require the planned general patterned
-meta-clear path; they are not silently treated as RGBA8 and no zero-only
-application shortcut is used.
+`vkCmdClearColorImage` has an application-neutral, range-aware implementation
+for every advertised uncompressed color format. A committed, reproducible meta
+compute shader writes packed patterns through a placed storage-buffer alias;
+regular array layers are batched into one two-dimensional dispatch per mip.
+Exact OpenAGC subresource layouts bound each mip/layer write, and the Vulkan
+compute or graphics state is restored for subsequent commands. The path handles arbitrary
+float/UNORM values, half/packed-float conversion, SRGB encoding, and GENERAL
+or TRANSFER_DST layouts using only public OpenAGC APIs. Regenerate the embedded
+SPIR-V with `tools/regenerate_meta_shaders.sh`; `--check` verifies committed
+bytes. Compressed and depth/stencil formats are rejected by this color path.
 
 `PLAN.md` is authoritative for this migration. `STATUS.md` records what the
 current ICD has actually implemented and qualified; a planned native mapping

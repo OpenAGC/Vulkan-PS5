@@ -60,6 +60,8 @@ struct VkPs5Device {
     VkBool32 robust_buffer_access;
     VkBool32 null_descriptor;
     VkBool32 depth_clip_enable;
+    VkPipelineLayout meta_clear_layout;
+    VkPipeline meta_clear_pipeline;
     atomic_uint memory_allocation_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
@@ -224,6 +226,11 @@ VkBool32 vk_ps5_device_robust_buffer_access(VkDevice device_handle) {
 VkBool32 vk_ps5_device_depth_clip_enable(VkDevice device_handle) {
     const VkPs5Device *device = (const VkPs5Device *)device_handle;
     return device ? device->depth_clip_enable : VK_FALSE;
+}
+
+VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device_handle) {
+    const VkPs5Device *device = (const VkPs5Device *)device_handle;
+    return device ? device->meta_clear_pipeline : VK_NULL_HANDLE;
 }
 
 void *vk_ps5_instance_alloc(VkInstance instance_handle,
@@ -1771,7 +1778,22 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         native_result = agcCreateFence(device->native_device,
             &present_fence_desc, &device->queue.present_ready_fence);
     }
+    if (native_result == AGC_OK) {
+        VkResult meta_result = vk_ps5_initialize_meta_clear(
+            (VkDevice)device, &device->meta_clear_layout,
+            &device->meta_clear_pipeline);
+        if (meta_result != VK_SUCCESS)
+            native_result = meta_result == VK_ERROR_OUT_OF_HOST_MEMORY ||
+                meta_result == VK_ERROR_OUT_OF_DEVICE_MEMORY ?
+                AGC_ERROR_OUT_OF_MEMORY : AGC_ERROR_INTERNAL;
+    }
     if (native_result != AGC_OK) {
+        if (device->meta_clear_pipeline)
+            vkDestroyPipeline((VkDevice)device,
+                device->meta_clear_pipeline, NULL);
+        if (device->meta_clear_layout)
+            vkDestroyPipelineLayout((VkDevice)device,
+                device->meta_clear_layout, NULL);
         if (device->queue.present_ready_fence)
             (void)agcDestroyFence(device->queue.present_ready_fence);
         if (device->native_compute_queue)
@@ -1795,6 +1817,9 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
+    vk_ps5_collect_deferred_native(device_handle);
+    vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
+    vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
     vk_ps5_collect_deferred_native(device_handle);
     (void)agcDestroyFence(device->queue.present_ready_fence);
     (void)agcDestroyQueue(device->native_compute_queue);

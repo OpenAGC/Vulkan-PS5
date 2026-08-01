@@ -270,6 +270,7 @@ int main(void) {
            VK_SUCCESS);
 
     VkImageCreateInfo clear_info = image_info;
+    clear_info.format = VK_FORMAT_R16G16B16A16_SFLOAT;
     clear_info.samples = VK_SAMPLE_COUNT_1_BIT;
     clear_info.extent = (VkExtent3D){16u, 8u, 1u};
     clear_info.mipLevels = 4u;

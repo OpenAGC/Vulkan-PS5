@@ -1,5 +1,7 @@
 #include <vulkan/vulkan.h>
 
+#include "../src/vulkan_ps5_internal.h"
+
 #include <assert.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -67,7 +69,9 @@ static VkInstance create_instance(const VkAllocationCallbacks *allocator) {
     return instance;
 }
 
-static VkDevice create_device(VkInstance instance, const VkAllocationCallbacks *allocator) {
+static VkResult create_device_result(VkInstance instance,
+                                     const VkAllocationCallbacks *allocator,
+                                     VkDevice *device) {
     uint32_t count = 1;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     assert(vkEnumeratePhysicalDevices(instance, &count, &physical) == VK_SUCCESS);
@@ -83,8 +87,14 @@ static VkDevice create_device(VkInstance instance, const VkAllocationCallbacks *
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_info,
     };
+    *device = VK_NULL_HANDLE;
+    return vkCreateDevice(physical, &create_info, allocator, device);
+}
+
+static VkDevice create_device(VkInstance instance,
+                              const VkAllocationCallbacks *allocator) {
     VkDevice device = VK_NULL_HANDLE;
-    assert(vkCreateDevice(physical, &create_info, allocator, &device) == VK_SUCCESS);
+    assert(create_device_result(instance, allocator, &device) == VK_SUCCESS);
     return device;
 }
 
@@ -103,9 +113,29 @@ static void test_allocation_failures(void) {
     atomic_store(&state.attempts, 0);
     atomic_store(&state.fail_at, -1);
     instance = create_instance(&allocator);
+    atomic_store(&state.attempts, 0);
     VkDevice device = create_device(instance, &allocator);
+    assert(vk_ps5_device_meta_clear_pipeline(device) != VK_NULL_HANDLE);
+    int device_allocation_count = atomic_load(&state.attempts);
+    assert(device_allocation_count > 1);
+    vkDestroyDevice(device, &allocator);
+    assert(atomic_load(&state.live) == 1);
+
+    for (int fail_at = 0; fail_at < device_allocation_count; ++fail_at) {
+        atomic_store(&state.attempts, 0);
+        atomic_store(&state.fail_at, fail_at);
+        device = VK_NULL_HANDLE;
+        assert(create_device_result(instance, &allocator, &device) ==
+            VK_ERROR_OUT_OF_HOST_MEMORY);
+        assert(device == VK_NULL_HANDLE);
+        assert(atomic_load(&state.live) == 1);
+    }
+
+    atomic_store(&state.attempts, 0);
+    atomic_store(&state.fail_at, -1);
+    device = create_device(instance, &allocator);
     int baseline = atomic_load(&state.live);
-    assert(baseline == 2);
+    assert(baseline > 2);
 
     VkMemoryAllocateInfo info = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
