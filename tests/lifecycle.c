@@ -371,6 +371,16 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &uniform_layout_features2);
     assert(uniform_layout_features.uniformBufferStandardLayout == VK_TRUE);
+    VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures separate_layout_features = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 separate_layout_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &separate_layout_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &separate_layout_features2);
+    assert(separate_layout_features.separateDepthStencilLayouts == VK_TRUE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -385,6 +395,7 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     assert(features12.timelineSemaphore == VK_TRUE);
     assert(features12.imagelessFramebuffer == VK_TRUE);
     assert(features12.uniformBufferStandardLayout == VK_TRUE);
+    assert(features12.separateDepthStencilLayouts == VK_TRUE);
     assert(features12.drawIndirectCount == VK_FALSE);
     assert(features12.bufferDeviceAddress == VK_FALSE);
 VkPhysicalDeviceLineRasterizationFeatures line_features = {
@@ -819,6 +830,18 @@ enabled_timeline.pNext = &enabled_depth_clip;
                           &imageless_device) == VK_SUCCESS);
     assert(imageless_device != VK_NULL_HANDLE);
     vkDestroyDevice(imageless_device, NULL);
+    VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures enabled_separate_layouts = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES,
+        .separateDepthStencilLayouts = VK_TRUE,
+    };
+    VkDeviceCreateInfo separate_layout_device_info = device_info;
+    separate_layout_device_info.pNext = &enabled_separate_layouts;
+    VkDevice separate_layout_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &separate_layout_device_info, NULL,
+                          &separate_layout_device) == VK_SUCCESS);
+    assert(separate_layout_device != VK_NULL_HANDLE);
+    vkDestroyDevice(separate_layout_device, NULL);
     VkPhysicalDeviceVariablePointersFeatures enabled_variable_pointers = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
         .variablePointers = VK_TRUE,
@@ -989,6 +1012,53 @@ enabled_timeline.pNext = &enabled_depth_clip;
                                &render_pass2) == VK_SUCCESS);
     assert(render_pass2 != VK_NULL_HANDLE);
     vkDestroyRenderPass(device, render_pass2, NULL);
+
+    const VkAttachmentDescriptionStencilLayout stencil_attachment_layout = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_STENCIL_LAYOUT,
+        .stencilInitialLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+        .stencilFinalLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+    };
+    VkAttachmentDescription2 depth_stencil_attachment2 = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
+        .pNext = &stencil_attachment_layout,
+        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .finalLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+    };
+    const VkAttachmentReferenceStencilLayout stencil_reference_layout = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_STENCIL_LAYOUT,
+        .stencilLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+    };
+    VkAttachmentReference2 depth_stencil_reference2 = {
+        .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+        .pNext = &stencil_reference_layout,
+        .attachment = 0,
+        .layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+            VK_IMAGE_ASPECT_STENCIL_BIT,
+    };
+    VkSubpassDescription2 depth_stencil_subpass2 = {
+        .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2,
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .pDepthStencilAttachment = &depth_stencil_reference2,
+    };
+    VkRenderPassCreateInfo2 separate_render_pass_info2 = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
+        .attachmentCount = 1,
+        .pAttachments = &depth_stencil_attachment2,
+        .subpassCount = 1,
+        .pSubpasses = &depth_stencil_subpass2,
+    };
+    VkRenderPass separate_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass2(device, &separate_render_pass_info2, NULL,
+                               &separate_render_pass) == VK_SUCCESS);
+    assert(separate_render_pass != VK_NULL_HANDLE);
+    vkDestroyRenderPass(device, separate_render_pass, NULL);
 
     const VkQueryPoolCreateInfo query_info = {
         .sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,

@@ -1411,6 +1411,32 @@ int main(int argc, char **argv)
             VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
         },
     };
+    const VkImageMemoryBarrier native_separate_layout_barriers[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = depth_image,
+            .subresourceRange = {
+                VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 1u, 0u, 1u,
+            },
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = depth_image,
+            .subresourceRange = {
+                VK_IMAGE_ASPECT_STENCIL_BIT, 0u, 1u, 0u, 1u,
+            },
+        },
+    };
     const VkRenderPassBeginInfo native_render_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
@@ -1435,6 +1461,10 @@ int main(int argc, char **argv)
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                          0u, 0u, NULL, 3u, native_graphics_barriers + 1u,
                          1u, &native_texture_barrier);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                         0u, 0u, NULL, 0u, NULL, 2u,
+                         native_separate_layout_barriers);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       graphics_pipeline);

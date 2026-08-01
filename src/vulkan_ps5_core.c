@@ -552,11 +552,14 @@ typedef struct VkPs5RenderPass {
     uint32_t attachment_count;
     uint32_t subpass_count;
     VkAttachmentDescription attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkImageLayout stencil_initial_layouts[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkImageLayout stencil_final_layouts[VK_PS5_MAX_RENDER_ATTACHMENTS];
     struct {
         uint32_t color_attachment_count;
         uint32_t color_attachments[AGC_GFX1013_MAX_COLOR_TARGETS];
         uint32_t depth_stencil_attachment;
-        VkImageLayout depth_stencil_layout;
+        VkImageLayout depth_layout;
+        VkImageLayout stencil_layout;
         VkSampleCountFlagBits samples;
     } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
@@ -1942,8 +1945,14 @@ static bool layout_resource_usage(
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_RENDER_TARGET; break;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_WRITE; break;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_DEPTH_STENCIL_READ; break;
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
         *usage = AGC_GFX1013_RESOURCE_USAGE_SHADER_READ; break;
@@ -1957,6 +1966,48 @@ static bool layout_resource_usage(
         return false;
     }
     return true;
+}
+
+static bool depth_aspect_layout(VkImageLayout layout, bool *read_only)
+{
+    if (!read_only)
+        return false;
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_GENERAL:
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+        *read_only = false;
+        return true;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+        *read_only = true;
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool stencil_aspect_layout(VkImageLayout layout, bool *read_only)
+{
+    if (!read_only)
+        return false;
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_GENERAL:
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+        *read_only = false;
+        return true;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+        *read_only = true;
+        return true;
+    default:
+        return false;
+    }
 }
 
 static bool mutable_color_format_pair(VkFormat image_format,
@@ -4366,7 +4417,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         const VkPs5RenderPass *render_pass = (const VkPs5RenderPass *)create->renderPass;
         uint32_t color_attachment_count;
         VkBool32 has_depth_stencil;
-        VkBool32 depth_stencil_read_only = VK_FALSE;
+        VkBool32 depth_read_only = VK_FALSE;
+        VkBool32 stencil_read_only = VK_FALSE;
         if (render_pass) {
             if (create->subpass >= render_pass->subpass_count)
                 return VK_ERROR_INITIALIZATION_FAILED;
@@ -4377,9 +4429,15 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 render_pass->subpasses[create->subpass].color_attachment_count;
             has_depth_stencil = render_pass->subpasses[create->subpass].
                 depth_stencil_attachment != VK_ATTACHMENT_UNUSED;
-            depth_stencil_read_only = render_pass->subpasses[create->subpass].
-                depth_stencil_layout ==
-                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            bool aspect_read_only;
+            if (has_depth_stencil && depth_aspect_layout(
+                    render_pass->subpasses[create->subpass].depth_layout,
+                    &aspect_read_only))
+                depth_read_only = aspect_read_only;
+            if (has_depth_stencil && stencil_aspect_layout(
+                    render_pass->subpasses[create->subpass].stencil_layout,
+                    &aspect_read_only))
+                stencil_read_only = aspect_read_only;
         } else {
             color_attachment_count = rendering->colorAttachmentCount;
             has_depth_stencil = rendering->depthAttachmentFormat !=
@@ -4453,10 +4511,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             depth_stencil.max_depth_bounds = depth->maxDepthBounds;
             depth_stencil.stencil_test_enable = depth->stencilTestEnable;
             depth_stencil.back_face_enable = depth->stencilTestEnable;
-            if (depth_stencil_read_only &&
-                (depth->depthWriteEnable ||
-                 (depth->stencilTestEnable &&
-                  (depth->front.writeMask || depth->back.writeMask))))
+            if ((depth_read_only && depth->depthWriteEnable) ||
+                (stencil_read_only && depth->stencilTestEnable &&
+                 (depth->front.writeMask || depth->back.writeMask)))
                 return VK_ERROR_FEATURE_NOT_PRESENT;
         }
         OpenAgcPsbcPipelineContext context = {
@@ -5481,6 +5538,12 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
         memcpy(render_pass->attachments, pCreateInfo->pAttachments,
                (size_t)render_pass->attachment_count *
                    sizeof(render_pass->attachments[0]));
+    for (uint32_t i = 0; i < render_pass->attachment_count; ++i) {
+        render_pass->stencil_initial_layouts[i] =
+            render_pass->attachments[i].initialLayout;
+        render_pass->stencil_final_layouts[i] =
+            render_pass->attachments[i].finalLayout;
+    }
     for (uint32_t i = 0; i < render_pass->subpass_count; ++i) {
         const VkSubpassDescription *source = &pCreateInfo->pSubpasses[i];
         render_pass->subpasses[i].depth_stencil_attachment =
@@ -5536,18 +5599,25 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
             VkImageLayout layout = source->pDepthStencilAttachment->layout;
-            if ((layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
-                 layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) ||
+            const VkFormat format = render_pass->attachments[attachment].format;
+            const bool has_depth = format != VK_FORMAT_S8_UINT;
+            const bool has_stencil = format == VK_FORMAT_S8_UINT ||
+                format == VK_FORMAT_D16_UNORM_S8_UINT ||
+                format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+            bool read_only;
+            if ((has_depth && !depth_aspect_layout(layout, &read_only)) ||
+                (has_stencil && !stencil_aspect_layout(layout, &read_only)) ||
                 render_pass->attachments[attachment].samples !=
                     VK_SAMPLE_COUNT_1_BIT ||
                 !depth_surface_format(
-                    render_pass->attachments[attachment].format,
+                    format,
                     &depth_format)) {
                 vk_ps5_device_free(device, pAllocator, render_pass);
                 return VK_ERROR_FEATURE_NOT_PRESENT;
             }
             render_pass->subpasses[i].depth_stencil_attachment = attachment;
-            render_pass->subpasses[i].depth_stencil_layout = layout;
+            render_pass->subpasses[i].depth_layout = layout;
+            render_pass->subpasses[i].stencil_layout = layout;
             if (render_pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT) {
                 vk_ps5_device_free(device, pAllocator, render_pass);
                 return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -5578,6 +5648,10 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
     VkAttachmentReference colors[VK_PS5_MAX_SUBPASSES]
                                 [AGC_GFX1013_MAX_COLOR_TARGETS];
     VkAttachmentReference depths[VK_PS5_MAX_SUBPASSES];
+    VkImageLayout stencil_initial[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkImageLayout stencil_final[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkImageLayout depth_layouts[VK_PS5_MAX_SUBPASSES];
+    VkImageLayout stencil_layouts[VK_PS5_MAX_SUBPASSES];
     memset(attachments, 0, sizeof(attachments));
     memset(subpasses, 0, sizeof(subpasses));
     memset(colors, 0, sizeof(colors));
@@ -5585,9 +5659,18 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
 
     for (uint32_t i = 0; i < pCreateInfo->attachmentCount; ++i) {
         const VkAttachmentDescription2 *source = &pCreateInfo->pAttachments[i];
-        if (source->sType != VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2 ||
-            source->pNext)
+        if (source->sType != VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2)
             return VK_ERROR_INITIALIZATION_FAILED;
+        const VkAttachmentDescriptionStencilLayout *stencil = NULL;
+        for (const VkBaseInStructure *next =
+                 (const VkBaseInStructure *)source->pNext;
+             next; next = next->pNext) {
+            if (next->sType !=
+                    VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_STENCIL_LAYOUT ||
+                stencil)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            stencil = (const VkAttachmentDescriptionStencilLayout *)next;
+        }
         attachments[i] = (VkAttachmentDescription){
             .flags = source->flags,
             .format = source->format,
@@ -5599,6 +5682,10 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
             .initialLayout = source->initialLayout,
             .finalLayout = source->finalLayout,
         };
+        stencil_initial[i] = stencil ? stencil->stencilInitialLayout :
+            source->initialLayout;
+        stencil_final[i] = stencil ? stencil->stencilFinalLayout :
+            source->finalLayout;
     }
     for (uint32_t i = 0; i < pCreateInfo->subpassCount; ++i) {
         const VkSubpassDescription2 *source = &pCreateInfo->pSubpasses[i];
@@ -5625,12 +5712,39 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
             const VkAttachmentReference2 *reference =
                 source->pDepthStencilAttachment;
             if (reference->sType !=
-                    VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2 ||
-                reference->pNext)
+                    VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2)
                 return VK_ERROR_INITIALIZATION_FAILED;
+            const VkAttachmentReferenceStencilLayout *stencil = NULL;
+            for (const VkBaseInStructure *next =
+                     (const VkBaseInStructure *)reference->pNext;
+                 next; next = next->pNext) {
+                if (next->sType !=
+                        VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_STENCIL_LAYOUT ||
+                    stencil)
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                stencil = (const VkAttachmentReferenceStencilLayout *)next;
+            }
+            depth_layouts[i] = reference->layout;
+            stencil_layouts[i] = stencil ? stencil->stencilLayout :
+                reference->layout;
+            bool depth_read_only;
+            bool stencil_read_only;
+            VkImageLayout merged_layout = reference->layout;
+            if (stencil &&
+                depth_aspect_layout(depth_layouts[i], &depth_read_only) &&
+                stencil_aspect_layout(stencil_layouts[i],
+                                      &stencil_read_only)) {
+                merged_layout = depth_read_only ?
+                    (stencil_read_only ?
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL :
+                        VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL) :
+                    (stencil_read_only ?
+                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL :
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+            }
             depths[i] = (VkAttachmentReference){
                 .attachment = reference->attachment,
-                .layout = reference->layout,
+                .layout = merged_layout,
             };
             depth = &depths[i];
         }
@@ -5657,7 +5771,23 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
         .subpassCount = pCreateInfo->subpassCount,
         .pSubpasses = subpasses,
     };
-    return vkCreateRenderPass(device, &legacy, pAllocator, pRenderPass);
+    VkResult result = vkCreateRenderPass(device, &legacy, pAllocator,
+                                         pRenderPass);
+    if (result != VK_SUCCESS)
+        return result;
+    VkPs5RenderPass *render_pass = (VkPs5RenderPass *)*pRenderPass;
+    for (uint32_t i = 0; i < render_pass->attachment_count; ++i) {
+        render_pass->stencil_initial_layouts[i] = stencil_initial[i];
+        render_pass->stencil_final_layouts[i] = stencil_final[i];
+    }
+    for (uint32_t i = 0; i < render_pass->subpass_count; ++i) {
+        if (render_pass->subpasses[i].depth_stencil_attachment !=
+                VK_ATTACHMENT_UNUSED) {
+            render_pass->subpasses[i].depth_layout = depth_layouts[i];
+            render_pass->subpasses[i].stencil_layout = stencil_layouts[i];
+        }
+    }
+    return VK_SUCCESS;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -6028,11 +6158,17 @@ static bool native_usage_from_access(VkAccessFlags access,
         return true;
     }
     if (layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL ||
         (access & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) != 0u) {
         *usage = kAgcResourceUsageDepthStencilWrite;
         return true;
     }
     if (layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
+        layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL ||
         (access & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT) != 0u) {
         *usage = kAgcResourceUsageDepthStencilRead;
         return true;
@@ -6271,9 +6407,15 @@ static bool native_usage_from_layout(VkImageLayout layout,
         *usage = kAgcResourceUsageColorTarget;
         return true;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
         *usage = kAgcResourceUsageDepthStencilWrite;
         return true;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+    case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
         *usage = kAgcResourceUsageDepthStencilRead;
         return true;
     case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
@@ -6343,6 +6485,79 @@ static VkResult native_transition_whole_image(
     if (!native_record_image_usage(command, image, after))
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     return VK_SUCCESS;
+}
+
+static VkResult native_transition_image_aspect(
+    VkPs5CommandBuffer *command, VkPs5Image *image,
+    AgcImageAspectFlags aspect, AgcResourceUsage after)
+{
+    AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
+    AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
+    transition.resource_type = kAgcResourceTypeImage;
+    transition.image = image->native_image;
+    transition.image_range = (AgcImageSubresourceRange){
+        aspect, 0u, image->mip_levels, 0u, image->array_layers, 0u
+    };
+    int32_t result = agcGetCommandBufferImageSubresourceStateInfo(
+        command->native_graphics_command_buffer, image->native_image,
+        &transition.image_range, &state);
+    if (result != AGC_OK)
+        return native_command_result(result);
+    transition.before = state.usage;
+    transition.before_owner = state.owner;
+    transition.after = after;
+    transition.after_owner = native_owner_for_usage(after);
+    if (transition.before != transition.after ||
+        transition.before_owner != transition.after_owner) {
+        result = agcCmdTransitionResources(
+            command->native_graphics_command_buffer, 1u, &transition);
+    }
+    return native_command_result(result);
+}
+
+static VkResult native_transition_depth_stencil_layouts(
+    VkPs5CommandBuffer *command, VkPs5Image *image,
+    VkImageLayout depth_layout, VkImageLayout stencil_layout)
+{
+    const bool has_depth = image->format != VK_FORMAT_S8_UINT;
+    const bool has_stencil = image->format == VK_FORMAT_S8_UINT ||
+        image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+        image->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+    AgcResourceUsage depth_usage = kAgcResourceUsageUndefined;
+    AgcResourceUsage stencil_usage = kAgcResourceUsageUndefined;
+    if ((has_depth && !native_usage_from_layout(depth_layout, &depth_usage)) ||
+        (has_stencil &&
+         !native_usage_from_layout(stencil_layout, &stencil_usage)))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    VkResult result = VK_SUCCESS;
+    if (has_depth && has_stencil) {
+        const AgcResourceUsage unified =
+            depth_usage == kAgcResourceUsageDepthStencilWrite ||
+            stencil_usage == kAgcResourceUsageDepthStencilWrite ?
+            kAgcResourceUsageDepthStencilWrite :
+            kAgcResourceUsageDepthStencilRead;
+        result = native_transition_image_aspect(command, image,
+            AGC_IMAGE_ASPECT_DEPTH_BIT | AGC_IMAGE_ASPECT_STENCIL_BIT,
+            unified);
+        if (result != VK_SUCCESS)
+            return result;
+        return native_record_image_usage(command, image, unified) ?
+            VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    if (has_depth)
+        result = native_transition_image_aspect(command, image,
+            AGC_IMAGE_ASPECT_DEPTH_BIT, depth_usage);
+    if (result == VK_SUCCESS && has_stencil)
+        result = native_transition_image_aspect(command, image,
+            AGC_IMAGE_ASPECT_STENCIL_BIT, stencil_usage);
+    if (result != VK_SUCCESS)
+        return result;
+    const AgcResourceUsage tracked = !has_depth ? stencil_usage :
+        !has_stencil ? depth_usage :
+        depth_usage == stencil_usage ? depth_usage :
+        kAgcResourceUsageUndefined;
+    return native_record_image_usage(command, image, tracked) ?
+        VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
 static float native_srgb_encode(float value)
@@ -7825,6 +8040,20 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         transition.image = image->native_image;
         (void)native_image_range(image, &barrier->subresourceRange,
                                  &transition.image_range);
+        const bool packed_depth_stencil =
+            image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+            image->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+        if (packed_depth_stencil &&
+            (transition.image_range.aspect_mask &
+             (AGC_IMAGE_ASPECT_DEPTH_BIT | AGC_IMAGE_ASPECT_STENCIL_BIT)) !=
+                (AGC_IMAGE_ASPECT_DEPTH_BIT | AGC_IMAGE_ASPECT_STENCIL_BIT)) {
+            /* gfx1013/OpenAGC tracks packed depth-stencil cache usage as one
+             * surface. Preserve Vulkan's aspect contract in validation and
+             * pipeline writes, while conservatively transitioning both
+             * native aspects together. */
+            transition.image_range.aspect_mask =
+                AGC_IMAGE_ASPECT_DEPTH_BIT | AGC_IMAGE_ASPECT_STENCIL_BIT;
+        }
         int32_t result = agcGetCommandBufferImageSubresourceStateInfo(
             command->native_graphics_command_buffer, image->native_image,
             &transition.image_range, &state);
@@ -7836,8 +8065,12 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
          * prior usage. Query the native command stream's exact subresource
          * state, including ownership, just as buffer barriers do. */
         const AgcResourceUsage effective_before = state.usage;
-        const AgcResourceUsage effective_after = after ==
+        AgcResourceUsage effective_after = after ==
             kAgcResourceUsageUndefined ? effective_before : after;
+        if (packed_depth_stencil &&
+            effective_before == kAgcResourceUsageDepthStencilWrite &&
+            effective_after == kAgcResourceUsageDepthStencilRead)
+            effective_after = kAgcResourceUsageDepthStencilWrite;
         transition.before = effective_before;
         transition.after = effective_after;
         transition.before_owner = state.owner;
@@ -8882,6 +9115,33 @@ static VkResult native_bind_graphics_attachments(
     uint32_t depth_attachment = render_pass->subpasses[subpass].
         depth_stencil_attachment;
     if (depth_attachment != VK_ATTACHMENT_UNUSED) {
+        const VkPs5Pipeline *pipeline = command->bound_graphics;
+        bool depth_read_only = false;
+        bool stencil_read_only = false;
+        if (!pipeline || !depth_aspect_layout(
+                render_pass->subpasses[subpass].depth_layout,
+                &depth_read_only) ||
+            !stencil_aspect_layout(
+                render_pass->subpasses[subpass].stencil_layout,
+                &stencil_read_only))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        VkBool32 shader_writes_depth = VK_FALSE;
+        VkBool32 shader_writes_stencil = VK_FALSE;
+        for (uint32_t stage = 0u; stage < pipeline->stage_count; ++stage) {
+            shader_writes_depth |= (pipeline->stages[stage].metadata.flags &
+                AGC_SHADER_REFLECTION_WRITES_DEPTH_BIT) != 0u;
+            shader_writes_stencil |= (pipeline->stages[stage].metadata.flags &
+                AGC_SHADER_REFLECTION_WRITES_STENCIL_BIT) != 0u;
+        }
+        if ((depth_read_only &&
+             (pipeline->depth_stencil.depth_write_enable ||
+              shader_writes_depth)) ||
+            (stencil_read_only &&
+             (shader_writes_stencil ||
+              (pipeline->depth_stencil.stencil_test_enable &&
+               (pipeline->depth_stencil.front.write_mask ||
+                pipeline->depth_stencil.back.write_mask)))))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
         VkPs5ImageView *view = depth_attachment < framebuffer->attachment_count ?
             framebuffer->attachments[depth_attachment] : NULL;
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
@@ -10719,9 +10979,7 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
     const VkRenderingAttachmentInfo *stencil = info->pStencilAttachment;
     if (depth || stencil) {
         const VkRenderingAttachmentInfo *attachment = depth ? depth : stencil;
-        if (depth && stencil &&
-            (depth->imageView != stencil->imageView ||
-             depth->imageLayout != stencil->imageLayout)) {
+        if (depth && stencil && depth->imageView != stencil->imageView) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -10729,6 +10987,7 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
         AgcGfx1013DepthSurfaceFormat depth_format;
         AgcGfx1013ResourceUsage usage;
+        bool read_only;
         if (!view || !image || attachment_count >=
                 VK_PS5_MAX_RENDER_ATTACHMENTS ||
             (depth && (depth->sType !=
@@ -10751,6 +11010,9 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
                  stencil->storeOp != VK_ATTACHMENT_STORE_OP_DONT_CARE))) ||
             !depth_surface_format(view->format, &depth_format) ||
             !layout_resource_usage(attachment->imageLayout, &usage) ||
+            (depth && !depth_aspect_layout(depth->imageLayout, &read_only)) ||
+            (stencil &&
+             !stencil_aspect_layout(stencil->imageLayout, &read_only)) ||
             (samples && samples != image->samples)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
@@ -10768,8 +11030,15 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
             .finalLayout = attachment->imageLayout,
         };
         render_pass->subpasses[0].depth_stencil_attachment = attachment_count;
-        render_pass->subpasses[0].depth_stencil_layout =
-            attachment->imageLayout;
+        render_pass->subpasses[0].depth_layout = depth ? depth->imageLayout :
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        render_pass->subpasses[0].stencil_layout = stencil ?
+            stencil->imageLayout :
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        render_pass->stencil_initial_layouts[attachment_count] = stencil ?
+            stencil->imageLayout : attachment->imageLayout;
+        render_pass->stencil_final_layouts[attachment_count] = stencil ?
+            stencil->imageLayout : attachment->imageLayout;
         framebuffer->attachments[attachment_count] = view;
         clear_values[attachment_count].depthStencil.depth = depth ?
             depth->clearValue.depthStencil.depth : 0.0f;
@@ -10941,11 +11210,28 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         VkPs5ImageView *view = framebuffer->attachments[depth_index];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
         AgcResourceUsage declared_before;
-        AgcResourceUsage after = render_pass->subpasses[0].
-            depth_stencil_layout ==
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
-            kAgcResourceUsageDepthStencilRead :
-            kAgcResourceUsageDepthStencilWrite;
+        AgcResourceUsage declared_stencil_before;
+        const bool has_depth = image && image->format != VK_FORMAT_S8_UINT;
+        const bool has_stencil = image &&
+            (image->format == VK_FORMAT_S8_UINT ||
+             image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+             image->format == VK_FORMAT_D32_SFLOAT_S8_UINT);
+        bool depth_read_only = true;
+        bool stencil_read_only = true;
+        if ((has_depth && !depth_aspect_layout(
+                render_pass->subpasses[0].depth_layout,
+                &depth_read_only)) ||
+            (has_stencil && !stencil_aspect_layout(
+                render_pass->subpasses[0].stencil_layout,
+                &stencil_read_only))) {
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
+        AgcResourceUsage after =
+            (has_depth && !depth_read_only) ||
+            (has_stencil && !stencil_read_only) ?
+            kAgcResourceUsageDepthStencilWrite :
+            kAgcResourceUsageDepthStencilRead;
         const VkImageAspectFlags clear_aspects =
             (attachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ?
                 VK_IMAGE_ASPECT_DEPTH_BIT : 0u) |
@@ -10955,20 +11241,30 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             !(image->usage &
               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
             !native_usage_from_layout(
-                attachment->initialLayout, &declared_before)) {
+                attachment->initialLayout, &declared_before) ||
+            !native_usage_from_layout(
+                render_pass->stencil_initial_layouts[depth_index],
+                &declared_stencil_before)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
         if (clear_aspects &&
             (!b->pClearValues || depth_index >= b->clearValueCount ||
-             after != kAgcResourceUsageDepthStencilWrite)) {
+             ((clear_aspects & VK_IMAGE_ASPECT_DEPTH_BIT) &&
+              depth_read_only) ||
+             ((clear_aspects & VK_IMAGE_ASPECT_STENCIL_BIT) &&
+              stencil_read_only))) {
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
-        AgcResourceUsage before = native_image_recorded_usage(command, image);
         (void)declared_before;
-        VkResult native_result = native_transition_whole_image(
-            command, image, before, after);
+        (void)declared_stencil_before;
+        const VkImageLayout native_layout = after ==
+                kAgcResourceUsageDepthStencilWrite ?
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        VkResult native_result = native_transition_depth_stencil_layouts(
+            command, image, native_layout, native_layout);
         if (native_result != VK_SUCCESS) {
             command->record_error = native_result;
             return;
@@ -11060,17 +11356,6 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
     if (depth_index != VK_ATTACHMENT_UNUSED) {
         const VkAttachmentDescription *depth_attachment =
             &command->active_render_pass->attachments[depth_index];
-        AgcResourceUsage native_after;
-        AgcResourceUsage native_before = command->active_render_pass->
-            subpasses[command->active_subpass].depth_stencil_layout ==
-                VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ?
-            kAgcResourceUsageDepthStencilRead :
-            kAgcResourceUsageDepthStencilWrite;
-        if (!native_usage_from_layout(
-                depth_attachment->finalLayout, &native_after)) {
-            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-            return;
-        }
         VkPs5ImageView *view = command->active_framebuffer->attachments[
             depth_index];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
@@ -11078,13 +11363,13 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
-        if (native_image_supports_usage(image, native_after)) {
-            VkResult native_result = native_transition_whole_image(command,
-                image, native_before, native_after);
-            if (native_result != VK_SUCCESS) {
-                command->record_error = native_result;
-                return;
-            }
+        VkResult native_result = native_transition_depth_stencil_layouts(
+            command, image, depth_attachment->finalLayout,
+            command->active_render_pass->
+                stencil_final_layouts[depth_index]);
+        if (native_result != VK_SUCCESS) {
+            command->record_error = native_result;
+            return;
         }
     }
     command->active_render_pass = NULL;

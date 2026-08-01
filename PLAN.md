@@ -226,8 +226,10 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    then resolve the remaining mandatory Vulkan 1.2 feature failure before
    broadening the case list. Core imageless framebuffers are now implemented
    and removed from the CTS failure log. Standard uniform-buffer layout is now
-   host-closed through an actual `std430` UBO pipeline; add its FW 5.50 value
-   oracle and close separate depth/stencil layouts next, then subgroup
+   host-closed through an actual `std430` UBO pipeline. Separate depth/stencil
+   layouts are also host-closed across RenderPass2, dynamic rendering, barriers,
+   pipeline write validation, and packed-surface native-state convergence.
+   Add the FW 5.50 value/rendering oracles, then close subgroup
    extended/dynamic broadcast, multiview, and border-color swizzle. Keep the
    conformance version non-conformant until the required suite supports a
    stronger claim.

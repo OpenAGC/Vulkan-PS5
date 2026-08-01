@@ -1625,6 +1625,10 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceUniformBufferStandardLayoutFeatures *)next)
                 ->uniformBufferStandardLayout = VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
+            ((VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures *)next)
+                ->separateDepthStencilLayouts = VK_TRUE;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
             ((VkPhysicalDeviceDynamicRenderingFeatures *)next)
                 ->dynamicRendering = VK_TRUE;
@@ -1693,6 +1697,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             f->timelineSemaphore = VK_TRUE;
             f->imagelessFramebuffer = VK_TRUE;
             f->uniformBufferStandardLayout = VK_TRUE;
+            f->separateDepthStencilLayouts = VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
@@ -1882,6 +1887,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
@@ -1933,6 +1940,7 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             supported.timelineSemaphore = VK_TRUE;
             supported.imagelessFramebuffer = VK_TRUE;
             supported.uniformBufferStandardLayout = VK_TRUE;
+            supported.separateDepthStencilLayouts = VK_TRUE;
             const VkBool32 *request_bits =
                 &requested->samplerMirrorClampToEdge;
             const VkBool32 *supported_bits =

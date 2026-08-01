@@ -41,6 +41,17 @@ Migration status:
   the Prospero build is clean, and both duplicated CTS uniform-layout findings
   are gone. Five unique mandatory-feature gaps remain; hardware value readback
   for the standard-layout UBO is pending the guarded FW 5.50 probe.
+  Core `separateDepthStencilLayouts` is now host-qualified across dedicated
+  and Vulkan-1.2 feature queries/device requests, RenderPass2 attachment and
+  reference stencil-layout metadata, dynamic rendering, aspect-aware barriers,
+  per-aspect clear/write validation, and final-layout restoration. Packed
+  depth/stencil surfaces retain OpenAGC's unified native cache state while the
+  Vulkan pipeline independently forbids writes to read-only aspects. The
+  normal and ASAN/UBSAN suites pass 59/59, the Prospero build is clean, and the
+  official mandatory-feature log no longer lists separate depth/stencil
+  layouts. Four unique gaps remain: border-color swizzle, multiview, subgroup
+  dynamic broadcast ID, and subgroup extended types. Hardware execution is
+  pending the guarded FW 5.50 regression gate.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised

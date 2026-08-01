@@ -438,9 +438,14 @@ Core `imagelessFramebuffer` is also implemented rather than query-only:
 The official mandatory-feature probe confirms that both duplicated imageless
 requirements are closed. Standard uniform-buffer layout is also compiler-
 backed: the pipeline test reflects a `std430` UBO through `openagc-psbc` and
-the native descriptor/pipeline path. Border-color swizzle, multiview, dynamic
-subgroup broadcast, subgroup extended types, and separate depth/stencil
-layouts remain before the information group can pass.
+the native descriptor/pipeline path. Separate depth/stencil layouts now retain
+RenderPass2 stencil metadata, accept distinct dynamic-rendering layouts,
+validate writes per aspect, and conservatively map packed depth/stencil cache
+state through public OpenAGC transitions. The normal and sanitizer suites pass
+59/59 and the Prospero build is clean. The official mandatory-feature probe no
+longer reports that feature; border-color swizzle, multiview, dynamic subgroup
+broadcast ID, and subgroup extended types remain before the information group
+can pass.
 
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its
