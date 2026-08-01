@@ -150,7 +150,8 @@ elif ! nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1; then
 fi
 sed -n '1,160p' "$log"
 if ! grep -E "$success_regex" "$log" >/dev/null || \
-   grep -F "$failure_pattern" "$log" >/dev/null; then
+   grep -F "$failure_pattern" "$log" >/dev/null || \
+   grep -E '^vulkan-ps5: OpenAGC .* failed:' "$log" >/dev/null; then
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
         kill_exact_pid "$failed_pid" || true

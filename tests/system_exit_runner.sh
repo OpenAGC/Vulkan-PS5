@@ -19,6 +19,10 @@ for arg do
             printf '%s\n' \
                 'system-exit-probe: ready app=0x2016' \
                 'package-consumer: PASS result=0'
+            if [ "${FAKE_OPENAGC_FAILURE:-0}" = 1 ]; then
+                printf '%s\n' \
+                    'vulkan-ps5: OpenAGC agcDestroyDevice failed: 0x80890008 (device destruction requires all child objects to be destroyed)'
+            fi
             ;;
     esac
 done
@@ -60,6 +64,7 @@ chmod +x "$test_root/bin/curl" "$test_root/bin/nc" "$test_root/bin/uv"
 run_probe() {
     mode=$1
     output=$2
+    openagc_failure=${3:-0}
     PATH="$test_root/bin:$PATH" \
     PS5_HOST=127.0.0.1 \
     PYPS4DEBUG_DIR="$test_root/pyps4debug" \
@@ -67,6 +72,7 @@ run_probe() {
     VULKAN_PS5_FW550_LOG_DIR="$test_root/logs-$mode" \
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_KLOG_MODE="$mode" \
+    FAKE_OPENAGC_FAILURE="$openagc_failure" \
         sh "$runner" >"$output" 2>&1
 }
 
@@ -89,6 +95,12 @@ run_probe clean "$test_root/clean.out"
 grep -F 'FW550 system-exit probe: CLEAN' "$test_root/clean.out" >/dev/null
 run_probe duplicate "$test_root/duplicate.out"
 grep -F 'FW550 system-exit probe: CLEAN' "$test_root/duplicate.out" >/dev/null
+if run_probe clean "$test_root/openagc-failure.out" 1; then
+    echo "OpenAGC lifecycle failure unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'did not reach its self-kill oracle' \
+    "$test_root/openagc-failure.out" >/dev/null
 if run_probe crash "$test_root/crash.out"; then
     echo "fatal baseline probe unexpectedly passed" >&2
     exit 1

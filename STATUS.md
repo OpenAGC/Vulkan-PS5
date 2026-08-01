@@ -1335,7 +1335,18 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   repeatedly matched the independent FW 5.50 mapped-pixel oracle at
   `samples=18432 green=18432`. Legacy/Features2 reporting, device enablement,
   and precise command recording are host-tested, and the standard query sample
-  requests the feature and flag normally. The live profile is now two
+  requests the feature and flag normally. The 2026-08-01 current-commit replay
+  exposed a teardown-order regression in the reset, idle, and full variants:
+  their command buffers still retained the native query buffer when the query
+  pool was destroyed. Recycling the command pool first fixes the ownership
+  order. All four query variants then passed their rendering/result oracles and
+  destroyed the device cleanly with hashes `21321555` (lifecycle), `e843380e`
+  (reset), `0c053a70` (idle), and `49f1df4a` (full; SHA-256 prefixes). The
+  guarded runner now rejects any OpenAGC lifecycle failure even when the
+  application prints its rendering PASS line. Evidence is in
+  `20260801T131240Z-query-lifecycle.log`,
+  `20260801T131251Z-query-reset.log`, `20260801T131302Z-query-idle.log`, and
+  `20260801T131313Z-query-full.log`. The live profile is now two
   extension plus 25 feature gaps, total 27.
 - The compatibility audit is refreshed against upstream Eden revision
   `612409c7ba`. VMA and the hard startup profile pass, and the format subset now

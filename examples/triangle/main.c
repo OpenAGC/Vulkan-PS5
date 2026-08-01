@@ -1639,10 +1639,13 @@ int main(void)
     }
 
     vkDestroyFence(device, fence, NULL);
+    /* Native command buffers retain every resource referenced while recording.
+     * Recycle them before destroying query storage, just as Vulkan requires the
+     * application to stop using the pool before vkDestroyQueryPool. */
+    vkDestroyCommandPool(device, command_pool, NULL);
 #if defined(VULKAN_PS5_QUERY_SAMPLE)
     vkDestroyQueryPool(device, query_pool, NULL);
 #endif
-    vkDestroyCommandPool(device, command_pool, NULL);
 #if defined(VULKAN_PS5_WIDE_LINES_PROBE)
     vkDestroyPipeline(device, dynamic_line_pipeline, NULL);
 #elif defined(VULKAN_PS5_FILL_MODE_NON_SOLID_PROBE)
