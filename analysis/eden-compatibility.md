@@ -386,8 +386,11 @@ forms do not; both expose sampled, storage, color-attachment, and transfer
 use, with texel-buffer features kept false. Exact layout, sampled-view,
 component-class, scalar/vector export, image/view creation, format-query, and
 clear-packing tests pass. The full normal and sanitizer suites pass 51/51 and
-the complete Prospero build is clean. Hardware execution remains pending, so
-this group is not yet endpoint-qualified.
+the complete Prospero build is clean. An expanded identical ELF then passed
+all eighteen new formats and 1,152 exact clear/readback pixels twice on FW
+5.500.008 with bounded waits and immediate relaunch; see
+`analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling/storage,
+attachment exports, and the FW 11.60 endpoint replay remain pending.
 
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer

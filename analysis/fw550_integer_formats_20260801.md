@@ -33,6 +33,10 @@ or integer color-attachment export execution; those remain separate gates.
 - Guarded command:
   `PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1 examples/run_fw550_integer_formats.sh`
 
+This command describes the runner as committed in `ae784e0`. The current
+runner expands the same gate to eighteen formats; its replacement artifact and
+evidence are recorded in `fw550_scalar_vector_formats_20260801.md`.
+
 The runner requires the cleanup artifact, uploads the exact ELF, accepts only
 `integer_formats: PASS formats=4 pixels=256 exact-bits`, enforces target PID
 removal, checks websrv responsiveness, and rejects fatal or unexpected target

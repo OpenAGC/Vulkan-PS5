@@ -99,9 +99,10 @@ bytes. Compressed and depth/stencil formats are rejected by this color path.
 
 The Eden-required RGBA16/32 signed and unsigned integer images expose sampled,
 storage, color-attachment, and transfer use without unsupported filtering,
-blit, or texel-buffer claims. A bounded FW 5.50 gate creates all four native
-views, clears and reads back 256 exact component patterns, tears down, and
-immediately relaunches the identical ELF. Run it with
+blit, or texel-buffer claims. They are included in the expanded bounded FW
+5.50 gate, which creates all eighteen newly added native views, clears and
+reads back 1,152 exact component patterns, tears down, and immediately
+relaunches the identical ELF. Run it with
 `PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1
 examples/run_fw550_integer_formats.sh`. Shader sampling/storage and integer
 attachment exports remain separate hardware gates.
@@ -111,8 +112,10 @@ normalized, and R/RG 32-bit integer image forms. Their Vulkan queries preserve
 the numeric-class distinction—normalized images may filter and blit while
 integer images may not—and do not advertise unimplemented texel buffers. The
 host and Prospero gates cover exact native descriptors, scalar/vector render
-exports, image/view creation, and clear packing; hardware execution is the
-next qualification gate.
+exports, image/view creation, and clear packing. The expanded bounded FW 5.50
+probe passes all eighteen new formats and 1,152 exact clear/readback pixels
+twice with immediate relaunch. Shader sampling/storage and attachment exports
+remain the next qualification gates.
 
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary

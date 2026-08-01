@@ -791,8 +791,9 @@ ordering.
   application-specific aliases. The first RGBA16/32 signed/unsigned integer
   slice now passes exact clear/readback twice on FW 5.50 with bounded waits and
   immediate relaunch. The following API 48 slice adds fourteen R/RG
-  scalar/vector normalized and integer forms and is host/Prospero complete;
-  qualify its clear, shader sampling/storage, and attachment exports next.
+  scalar/vector normalized and integer forms and now passes its expanded
+  eighteen-format exact clear/readback gate twice on FW 5.50; qualify shader
+  sampling/storage and scalar/vector attachment exports next.
   Integer shader execution and the final identical FW 11.60 replay remain
   before endpoint qualification.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined

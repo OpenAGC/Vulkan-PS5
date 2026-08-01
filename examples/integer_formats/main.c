@@ -9,19 +9,23 @@
 
 #define IMAGE_WIDTH 8u
 #define IMAGE_HEIGHT 8u
-#define FORMAT_COUNT 4u
-#define REQUIRED_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
+#define FORMAT_COUNT 18u
+#define INTEGER_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | \
     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
     VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
     VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+#define NORMALIZED_FEATURES (INTEGER_FEATURES | \
+    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | \
+    VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT)
 
 typedef struct FormatCase {
     VkFormat format;
     const char *name;
     VkClearColorValue clear;
     uint32_t expected[4];
-    uint32_t word_count;
+    uint32_t byte_count;
+    VkFormatFeatureFlags features;
 } FormatCase;
 
 typedef struct TestImage {
@@ -36,14 +40,90 @@ typedef struct TestImage {
 
 static const FormatCase format_cases[FORMAT_COUNT] = {
     {
+        VK_FORMAT_R16_UNORM, "r16_unorm",
+        {.float32 = {0.25f, 0.0f, 0.0f, 0.0f}},
+        {UINT32_C(0x00004000), 0u, 0u, 0u}, 2u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R16_SNORM, "r16_snorm",
+        {.float32 = {0.5f, 0.0f, 0.0f, 0.0f}},
+        {UINT32_C(0x00004000), 0u, 0u, 0u}, 2u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R16_UINT, "r16_uint",
+        {.uint32 = {0x1234u, 0u, 0u, 0u}},
+        {UINT32_C(0x00001234), 0u, 0u, 0u}, 2u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R16_SINT, "r16_sint",
+        {.int32 = {-2, 0, 0, 0}},
+        {UINT32_C(0x0000fffe), 0u, 0u, 0u}, 2u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16_UNORM, "rg16_unorm",
+        {.float32 = {0.25f, 0.75f, 0.0f, 0.0f}},
+        {UINT32_C(0xbfff4000), 0u, 0u, 0u}, 4u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16_SNORM, "rg16_snorm",
+        {.float32 = {0.5f, -0.5f, 0.0f, 0.0f}},
+        {UINT32_C(0xc0004000), 0u, 0u, 0u}, 4u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16_UINT, "rg16_uint",
+        {.uint32 = {0x1234u, 0xabcdu, 0u, 0u}},
+        {UINT32_C(0xabcd1234), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16_SINT, "rg16_sint",
+        {.int32 = {-2, 12345, 0, 0}},
+        {UINT32_C(0x3039fffe), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16B16A16_UNORM, "rgba16_unorm",
+        {.float32 = {0.0f, 0.25f, 0.5f, 1.0f}},
+        {UINT32_C(0x40000000), UINT32_C(0xffff8000), 0u, 0u},
+        8u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R16G16B16A16_SNORM, "rgba16_snorm",
+        {.float32 = {-1.0f, -0.5f, 0.5f, 1.0f}},
+        {UINT32_C(0xc0008000), UINT32_C(0x7fff4000), 0u, 0u},
+        8u, NORMALIZED_FEATURES,
+    },
+    {
         VK_FORMAT_R16G16B16A16_UINT, "rgba16_uint",
         {.uint32 = {0x0123u, 0x4567u, 0x89abu, 0xcdefu}},
-        {UINT32_C(0x45670123), UINT32_C(0xcdef89ab), 0u, 0u}, 2u,
+        {UINT32_C(0x45670123), UINT32_C(0xcdef89ab), 0u, 0u},
+        8u, INTEGER_FEATURES,
     },
     {
         VK_FORMAT_R16G16B16A16_SINT, "rgba16_sint",
         {.int32 = {-1, -32768, 12345, -23456}},
-        {UINT32_C(0x8000ffff), UINT32_C(0xa4603039), 0u, 0u}, 2u,
+        {UINT32_C(0x8000ffff), UINT32_C(0xa4603039), 0u, 0u},
+        8u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R32_UINT, "r32_uint",
+        {.uint32 = {UINT32_C(0x89abcdef), 0u, 0u, 0u}},
+        {UINT32_C(0x89abcdef), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R32_SINT, "r32_sint",
+        {.int32 = {-987654321, 0, 0, 0}},
+        {UINT32_C(0xc521974f), 0u, 0u, 0u}, 4u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R32G32_UINT, "rg32_uint",
+        {.uint32 = {UINT32_C(0x01234567), UINT32_C(0x89abcdef), 0u, 0u}},
+        {UINT32_C(0x01234567), UINT32_C(0x89abcdef), 0u, 0u},
+        8u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R32G32_SINT, "rg32_sint",
+        {.int32 = {-1, INT32_MIN, 0, 0}},
+        {UINT32_C(0xffffffff), UINT32_C(0x80000000), 0u, 0u},
+        8u, INTEGER_FEATURES,
     },
     {
         VK_FORMAT_R32G32B32A32_UINT, "rgba32_uint",
@@ -54,7 +134,7 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
         {
             UINT32_C(0x01234567), UINT32_C(0x89abcdef),
             UINT32_C(0x13579bdf), UINT32_C(0xfdb97531),
-        }, 4u,
+        }, 16u, INTEGER_FEATURES,
     },
     {
         VK_FORMAT_R32G32B32A32_SINT, "rgba32_sint",
@@ -62,7 +142,7 @@ static const FormatCase format_cases[FORMAT_COUNT] = {
         {
             UINT32_C(0xffffffff), UINT32_C(0x80000000),
             UINT32_C(0x075bcd15), UINT32_C(0xc521974f),
-        }, 4u,
+        }, 16u, INTEGER_FEATURES,
     },
 };
 
@@ -87,8 +167,7 @@ static VkResult create_image(VkPhysicalDevice physical, VkDevice device,
     VkFormatProperties properties;
     vkGetPhysicalDeviceFormatProperties(physical, format_case->format,
         &properties);
-    if ((properties.linearTilingFeatures & REQUIRED_FEATURES) !=
-        REQUIRED_FEATURES)
+    if (properties.linearTilingFeatures != format_case->features)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
     const VkImageCreateInfo image_info = {
@@ -306,7 +385,7 @@ static int run_probe(void)
 #if defined(OPENAGC_PROSPERO)
     uint32_t checked = 0u;
     for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
-        const size_t pixel_size = format_cases[i].word_count * sizeof(uint32_t);
+        const size_t pixel_size = format_cases[i].byte_count;
         for (uint32_t y = 0u; y < IMAGE_HEIGHT; ++y) {
             const uint8_t *row = images[i].pixels + y * images[i].row_pitch;
             for (uint32_t x = 0u; x < IMAGE_WIDTH; ++x) {
@@ -324,7 +403,7 @@ static int run_probe(void)
             }
         }
     }
-    printf("integer_formats: PASS formats=4 pixels=%u exact-bits\n", checked);
+    printf("integer_formats: PASS formats=18 pixels=%u exact-bits\n", checked);
 #else
     puts("integer_formats: PASS command recording");
 #endif

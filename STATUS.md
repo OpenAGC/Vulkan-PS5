@@ -393,8 +393,13 @@ keeps all fourteen texel-buffer claims false, creates optimal images and
 native views, and packs exact normalized/integer clears. OpenAGC validates
 R32/RG32 against their real `32_R`/`32_GR` exports instead of an invalid ABGR
 assumption. The frozen capability snapshot, both 51/51 normal and sanitizer
-suites, and the complete Prospero build pass. Hardware shader/attachment and
-clear pixels for this group remain pending.
+suites, and the complete Prospero build pass. The expanded bounded probe then
+created all eighteen new image/view forms and passed 1,152 exact clear/readback
+pixels twice back-to-back on FW 5.500.008 with teardown, exact-PID removal, and
+immediate relaunch. Its SHA-256 is
+`ec8527214b1681525ec7eb92ab5c24f4f05dfa1fbe027c1f9781415f0853a827`;
+see `analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling,
+storage-image operations, attachment exports, and FW 11.60 remain pending.
 
 ## SDL/Zink capability slice (2026-07-31)
 
