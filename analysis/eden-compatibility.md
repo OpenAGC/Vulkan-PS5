@@ -351,7 +351,7 @@ warning. The public Prospero ELF SHA-256 is
 | Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 67 unique Vulkan formats after the API 51 packed 8/16-bit slice, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified; the 37-format scalar/vector gate passes 2,368 exact FW 5.50 clear/readback pixels twice. The remaining unique set is 2 uncompressed gaps, 28 ASTC and 10 ETC2/EAC formats that Eden can transcode, and two D24 forms that remain fail-closed | Partial; broader uncompressed coverage plus hardware scalar/vector shader/attachment execution remain |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths | Mandatory shader capabilities above remain incomplete |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
-| Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet and rejection regressions pass | Host/Prospero qualified; deterministic FW 5.50 readback pending |
+| Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet/rejection regressions and two deterministic FW 5.50 readback runs pass | FW 5.50 hardware-qualified at this scope |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames | Eden PS5 surface hookup missing |
 
 The revision-frozen source inventory is committed as
@@ -512,12 +512,13 @@ color-blend state now compile a depth-exporting fragment shader into a native
 OpenAGC D32 graphics pipeline. This is a general Vulkan correction for depth
 passes and the prerequisite for graphics-meta depth/stencil attachment clears.
 
-The buffer-copy hardware candidate copies 64- and 80-byte regions at nonzero
+The buffer-copy hardware gate copies 64- and 80-byte regions at nonzero
 source/destination offsets and verifies all 144 copied bytes plus 112 untouched
-guard bytes. Prospero ELF SHA-256 is
-`eac7fe30a1626502ae7ce27367ebeebdebc89fbf86a3a2b6738a15a6e09ab757`.
-It remains pending deterministic FW 5.50 readback and should use the same
-bounded, exact-PID lifecycle gate as the completed indirect-draw qualification.
+guard bytes. Pinned Prospero ELF
+`8429fb631a76db85b5f2f54e99952c1eafd96670672758c3eb1ba4790789b8e8`
+passed twice on FW 5.500.008 through the bounded cleanup-first, exact-PID
+lifecycle runner with immediate relaunch and no target-attributed panic,
+reset, timeout, or GPU fault. See `analysis/fw550_buffer_copy_20260802.md`.
 
 ## Implementation order
 

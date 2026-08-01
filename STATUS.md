@@ -347,6 +347,14 @@ apart from the established raw-ELF `amount=0x4000` warning. Evidence:
 `examples/qualification-logs/20260731T142327Z-swapchain-run1.log` and its
 matching target klog.
 
+The current native `vkCmdCopyBuffer` path is also independently qualified on
+FW 5.500.008. One pinned ELF copied 64- and 80-byte regions at nonzero offsets,
+verified all 144 copied bytes and 112 untouched guards, and passed twice with
+cleanup-first execution, bounded fence wait, teardown, exact-PID absence, and
+immediate relaunch. The ELF SHA-256 is
+`8429fb631a76db85b5f2f54e99952c1eafd96670672758c3eb1ba4790789b8e8`;
+see `analysis/fw550_buffer_copy_20260802.md`.
+
 The 2026-08-01 current-commit WSI replay initially failed before device and
 swapchain creation because the sample requested one of the two advertised
 surface formats and incorrectly treated Vulkan's required `VK_INCOMPLETE`

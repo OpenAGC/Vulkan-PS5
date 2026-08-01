@@ -747,6 +747,11 @@ ordering.
   layouts, state snapshot/restoration, format packing, VVL RGBA16F coverage,
   and fail-closed compressed/depth cases pass 41/41 normal and sanitizer suites
   plus the Prospero build. Hardware pixels remain pending.
+- `vkCmdCopyBuffer` now has deterministic FW 5.50 execution evidence in
+  addition to its packet/validation tests. One pinned ELF passed twice with
+  144 copied bytes across two nonzero-offset regions, 112 unchanged guards,
+  bounded synchronization, cleanup, teardown, and immediate relaunch. Preserve
+  this regression while finishing Eden upload and shader-cache integration.
 - `vkCmdClearDepthStencilImage` now records single-sample D16, D32, S8,
   D16+S8, and D32+S8 selected mip/layer ranges through exact per-plane OpenAGC
   layouts and the same reproducible meta-compute pipeline. A 70-layer combined
