@@ -1131,11 +1131,15 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/resolve/main.c)
   add_executable(vulkan_ps5_integer_formats_probe
     examples/integer_formats/main.c)
+  add_executable(vulkan_ps5_depth_clear_probe
+    examples/depth_clear/main.c)
   add_executable(vulkan_ps5_bc_copy_probe
     examples/bc_copy/main.c)
   if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME vulkan_ps5.integer_formats_command_recording
       COMMAND vulkan_ps5_integer_formats_probe)
+    add_test(NAME vulkan_ps5.depth_clear_command_recording
+      COMMAND vulkan_ps5_depth_clear_probe)
     add_test(NAME vulkan_ps5.bc_copy_command_recording
       COMMAND vulkan_ps5_bc_copy_probe)
   endif()
@@ -1178,6 +1182,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
       vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe
+      vulkan_ps5_depth_clear_probe
       vulkan_ps5_bc_sampling_probe vulkan_ps5_bc_sampling_smoke_probe
       vulkan_ps5_bc_copy_probe
       PROPERTIES SUFFIX ".elf")
@@ -1221,6 +1226,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_buffer_copy_example vulkan_ps5_blit_probe
       vulkan_ps5_blit3d_probe
       vulkan_ps5_resolve_probe vulkan_ps5_integer_formats_probe
+      vulkan_ps5_depth_clear_probe
       vulkan_ps5_bc_sampling_probe vulkan_ps5_bc_sampling_smoke_probe
       vulkan_ps5_bc_copy_probe)
     target_compile_features(${example_target} PRIVATE c_std_11)
@@ -1312,6 +1318,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_resolve_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_integer_formats_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_depth_clear_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_bc_sampling_probe PRIVATE
       SceSystemService)

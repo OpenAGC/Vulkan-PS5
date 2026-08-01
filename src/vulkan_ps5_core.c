@@ -2018,7 +2018,7 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         *pImage = (VkImage)image;
         return VK_SUCCESS;
     }
-    if (pCreateInfo->tiling == VK_IMAGE_TILING_OPTIMAL && is_depth_format) {
+    if (is_depth_format) {
         if (pCreateInfo->imageType != VK_IMAGE_TYPE_2D ||
             pCreateInfo->extent.depth != 1u) {
             vk_ps5_device_free(device, pAllocator, image);
@@ -6922,8 +6922,13 @@ static VkResult native_clear_depth_stencil_image(
                 uint64_t layer_stride;
                 VkResult result = native_clear_layer_layout(command->device,
                     image, &native_range, mip, plane, &base, &layer_stride);
-                if (result != VK_SUCCESS)
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr,
+                        "vulkan-ps5: depth clear layout preflight failed "
+                        "format=%u aspect=0x%x plane=%u mip=%u result=%d\n",
+                        image->format, aspect, plane, mip, result);
                     return result;
+                }
             }
         }
     }
@@ -6932,8 +6937,12 @@ static VkResult native_clear_depth_stencil_image(
     int32_t native_result = agcGetCommandBufferRangeStateInfo(
         command->native_graphics_command_buffer, image->native_clear_buffer,
         0u, image->size, &state);
-    if (native_result != AGC_OK)
+    if (native_result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: depth clear alias state failed format=%u "
+            "result=0x%x\n", image->format, (unsigned)native_result);
         return native_command_result(native_result);
+    }
     AgcResourceTransition compute_transition = AGC_RESOURCE_TRANSITION_INIT;
     compute_transition.before = state.usage;
     compute_transition.after = kAgcResourceUsageShaderWrite;
@@ -6943,8 +6952,12 @@ static VkResult native_clear_depth_stencil_image(
     compute_transition.buffer_size = image->size;
     native_result = agcCmdTransitionResources(
         command->native_graphics_command_buffer, 1u, &compute_transition);
-    if (native_result != AGC_OK)
+    if (native_result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: depth clear alias transition failed format=%u "
+            "result=0x%x\n", image->format, (unsigned)native_result);
         return native_command_result(native_result);
+    }
 
     bool compute_bound = false;
     for (uint32_t range_index = 0u; range_index < range_count; ++range_index) {
@@ -6977,8 +6990,17 @@ static VkResult native_clear_depth_stencil_image(
                     image->size, pattern, pattern_word_count,
                     native_range.array_layer_count, layer_stride,
                     &compute_bound);
-                if (result != VK_SUCCESS)
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr,
+                        "vulkan-ps5: depth clear dispatch failed format=%u "
+                        "aspect=0x%x plane=%u mip=%u offset=%llu size=%llu "
+                        "stride=%llu result=%d\n",
+                        image->format, aspect, plane, mip,
+                        (unsigned long long)base.offset,
+                        (unsigned long long)base.size,
+                        (unsigned long long)layer_stride, result);
                     return result;
+                }
             }
         }
     }

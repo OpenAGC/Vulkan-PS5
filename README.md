@@ -212,9 +212,11 @@ The general clear path now also implements `vkCmdClearDepthStencilImage` for
 D16, D32, S8, D16+S8, and D32+S8 transfer-destination images. Depth and stencil
 planes use their independently queried OpenAGC subresource layouts, arbitrary
 selected mip/layer ranges are supported, and regular array layers batch into
-one compute dispatch per selected plane and mip. D24 remains unadvertised, 4x
-depth/stencil clears remain fail-closed, and exact hardware pixels for this
-command slice are not yet qualified. Partial render-area color attachment
+one compute dispatch per selected plane and mip. One pinned FW 5.500.008 ELF
+passed twice with exact readback for all five formats (`depth=256
+stencil=192`), bounded synchronization, teardown, and immediate relaunch.
+D24 remains unadvertised, 4x depth/stencil clears remain fail-closed, and the
+identical FW 11.60 replay remains pending. Partial render-area color attachment
 clears are separately qualified on both firmware endpoints; depth/stencil
 attachment pixels remain pending.
 

@@ -755,9 +755,12 @@ ordering.
 - `vkCmdClearDepthStencilImage` now records single-sample D16, D32, S8,
   D16+S8, and D32+S8 selected mip/layer ranges through exact per-plane OpenAGC
   layouts and the same reproducible meta-compute pipeline. A 70-layer combined
-  image batches to one dispatch per selected plane/mip; 48/48 normal and
-  sanitizer suites plus the Prospero static/shared build pass. D24 and 4x
-  depth/stencil remain fail-closed, and hardware pixels are pending.
+  image batches to one dispatch per selected plane/mip. Clean 56/56 normal and
+  sanitizer suites plus the Prospero static/shared build pass. One pinned ELF
+  passed twice on FW 5.500.008 with exact D16, D32, S8, D16+S8, and D32+S8
+  readback (`depth=256 stencil=192`), bounded waits, teardown, and immediate
+  relaunch. D24 and 4x depth/stencil remain fail-closed; identical FW 11.60
+  replay remains pending.
 - Graphics-meta attachment clearing is host-complete. `vkCmdClearAttachments`
   and render-pass/dynamic-rendering load clears cover partial rectangles,
   advertised color formats, separate/combined depth and stencil aspects, and

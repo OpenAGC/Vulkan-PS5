@@ -477,10 +477,13 @@ D16+S8, and D32+S8 single-sample formats without an Eden-specific path. Each
 selected plane, mip, and layer interval uses its queried native layout, and
 regular array layers batch into one compute dispatch per plane and mip. The
 host gate uses a 70-layer combined D32+S8 image and records exactly two
-dispatches for one selected mip. Normal and ASAN/UBSAN suites pass 48/48 and
-the Prospero libraries build clean. D24 stays unadvertised; multisampled and
-partial attachment clears remain fail-closed pending their general Vulkan
-implementations, and exact hardware pixels for this slice remain unqualified.
+dispatches for one selected mip. Clean normal and ASAN/UBSAN suites pass 56/56
+and the Prospero libraries build clean. One pinned ELF passed twice on FW
+5.500.008 with exact D16, D32, S8, D16+S8, and D32+S8 readback (`depth=256
+stencil=192`), bounded synchronization, teardown, and immediate relaunch.
+D24 stays unadvertised; multisampled and partial attachment clears remain
+fail-closed pending their general Vulkan implementations, and the identical
+FW 11.60 replay remains pending.
 
 Attachment clears are now application-neutral Vulkan operations, not an Eden
 override. `vkCmdClearAttachments` and both render-pass and dynamic-rendering

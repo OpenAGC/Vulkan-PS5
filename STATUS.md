@@ -1490,16 +1490,19 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   41/41, including VVL RGBA16F coverage, allocation-failure cleanup, and
   fail-closed compressed/depth cases; Prospero static/shared builds pass.
   Hardware pixel execution for this exact slice remains pending.
-- `vkCmdClearDepthStencilImage` is host-complete for the advertised D16, D32,
+- `vkCmdClearDepthStencilImage` is hardware-qualified on FW 5.500.008 for the
+  advertised D16, D32,
   S8, D16+S8, and D32+S8 single-sample formats. It validates Vulkan layout,
   usage, aspects, normalized depth, and complete selected ranges before
   recording; independently queried depth/stencil planes are filled through the
   same public-OpenAGC meta compute pipeline, with regular array layers batched
   per plane and mip. A 70-layer D32+S8 gate records exactly two dispatches for
-  one selected mip. Both 48/48 normal and ASAN/UBSAN suites pass, and the
-  Prospero static/shared libraries build clean. D24, multisampled clears,
-  partial attachment clears, and exact hardware pixels remain fail-closed or
-  pending as applicable.
+  one selected mip. Clean 56/56 normal and ASAN/UBSAN suites pass, and the
+  Prospero static/shared libraries build clean. A pinned ELF passed twice on
+  FW 5.500.008 with exact readback across all five formats (`depth=256
+  stencil=192`), bounded synchronization, teardown, and immediate relaunch.
+  D24 and multisampled clears remain fail-closed; partial attachment clears and
+  the identical FW 11.60 replay remain pending.
 - Depth-only graphics pipelines are now accepted with zero dynamic-rendering
   color formats and a zero-attachment color-blend state. The D32 host gate
   compiles a fragment shader that exports only depth and proves creation of a
