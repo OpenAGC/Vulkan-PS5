@@ -7190,14 +7190,6 @@ static bool native_image_copy_layers(
     return true;
 }
 
-static void reject_unsupported_command(VkCommandBuffer c)
-{
-    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
-    if (command && command->state == VK_PS5_COMMAND_RECORDING &&
-        command->record_error == VK_SUCCESS)
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
-}
-
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyBuffer(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n,
                 const VkBufferCopy *r) {

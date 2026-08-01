@@ -89,7 +89,7 @@ target_include_directories(vulkan_ps5_static
     "$<BUILD_INTERFACE:${VULKAN_HEADERS_ROOT}/include>"
     "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(vulkan_ps5_static PUBLIC
-  Vulkan::Headers OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
+  OpenAGC::openagc OpenAgcPsbc::Compiler Threads::Threads)
 
 if(VULKAN_PS5_BUILD_SHARED)
   add_library(vulkan_ps5_icd SHARED $<TARGET_OBJECTS:vulkan_ps5_objects>)

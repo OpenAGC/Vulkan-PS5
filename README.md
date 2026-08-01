@@ -407,6 +407,12 @@ sufficient—the packages must be built and installed into the SDK prefix.
 Applications link `VulkanPS5::ICD` after installing the package, or link
 `libvulkan_ps5.a` directly. They use only standard Vulkan headers and APIs.
 
+An in-tree `add_subdirectory` consumer may already provide its own
+`Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its
+build/install include interface and does not export that helper target as a
+link dependency, so embedding the ICD cannot leak a parent-owned
+`Vulkan-Headers` target into `VulkanPS5Targets`.
+
 ## Reusable installed SDK
 
 The Milestone 5 package test installs Vulkan-Headers, OpenAGC, the runtime
