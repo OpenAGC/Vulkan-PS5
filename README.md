@@ -93,21 +93,15 @@ for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
 sampling. SDL must still retain OSMesa until pinned Mesa executes through the
 PS5 EGL/WSI bridge; a capability report alone is not a Zink runtime pass.
 
-The current integration candidate reaches a real Zink EGL context and renderer
-string on FW 5.500.008. It also records reflected push constants, dynamic
-rendering RGBA8/BGRA8 clears, global color-to-transfer dependencies, and Mesa's
-mutable RGBA/A8B8G8R8 readback format class. Pixel-readback qualification is
-still pending a clean reboot and guarded rerun; a retired constant-source DMA
-clear candidate timed out and is not part of the current source.
-
-That rerun progressed through Zink pipeline compilation and identified one
-more loader-level gap: current Mesa records vertex bindings through
-`vkCmdBindVertexBuffers2` even when its optional size and stride arrays are
-null. Vulkan-PS5 now exposes the core and EXT proc aliases for that compatible
-form and rejects non-null dynamic strides until the full extended-dynamic-state
-feature is implemented. The fix passes both 46-test host suites; FW 5.50
-readback, presentation, teardown, and immediate relaunch remain the acceptance
-gate.
+The pinned integration now passes end to end on FW 5.500.008. Vulkan-PS5
+records reflected push constants, dynamic-rendering RGBA8/BGRA8 clears, global
+color-to-transfer dependencies, Mesa's mutable RGBA/A8B8G8R8 readback format
+class, and Zink's compatible null-array `vkCmdBindVertexBuffers2` form. The
+aliased clear buffer performs an explicit copy-write release before image use,
+and Vulkan object destruction is deferred until OpenAGC command recycling
+releases native references. Two immediate guarded runs returned exact RGBA
+`64,128,191,255`, presented, completed native teardown, self-exited, and
+relaunched without reboot. The host suite remains 46/46; FW 11.60 is deferred.
 
 Milestone 6 is tracked by `analysis/eden-compatibility.md` and the
 `vulkan_ps5.eden_profile_report` test. The initial Eden suitability baseline

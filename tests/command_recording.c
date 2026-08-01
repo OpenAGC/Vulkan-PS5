@@ -322,8 +322,9 @@ int main(int argc, char **argv)
 
     const VkImageCreateInfo texture_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .format = VK_FORMAT_B8G8R8A8_SRGB,
         .extent = {2, 2, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -367,7 +368,7 @@ int main(int argc, char **argv)
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = texture_image,
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
         .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
     };
     VkImageView texture_view;
@@ -837,6 +838,23 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
         &dynamic_rendering_pipeline_info, NULL,
         &dynamic_rendering_pipeline) == VK_SUCCESS);
+    const VkPipelineRenderingCreateInfo color_only_pipeline_rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 2,
+        .pColorAttachmentFormats = dynamic_color_formats,
+    };
+    VkPipelineRasterizationStateCreateInfo color_only_raster = rasterization;
+    color_only_raster.depthBiasEnable = VK_FALSE;
+    VkGraphicsPipelineCreateInfo color_only_dynamic_info = graphics_info;
+    color_only_dynamic_info.pNext = &color_only_pipeline_rendering;
+    color_only_dynamic_info.pRasterizationState = &color_only_raster;
+    color_only_dynamic_info.pDepthStencilState = NULL;
+    color_only_dynamic_info.renderPass = VK_NULL_HANDLE;
+    color_only_dynamic_info.subpass = 0;
+    VkPipeline color_only_dynamic_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &color_only_dynamic_info, NULL, &color_only_dynamic_pipeline) ==
+        VK_SUCCESS);
     const VkPipelineViewportStateCreateInfo dynamic_viewport_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 2,
@@ -1067,12 +1085,25 @@ int main(int argc, char **argv)
             .size = VK_WHOLE_SIZE,
         },
     };
+    const VkBufferMemoryBarrier copy_to_host_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = output_buffer,
+        .offset = 0u,
+        .size = VK_WHOLE_SIZE,
+    };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
                          2u, copy_barriers, 0u, NULL);
     vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 2u,
                     buffer_copies);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL,
+                         1u, &copy_to_host_barrier, 0u, NULL);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
@@ -1281,7 +1312,7 @@ int main(int argc, char **argv)
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         0u, 0u, NULL, 4u, native_graphics_barriers,
+                         0u, 0u, NULL, 3u, native_graphics_barriers + 1u,
                          1u, &native_texture_barrier);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1529,6 +1560,11 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkCmdBeginRendering(dynamic_rendering_command, &dynamic_rendering);
     vkCmdBindPipeline(dynamic_rendering_command,
         VK_PIPELINE_BIND_POINT_GRAPHICS, dynamic_rendering_pipeline);
+    vkCmdBindPipeline(dynamic_rendering_command,
+        VK_PIPELINE_BIND_POINT_GRAPHICS, color_only_dynamic_pipeline);
+    vkCmdSetDepthBias(dynamic_rendering_command, 4.0f, 0.5f, -2.0f);
+    assert(vk_ps5_command_buffer_record_error(dynamic_rendering_command) ==
+        VK_SUCCESS);
     vkCmdEndRendering(dynamic_rendering_command);
     assert(vkEndCommandBuffer(dynamic_rendering_command) == VK_SUCCESS);
 
@@ -1744,12 +1780,21 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(command) == 2u);
     assert(vkResetFences(device, 1u, &fence) == VK_SUCCESS);
+    assert(setenv("VULKAN_PS5_RECORD_ONLY", "1", 1) == 0);
     assert(vkQueueSubmit(queue, 1u, &submit_info, fence) == VK_SUCCESS);
+    assert(unsetenv("VULKAN_PS5_RECORD_ONLY") == 0);
     assert(vkGetFenceStatus(device, fence) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_state(command) ==
            AGC_COMMAND_BUFFER_STATE_EXECUTABLE);
 
+    /* Vulkan permits completed resources to be destroyed while executable
+       command buffers still reference them. The adapter retains the native
+       objects until command recycling releases OpenAGC's references. */
+    vkDestroyBuffer(device, index_buffer, NULL);
+    vkFreeMemory(device, index_memory, NULL);
+    assert(vk_ps5_deferred_native_count(device) > 0u);
     assert(vkResetCommandPool(device, pool, 0u) == VK_SUCCESS);
+    assert(vk_ps5_deferred_native_count(device) == 0u);
     assert(vk_ps5_command_buffer_native_state(command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
     assert(vk_ps5_command_buffer_native_state(dynamic_rendering_command) ==
@@ -1771,6 +1816,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, zink_core_dynamic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
+    vkDestroyPipeline(device, color_only_dynamic_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyImageView(device, depth_view, NULL);
     vkDestroyImage(device, depth_image, NULL);
@@ -1804,8 +1850,6 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     vkDestroyBuffer(device, output_buffer, NULL);
     vkFreeMemory(device, output_memory, NULL);
-    vkDestroyBuffer(device, index_buffer, NULL);
-    vkFreeMemory(device, index_memory, NULL);
     vkDestroyBuffer(device, indirect_buffer, NULL);
     vkFreeMemory(device, indirect_memory, NULL);
     vkDestroyBuffer(device, vertex_buffer, NULL);

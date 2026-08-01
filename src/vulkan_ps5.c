@@ -21,6 +21,13 @@ typedef struct VkPs5PhysicalDevice VkPs5PhysicalDevice;
 typedef struct VkPs5Device VkPs5Device;
 typedef struct VkPs5Queue VkPs5Queue;
 typedef struct VkPs5Memory VkPs5Memory;
+typedef struct VkPs5DeferredNative VkPs5DeferredNative;
+
+struct VkPs5DeferredNative {
+    VkPs5NativeObjectType type;
+    void *object;
+    VkPs5DeferredNative *next;
+};
 
 struct VkPs5PhysicalDevice {
     VK_LOADER_DATA loader_data;
@@ -53,6 +60,8 @@ struct VkPs5Device {
     VkBool32 robust_buffer_access;
     VkBool32 null_descriptor;
     atomic_uint memory_allocation_count;
+    atomic_flag deferred_native_lock;
+    VkPs5DeferredNative *deferred_native;
 };
 
 struct VkPs5Memory {
@@ -68,6 +77,16 @@ static void PS5_SYSV_ABI vk_ps5_native_debug_message(
 {
     (void)user_data;
     if (!message)
+        return;
+    if (message->result == AGC_ERROR_BUSY &&
+        (!strcmp(message->function_name, "agcDestroyBuffer") ||
+         !strcmp(message->function_name, "agcDestroyImage") ||
+         !strcmp(message->function_name, "agcDestroyImageView") ||
+         !strcmp(message->function_name, "agcDestroySampler") ||
+         !strcmp(message->function_name, "agcDestroyShader") ||
+         !strcmp(message->function_name, "agcDestroyGraphicsPipeline") ||
+         !strcmp(message->function_name, "agcDestroyComputePipeline") ||
+         !strcmp(message->function_name, "agcDestroyMemory")))
         return;
     fprintf(stderr,
         "vulkan-ps5: OpenAGC %s failed: 0x%08x (%s)\n",
@@ -222,6 +241,13 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     if (!queue || !queue->device || !queue->device->native_graphics_queue ||
         !command_buffer_count || !command_buffers)
         return VK_ERROR_INITIALIZATION_FAILED;
+    const char *record_only = getenv("VULKAN_PS5_RECORD_ONLY");
+    if (record_only && strcmp(record_only, "1") == 0) {
+        fprintf(stderr,
+            "vulkan-ps5: record-only mode skipped native submission "
+            "(command_buffers=%u)\n", command_buffer_count);
+        return VK_SUCCESS;
+    }
     while (atomic_flag_test_and_set_explicit(
         &queue->submit_lock, memory_order_acquire)) {}
     result = agcCreateFence(queue->device->native_device,
@@ -340,6 +366,98 @@ VkResult vk_ps5_device_initialize_present_images(VkDevice device_handle,
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory_handle) {
     VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
     return memory ? memory->size : 0;
+}
+
+static int32_t destroy_native_object(
+    VkPs5NativeObjectType type, void *object)
+{
+    switch (type) {
+    case VK_PS5_NATIVE_BUFFER:
+        return agcDestroyBuffer((AgcBuffer)object);
+    case VK_PS5_NATIVE_IMAGE:
+        return agcDestroyImage((AgcImage)object);
+    case VK_PS5_NATIVE_IMAGE_VIEW:
+        return agcDestroyImageView((AgcImageView)object);
+    case VK_PS5_NATIVE_SAMPLER:
+        return agcDestroySampler((AgcSampler)object);
+    case VK_PS5_NATIVE_SHADER:
+        return agcDestroyShader((AgcShader)object);
+    case VK_PS5_NATIVE_GRAPHICS_PIPELINE:
+        return agcDestroyGraphicsPipeline((AgcGraphicsPipeline)object);
+    case VK_PS5_NATIVE_COMPUTE_PIPELINE:
+        return agcDestroyComputePipeline((AgcComputePipeline)object);
+    case VK_PS5_NATIVE_MEMORY:
+        return agcDestroyMemory((AgcMemory)object);
+    default:
+        return AGC_ERROR_INVALID_ARGUMENT;
+    }
+}
+
+void vk_ps5_destroy_or_defer_native(VkDevice device_handle,
+    VkPs5NativeObjectType type, void *object)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !object)
+        return;
+    int32_t result = destroy_native_object(type, object);
+    if (result != AGC_ERROR_BUSY)
+        return;
+    VkPs5DeferredNative *entry = ps5_alloc(device_allocator(device),
+        sizeof(*entry), _Alignof(VkPs5DeferredNative),
+        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+    if (!entry)
+        return;
+    entry->type = type;
+    entry->object = object;
+    while (atomic_flag_test_and_set_explicit(&device->deferred_native_lock,
+            memory_order_acquire)) {}
+    entry->next = device->deferred_native;
+    device->deferred_native = entry;
+    atomic_flag_clear_explicit(&device->deferred_native_lock,
+        memory_order_release);
+}
+
+void vk_ps5_collect_deferred_native(VkDevice device_handle)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device)
+        return;
+    while (atomic_flag_test_and_set_explicit(&device->deferred_native_lock,
+            memory_order_acquire)) {}
+    VkBool32 progress;
+    do {
+        progress = VK_FALSE;
+        VkPs5DeferredNative **link = &device->deferred_native;
+        while (*link) {
+            VkPs5DeferredNative *entry = *link;
+            int32_t result = destroy_native_object(entry->type, entry->object);
+            if (result == AGC_ERROR_BUSY) {
+                link = &entry->next;
+                continue;
+            }
+            *link = entry->next;
+            ps5_free(device_allocator(device), entry);
+            progress = VK_TRUE;
+        }
+    } while (progress && device->deferred_native);
+    atomic_flag_clear_explicit(&device->deferred_native_lock,
+        memory_order_release);
+}
+
+uint32_t vk_ps5_deferred_native_count(VkDevice device_handle)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device)
+        return 0u;
+    while (atomic_flag_test_and_set_explicit(&device->deferred_native_lock,
+            memory_order_acquire)) {}
+    uint32_t count = 0u;
+    for (VkPs5DeferredNative *entry = device->deferred_native; entry;
+         entry = entry->next)
+        count++;
+    atomic_flag_clear_explicit(&device->deferred_native_lock,
+        memory_order_release);
+    return count;
 }
 
 uint64_t vk_ps5_memory_gpu_address(
@@ -1543,6 +1661,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->null_descriptor = null_descriptor_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
+    atomic_flag_clear(&device->deferred_native_lock);
     atomic_flag_clear(&device->queue.submit_lock);
     AgcDeviceDesc native_device_desc = AGC_DEVICE_DESC_INIT;
     AgcQueueDesc native_queue_desc = AGC_QUEUE_DESC_INIT;
@@ -1594,6 +1713,7 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
+    vk_ps5_collect_deferred_native(device_handle);
     (void)agcDestroyFence(device->queue.present_ready_fence);
     (void)agcDestroyQueue(device->native_compute_queue);
     (void)agcDestroyQueue(device->native_graphics_queue);
@@ -1732,7 +1852,8 @@ vkFreeMemory(VkDevice device_handle, VkDeviceMemory memory_handle,
     if (!device || !memory) return;
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
     (void)agcUnmapMemory(memory->native_memory);
-    (void)agcDestroyMemory(memory->native_memory);
+    vk_ps5_destroy_or_defer_native(device_handle, VK_PS5_NATIVE_MEMORY,
+        memory->native_memory);
     ps5_free(allocator, memory);
     atomic_fetch_sub(&device->memory_allocation_count, 1);
 }

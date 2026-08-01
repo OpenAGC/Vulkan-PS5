@@ -516,8 +516,10 @@ the native-runtime migration.
   `alphaToOne`, dynamic rendering, custom border color/image swizzle,
   maintenance5, and Vulkan 1.2 are implemented. FW 5.500.008 readback qualifies
   the scalar, alpha, dynamic-rendering, and swizzled-border slices, and the
-  strict Mesa GL 2.1 report is now zero-gap. Zink remains unsupported until
-  pinned Mesa passes through the PS5 EGL/WSI bridge.
+  strict Mesa GL 2.1 report is zero-gap. The pinned Mesa now also passes the
+  SDL native-window EGL/WSI bridge twice with exact readback, presentation,
+  complete native teardown, and immediate relaunch. Preserve those hashes and
+  defer the FW 11.60 replay until that endpoint is available.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset

@@ -35,6 +35,20 @@ uint64_t vk_ps5_memory_gpu_address(VkDeviceMemory memory, VkDeviceSize offset);
 AgcDevice vk_ps5_native_device(VkDevice device);
 AgcMemory vk_ps5_native_memory(VkDeviceMemory memory);
 uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory);
+typedef enum VkPs5NativeObjectType {
+    VK_PS5_NATIVE_BUFFER,
+    VK_PS5_NATIVE_IMAGE,
+    VK_PS5_NATIVE_IMAGE_VIEW,
+    VK_PS5_NATIVE_SAMPLER,
+    VK_PS5_NATIVE_SHADER,
+    VK_PS5_NATIVE_GRAPHICS_PIPELINE,
+    VK_PS5_NATIVE_COMPUTE_PIPELINE,
+    VK_PS5_NATIVE_MEMORY,
+} VkPs5NativeObjectType;
+void vk_ps5_destroy_or_defer_native(VkDevice device,
+    VkPs5NativeObjectType type, void *object);
+void vk_ps5_collect_deferred_native(VkDevice device);
+uint32_t vk_ps5_deferred_native_count(VkDevice device);
 VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
 VkResult vk_ps5_queue_submit_native(VkQueue queue,
     uint32_t command_buffer_count,

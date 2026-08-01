@@ -209,6 +209,8 @@ static VkResult initialize_native_image_layout(VkDevice device,
         AGC_IMAGE_TILING_LINEAR : AGC_IMAGE_TILING_OPTIMAL;
     image->native_desc.usage = native_image_usage(image->usage, image->flags,
         native_image_is_depth(image->format));
+    if (image->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)
+        image->native_desc.flags |= AGC_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     if (!image->native_desc.usage)
         image->native_desc.usage = AGC_IMAGE_USAGE_TRANSFER_DST_BIT;
     image->native_layout = (AgcImageLayout)AGC_IMAGE_LAYOUT_INIT;
@@ -306,12 +308,14 @@ typedef struct VkPs5ImageView {
 
 static VkResult ensure_native_image_view(VkPs5ImageView *view) {
     VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
-    if (!view || !image || !image->native_image || view->native_view ||
-        image->native_desc.format > 0x1ffu)
+    AgcFormat native_format;
+    if (!view || !image || !image->native_image || view->native_view)
         return VK_SUCCESS;
+    if (!native_image_format(view->format, &native_format))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
     AgcImageViewDesc desc = AGC_IMAGE_VIEW_DESC_INIT;
     desc.image = image->native_image;
-    desc.format = image->native_desc.format;
+    desc.format = native_format;
     desc.base_mip_level = 0u;
     desc.mip_level_count = 1u;
     desc.base_array_layer = view->base_array_layer;
@@ -537,6 +541,7 @@ typedef struct VkPs5CommandBuffer {
     VkCommandBufferLevel level;
     VkPs5CommandState state;
     VkResult record_error;
+    const char *debug_last_command;
     AgcCommandBuffer native_graphics_command_buffer;
     AgcCommandBuffer native_compute_command_buffer;
     AgcComputePipeline native_bound_compute;
@@ -597,6 +602,13 @@ typedef struct VkPs5CommandBuffer {
     VkBool32 requires_native_stream;
     struct VkPs5CommandBuffer *next;
 } VkPs5CommandBuffer;
+
+static void debug_note_command(VkPs5CommandBuffer *command, const char *name)
+{
+    if (command && command->state == VK_PS5_COMMAND_RECORDING &&
+        command->record_error == VK_SUCCESS)
+        command->debug_last_command = name;
+}
 
 static void native_commit_resource_states(VkPs5CommandBuffer *command);
 
@@ -1052,7 +1064,8 @@ vkDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *p
     if (buffer) {
         VkPs5Buffer *native = (VkPs5Buffer *)buffer;
         if (native->native_buffer)
-            (void)agcDestroyBuffer(native->native_buffer);
+            vk_ps5_destroy_or_defer_native(device, VK_PS5_NATIVE_BUFFER,
+                native->native_buffer);
         vk_ps5_device_free(device, pAllocator, (void *)buffer);
     }
 }
@@ -1082,7 +1095,8 @@ vkBindBufferMemory(VkDevice device, VkBuffer buffer_handle, VkDeviceMemory memor
     desc.size = buffer->size;
     desc.usage = native_buffer_usage(buffer->usage);
     if (vk_ps5_memory_type_index(memory) == 0u)
-        desc.flags = AGC_BUFFER_CREATE_UPLOAD_BIT;
+        desc.flags = AGC_BUFFER_CREATE_UPLOAD_BIT |
+            AGC_BUFFER_CREATE_READBACK_BIT;
     int32_t result = agcCreatePlacedBuffer(vk_ps5_native_device(device),
         &desc, vk_ps5_native_memory(memory), memoryOffset,
         &buffer->native_buffer);
@@ -1757,9 +1771,11 @@ vkDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAll
     if (image) {
         VkPs5Image *native = (VkPs5Image *)image;
         if (native->native_clear_buffer)
-            (void)agcDestroyBuffer(native->native_clear_buffer);
+            vk_ps5_destroy_or_defer_native(device, VK_PS5_NATIVE_BUFFER,
+                native->native_clear_buffer);
         if (native->native_image)
-            (void)agcDestroyImage(native->native_image);
+            vk_ps5_destroy_or_defer_native(device, VK_PS5_NATIVE_IMAGE,
+                native->native_image);
         vk_ps5_device_free(device, pAllocator, (void *)image);
     }
 }
@@ -1802,7 +1818,8 @@ vkBindImageMemory(VkDevice device, VkImage image_handle, VkDeviceMemory memory,
     if (image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
         AgcBufferDesc alias_desc = AGC_BUFFER_DESC_INIT;
         alias_desc.size = image->size;
-        alias_desc.usage = AGC_BUFFER_USAGE_TRANSFER_DST_BIT;
+        alias_desc.usage = AGC_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            AGC_BUFFER_USAGE_TRANSFER_DST_BIT;
         if (vk_ps5_memory_type_index(memory) == 0u)
             alias_desc.flags = AGC_BUFFER_CREATE_UPLOAD_BIT;
         result = agcCreatePlacedBuffer(vk_ps5_native_device(device),
@@ -1897,12 +1914,17 @@ vkDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
     while (pool->buffers) {
         VkPs5CommandBuffer *command = pool->buffers;
         pool->buffers = command->next;
+        (void)agcResetCommandBuffer(
+            command->native_compute_command_buffer);
+        (void)agcResetCommandBuffer(
+            command->native_graphics_command_buffer);
         (void)agcDestroyCommandBuffer(
             command->native_compute_command_buffer);
         (void)agcDestroyCommandBuffer(
             command->native_graphics_command_buffer);
         vk_ps5_device_free(device, NULL, command);
     }
+    vk_ps5_collect_deferred_native(device);
     vk_ps5_device_free(device, pAllocator, pool);
 }
 
@@ -1950,6 +1972,7 @@ command->native_draw_count = 0u;
 command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     }
+    vk_ps5_collect_deferred_native(device);
     return VK_SUCCESS;
 }
 
@@ -2035,6 +2058,10 @@ vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
         while (*link && *link != command) link = &(*link)->next;
         if (*link) {
             *link = command->next;
+            (void)agcResetCommandBuffer(
+                command->native_compute_command_buffer);
+            (void)agcResetCommandBuffer(
+                command->native_graphics_command_buffer);
             (void)agcDestroyCommandBuffer(
                 command->native_compute_command_buffer);
             (void)agcDestroyCommandBuffer(
@@ -2042,6 +2069,7 @@ vkFreeCommandBuffers(VkDevice device, VkCommandPool commandPool,
             vk_ps5_device_free(device, NULL, command);
         }
     }
+    vk_ps5_collect_deferred_native(device);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -2067,6 +2095,7 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     }
     command->state = VK_PS5_COMMAND_RECORDING;
     command->record_error = VK_SUCCESS;
+    command->debug_last_command = "vkBeginCommandBuffer";
     command->compute_defaults_emitted = VK_FALSE;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
@@ -2106,6 +2135,7 @@ command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
     memset(command->graphics_sets, 0, sizeof(command->graphics_sets));
+    vk_ps5_collect_deferred_native(command->device);
     return VK_SUCCESS;
 }
 
@@ -2124,6 +2154,19 @@ vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
              !command->native_stream_complete ?
                 VK_ERROR_FEATURE_NOT_PRESENT :
                 VK_ERROR_INITIALIZATION_FAILED);
+        fprintf(stderr,
+            "vulkan-ps5: vkEndCommandBuffer rejected record_error=%d "
+            "render_pass=%u query=%u requires_native=%u native_complete=%u "
+            "draws=%u dispatches=%u\n",
+            command->record_error, command->active_render_pass != NULL,
+            command->active_query_pool != NULL,
+            command->requires_native_stream,
+            command->native_stream_complete,
+            command->native_draw_count,
+            command->native_dispatch_count);
+        fprintf(stderr, "vulkan-ps5: last valid command entry: %s\n",
+            command->debug_last_command ? command->debug_last_command :
+                "unknown");
         command->state = VK_PS5_COMMAND_INITIAL;
         (void)agcResetCommandBuffer(
             command->native_compute_command_buffer);
@@ -2162,6 +2205,7 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
         return VK_ERROR_DEVICE_LOST;
     command->state = VK_PS5_COMMAND_INITIAL;
     command->record_error = VK_SUCCESS;
+    command->debug_last_command = NULL;
     command->compute_defaults_emitted = VK_FALSE;
     command->bound_compute = NULL;
     command->bound_graphics = NULL;
@@ -2286,7 +2330,8 @@ vkDestroyImageView(VkDevice device, VkImageView imageView,
     if (imageView) {
         VkPs5ImageView *view = (VkPs5ImageView *)imageView;
         if (view->native_view)
-            (void)agcDestroyImageView(view->native_view);
+            vk_ps5_destroy_or_defer_native(device,
+                VK_PS5_NATIVE_IMAGE_VIEW, view->native_view);
         vk_ps5_device_free(device, pAllocator, (void *)imageView);
     }
 }
@@ -2917,12 +2962,17 @@ static void free_pipeline(VkDevice device, const VkAllocationCallbacks *allocato
                           VkPs5Pipeline *pipeline) {
     if (!pipeline) return;
     if (pipeline->native_compute_pipeline)
-        agcDestroyComputePipeline(pipeline->native_compute_pipeline);
+        vk_ps5_destroy_or_defer_native(device,
+            VK_PS5_NATIVE_COMPUTE_PIPELINE,
+            pipeline->native_compute_pipeline);
     if (pipeline->native_graphics_pipeline)
-        agcDestroyGraphicsPipeline(pipeline->native_graphics_pipeline);
+        vk_ps5_destroy_or_defer_native(device,
+            VK_PS5_NATIVE_GRAPHICS_PIPELINE,
+            pipeline->native_graphics_pipeline);
     for (uint32_t i = 0; i < pipeline->stage_count; ++i) {
         if (pipeline->runtime[i].native_shader)
-            agcDestroyShader(pipeline->runtime[i].native_shader);
+            vk_ps5_destroy_or_defer_native(device, VK_PS5_NATIVE_SHADER,
+                pipeline->runtime[i].native_shader);
         openagcPsbcFreeOutput(&pipeline->stages[i]);
     }
     vk_ps5_device_free(device, allocator, pipeline);
@@ -3834,7 +3884,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             native_desc.dynamic_state_mask |=
                 AGC_DYNAMIC_STATE_VIEWPORT_BIT |
                 AGC_DYNAMIC_STATE_SCISSOR_BIT;
-            if (dynamic_depth_bias)
+            if (raster->depthBiasEnable && dynamic_depth_bias)
                 native_desc.dynamic_state_mask |=
                     AGC_DYNAMIC_STATE_DEPTH_BIAS_BIT;
             if (dynamic_line_width)
@@ -4030,7 +4080,8 @@ vkDestroySampler(VkDevice device, VkSampler sampler,
 {
     VkPs5Sampler *object = (VkPs5Sampler *)sampler;
     if (object && object->native_sampler)
-        (void)agcDestroySampler(object->native_sampler);
+        vk_ps5_destroy_or_defer_native(device, VK_PS5_NATIVE_SAMPLER,
+            object->native_sampler);
     if (object) vk_ps5_device_free(device, pAllocator, object);
 }
 static const VkDescriptorSetLayoutBinding *descriptor_layout_binding(
@@ -4933,8 +4984,18 @@ static VkResult native_prepare_buffer_range(VkPs5CommandBuffer *command,
         transition.buffer_size = size;
         result = agcCmdTransitionResources(
             command->native_graphics_command_buffer, 1u, &transition);
-        if (result != AGC_OK)
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: prepared buffer transition failed "
+                "result=0x%08x offset=%llu size=%llu buffer_size=%llu "
+                "before=%u/%u after=%u/%u\n",
+                (unsigned)result, (unsigned long long)offset,
+                (unsigned long long)size,
+                (unsigned long long)buffer->size,
+                transition.before, transition.before_owner,
+                transition.after, transition.after_owner);
             return native_command_result(result);
+        }
     }
     if (!native_record_buffer_usage(command, buffer,
             offset == 0u && size == buffer->size ? after :
@@ -5124,8 +5185,20 @@ static VkResult native_transition_whole_image(
     transition.image = image->native_image;
     int32_t result = agcCmdTransitionResources(
         command->native_graphics_command_buffer, 1u, &transition);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: whole image transition failed result=0x%08x "
+            "before=%u/%u after=%u/%u aspect=0x%x mip=%u+%u "
+            "layer=%u+%u format=%u\n",
+            (unsigned)result, transition.before, transition.before_owner,
+            transition.after, transition.after_owner,
+            transition.image_range.aspect_mask,
+            transition.image_range.base_mip_level,
+            transition.image_range.mip_level_count,
+            transition.image_range.base_array_layer,
+            transition.image_range.array_layer_count, image->format);
         return native_command_result(result);
+    }
     if (!native_record_image_usage(command, image, after))
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     return VK_SUCCESS;
@@ -5215,6 +5288,14 @@ static VkResult native_clear_color_attachment(
     if (result == AGC_OK)
         result = agcCmdFillBuffer(command->native_graphics_command_buffer,
             image->native_clear_buffer, 0u, clear_size, value);
+    if (result == AGC_OK) {
+        transition.before = kAgcResourceUsageCopyDestination;
+        transition.after = kAgcResourceUsageCopySource;
+        transition.before_owner = kAgcResourceOwnerGraphics;
+        transition.after_owner = kAgcResourceOwnerGraphics;
+        result = agcCmdTransitionResources(
+            command->native_graphics_command_buffer, 1u, &transition);
+    }
     if (result != AGC_OK)
         return native_command_result(result);
     return native_transition_whole_image(command, image,
@@ -5499,6 +5580,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkBuffer d,
                        uint32_t n, const VkBufferImageCopy *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdCopyImageToBuffer");
     VkPs5Image *source = (VkPs5Image *)s;
     VkPs5Buffer *destination = (VkPs5Buffer *)d;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -5625,6 +5707,7 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
                      uint32_t bn, const VkBufferMemoryBarrier *b, uint32_t in,
                      const VkImageMemoryBarrier *i) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdPipelineBarrier");
     IGNORE(s);
     IGNORE(d);
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -5764,8 +5847,30 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         transition.buffer = buffer->native_buffer;
         transition.buffer_offset = barrier->offset;
         transition.buffer_size = size;
-        result = agcCmdTransitionResources(
-            command->native_graphics_command_buffer, 1u, &transition);
+        /* Access-only Vulkan barriers frequently restate the range's current
+         * state.  They still establish an execution dependency, but require
+         * no OpenAGC resource transition; in particular, undefined ranges
+         * cannot be represented as undefined-to-undefined transitions. */
+        result = AGC_OK;
+        if (transition.before != transition.after ||
+            transition.before_owner != transition.after_owner) {
+            result = agcCmdTransitionResources(
+                command->native_graphics_command_buffer, 1u, &transition);
+        }
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: buffer barrier transition failed "
+                "result=0x%08x src_access=0x%x dst_access=0x%x "
+                "offset=%llu size=%llu buffer_size=%llu "
+                "before=%u/%u after=%u/%u\n",
+                (unsigned)result, barrier->srcAccessMask,
+                barrier->dstAccessMask,
+                (unsigned long long)barrier->offset,
+                (unsigned long long)size,
+                (unsigned long long)buffer->size,
+                transition.before, transition.before_owner,
+                transition.after, transition.after_owner);
+        }
         AgcResourceUsage tracked_after = barrier->offset == 0u &&
             size == buffer->size ? effective_after :
             kAgcResourceUsageUndefined;
@@ -5800,8 +5905,28 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         transition.image = image->native_image;
         (void)native_image_range(image, &barrier->subresourceRange,
                                  &transition.image_range);
-        int32_t result = agcCmdTransitionResources(
-            command->native_graphics_command_buffer, 1u, &transition);
+        int32_t result = AGC_OK;
+        if (transition.before != transition.after ||
+            transition.before_owner != transition.after_owner) {
+            result = agcCmdTransitionResources(
+                command->native_graphics_command_buffer, 1u, &transition);
+        }
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: image barrier transition failed "
+                "result=0x%08x old_layout=%u new_layout=%u "
+                "src_access=0x%x dst_access=0x%x before=%u/%u "
+                "after=%u/%u aspect=0x%x mip=%u+%u layer=%u+%u\n",
+                (unsigned)result, barrier->oldLayout, barrier->newLayout,
+                barrier->srcAccessMask, barrier->dstAccessMask,
+                transition.before, transition.before_owner,
+                transition.after, transition.after_owner,
+                transition.image_range.aspect_mask,
+                transition.image_range.base_mip_level,
+                transition.image_range.mip_level_count,
+                transition.image_range.base_array_layer,
+                transition.image_range.array_layer_count);
+        }
         AgcResourceUsage tracked_after = native_image_range_is_whole(
             image, &transition.image_range) ? effective_after :
             kAgcResourceUsageUndefined;
@@ -5903,6 +6028,7 @@ vkCmdExecuteCommands(VkCommandBuffer c, uint32_t n, const VkCommandBuffer *p) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindPipeline");
     VkPs5Pipeline *pipeline = (VkPs5Pipeline *)p;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         !pipeline || pipeline->bind_point != b) {
@@ -5939,7 +6065,8 @@ vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
                 native_result = agcCmdSetLineWidth(
                     command->native_graphics_command_buffer,
                     command->dynamic_line_width);
-            if (native_result == AGC_OK && pipeline->depth_bias_dynamic &&
+            if (native_result == AGC_OK && pipeline->depth_bias_enable &&
+                pipeline->depth_bias_dynamic &&
                 command->dynamic_depth_bias_set) {
                 AgcDepthBias depth_bias = AGC_DEPTH_BIAS_INIT;
                 depth_bias.constant_factor =
@@ -5979,6 +6106,7 @@ vkCmdBindDescriptorSets(VkCommandBuffer c, VkPipelineBindPoint b, VkPipelineLayo
                         uint32_t f, uint32_t n, const VkDescriptorSet *s,
                         uint32_t dn, const uint32_t *d) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindDescriptorSets");
     IGNORE(l); IGNORE(d);
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         (n && !s) || f > OPENAGC_PSBC_MAX_DESCRIPTOR_SETS ||
@@ -6059,8 +6187,14 @@ static VkResult native_replay_push_constants(
                     command->native_graphics_command_buffer, stage_bit,
                     range->offset, range->size,
                     command->push_constant_data[stage] + range->offset);
-                if (result != AGC_OK)
+                if (result != AGC_OK) {
+                    fprintf(stderr,
+                        "vulkan-ps5: agcCmdPushConstants failed "
+                        "stage=%u offset=%u size=%u result=0x%x\n",
+                        stage, range->offset, range->size,
+                        (unsigned int)result);
                     return native_command_result(result);
+                }
             }
         }
     }
@@ -6167,8 +6301,24 @@ static VkResult prepare_native_compute_descriptors(
     if (write_count) {
         int32_t result = agcCmdBindDescriptors(
             command->native_graphics_command_buffer, write_count, writes);
-        if (result != AGC_OK)
+        if (result != AGC_OK) {
+            AgcDebugMessage debug_message = AGC_DEBUG_MESSAGE_INIT;
+            int32_t debug_result = agcGetLastDebugMessage(
+                vk_ps5_native_device(command->device), &debug_message);
+            fprintf(stderr,
+                "vulkan-ps5: agcCmdBindDescriptors failed result=0x%x "
+                "writes=%u%s%s\n",
+                (unsigned int)result, write_count,
+                debug_result == AGC_OK ? ": " : "",
+                debug_result == AGC_OK ? debug_message.message : "");
+            for (uint32_t i = 0u; i < write_count; ++i)
+                fprintf(stderr,
+                    "vulkan-ps5: descriptor write[%u] set=%u binding=%u "
+                    "array=%u type=%u\n", i, writes[i].set,
+                    writes[i].binding, writes[i].array_element,
+                    writes[i].type);
             return native_command_result(result);
+        }
         command->native_descriptor_bind_count++;
     }
     *ready = true;
@@ -6278,6 +6428,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
                    uint32_t o, uint32_t n, const void *v) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdPushConstants");
     VkPs5PipelineLayout *layout = (VkPs5PipelineLayout *)l;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
@@ -6314,6 +6465,15 @@ vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
     if (stages & VK_SHADER_STAGE_COMPUTE_BIT)
         stage_mask |= (1u << kAgcShaderStageCs);
     uint64_t written = native_push_constant_mask(o, n);
+#ifdef __PROSPERO__
+    const uint32_t *words = (const uint32_t *)v;
+    fprintf(stderr,
+        "vulkan-ps5: vkCmdPushConstants stages=0x%x native=0x%x "
+        "offset=%u size=%u words=%08x,%08x,%08x,%08x\n",
+        s, stage_mask, o, n, n >= 4u ? words[0] : 0u,
+        n >= 8u ? words[1] : 0u, n >= 12u ? words[2] : 0u,
+        n >= 16u ? words[3] : 0u);
+#endif
     for (uint32_t stage = 0u; stage < kAgcShaderStageCount; ++stage) {
         if ((stage_mask & (1u << stage)) != 0u) {
             memcpy(command->push_constant_data[stage] + o, v, n);
@@ -6324,6 +6484,7 @@ vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetViewport");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -6348,6 +6509,7 @@ vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v)
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetScissor");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -6372,6 +6534,7 @@ vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetLineWidth(VkCommandBuffer c, float w) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetLineWidth");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -6393,6 +6556,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
                   float clamp, float slopeFactor) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetDepthBias");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -6403,6 +6567,7 @@ vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
     };
     command->dynamic_depth_bias_set = VK_TRUE;
     if (command->bound_graphics &&
+        command->bound_graphics->depth_bias_enable &&
         command->bound_graphics->depth_bias_dynamic &&
         command->native_bound_graphics ==
             command->bound_graphics->native_graphics_pipeline) {
@@ -6418,6 +6583,7 @@ vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetBlendConstants");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING || !v ||
         command->record_error != VK_SUCCESS)
         return;
@@ -6445,6 +6611,7 @@ vkCmdSetStencilWriteMask(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t m) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetStencilReference(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetStencilReference");
     const VkStencilFaceFlags known = VK_STENCIL_FACE_FRONT_BIT |
                                      VK_STENCIL_FACE_BACK_BIT;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -6526,6 +6693,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindVertexBuffers(VkCommandBuffer c, uint32_t f, uint32_t n,
                        const VkBuffer *b, const VkDeviceSize *o) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindVertexBuffers");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         f > VK_PS5_MAX_VERTEX_BINDINGS ||
         n > VK_PS5_MAX_VERTEX_BINDINGS - f || (n && (!b || !o))) {
@@ -6551,17 +6719,25 @@ vkCmdBindVertexBuffers2(VkCommandBuffer c, uint32_t f, uint32_t n,
                         const VkDeviceSize *sizes,
                         const VkDeviceSize *strides) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindVertexBuffers2");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
     /* Dynamic vertex strides belong to VK_EXT_extended_dynamic_state, which
      * is not advertised until every command in that contract is native. */
     if (strides) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdBindVertexBuffers2 rejected dynamic strides "
+            "first=%u count=%u\n", f, n);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
     if (f > VK_PS5_MAX_VERTEX_BINDINGS ||
         n > VK_PS5_MAX_VERTEX_BINDINGS - f || (n && (!b || !o))) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdBindVertexBuffers2 rejected arguments "
+            "first=%u count=%u buffers=%u offsets=%u\n",
+            f, n, b != NULL, o != NULL);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -6570,6 +6746,14 @@ vkCmdBindVertexBuffers2(VkCommandBuffer c, uint32_t f, uint32_t n,
         if (!buffer || !buffer->memory ||
             !(buffer->usage & VK_BUFFER_USAGE_VERTEX_BUFFER_BIT) ||
             o[i] >= buffer->size) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdBindVertexBuffers2 rejected binding=%u "
+                "buffer=%u memory=%u usage=0x%x offset=%llu size=%llu\n",
+                f + i, buffer != NULL,
+                buffer && buffer->memory != NULL,
+                buffer ? buffer->usage : 0u,
+                (unsigned long long)o[i],
+                (unsigned long long)(buffer ? buffer->size : 0u));
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
@@ -6577,6 +6761,11 @@ vkCmdBindVertexBuffers2(VkCommandBuffer c, uint32_t f, uint32_t n,
             VkDeviceSize resolved_size = sizes[i] == VK_WHOLE_SIZE ?
                 buffer->size - o[i] : sizes[i];
             if (!resolved_size || resolved_size > buffer->size - o[i]) {
+                fprintf(stderr,
+                    "vulkan-ps5: vkCmdBindVertexBuffers2 rejected "
+                    "binding=%u range=%llu available=%llu\n",
+                    f + i, (unsigned long long)resolved_size,
+                    (unsigned long long)(buffer->size - o[i]));
                 command->record_error = VK_ERROR_INITIALIZATION_FAILED;
                 return;
             }
@@ -6607,10 +6796,18 @@ static VkResult native_bind_graphics_attachments(
         VkPs5ImageView *view = attachment < framebuffer->attachment_count ?
             framebuffer->attachments[attachment] : NULL;
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+        AgcResourceUsage usage = image ?
+            native_image_recorded_usage(command, image) :
+            kAgcResourceUsageUndefined;
         if (!image || !image->native_image ||
-            native_image_recorded_usage(command, image) !=
-                kAgcResourceUsageColorTarget)
+            usage != kAgcResourceUsageColorTarget) {
+            fprintf(stderr,
+                "vulkan-ps5: color attachment not renderable slot=%u "
+                "attachment=%u image=%u native=%u usage=%u\n",
+                slot, attachment, image != NULL,
+                image && image->native_image != NULL, usage);
             return VK_ERROR_INITIALIZATION_FAILED;
+        }
         targets[slot] = (AgcColorTargetBinding)
             AGC_COLOR_TARGET_BINDING_INIT;
         targets[slot].image = image->native_image;
@@ -6618,8 +6815,36 @@ static VkResult native_bind_graphics_attachments(
     }
     int32_t result = agcCmdBindColorTargets(
         command->native_graphics_command_buffer, color_count, targets);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        AgcDebugMessage debug_message = AGC_DEBUG_MESSAGE_INIT;
+        int32_t debug_result = agcGetLastDebugMessage(
+            vk_ps5_native_device(command->device), &debug_message);
+        fprintf(stderr,
+            "vulkan-ps5: agcCmdBindColorTargets failed result=0x%x "
+            "count=%u binding_size=%u binding_version=%u "
+            "binding_flags=%u binding_reserved0=%u binding_reserved=%llu "
+            "image_usage=0x%x image_format=%u image_depth=%u%s%s\n",
+            (unsigned int)result, color_count, targets[0].struct_size,
+            targets[0].version, targets[0].flags, targets[0].reserved0,
+            (unsigned long long)(targets[0].reserved[0] |
+                targets[0].reserved[1] | targets[0].reserved[2] |
+                targets[0].reserved[3]),
+            color_count ? ((VkPs5Image *)
+                ((VkPs5ImageView *)framebuffer->attachments[
+                    render_pass->subpasses[subpass].color_attachments[0]])->
+                        image)->native_desc.usage : 0u,
+            color_count ? ((VkPs5Image *)
+                ((VkPs5ImageView *)framebuffer->attachments[
+                    render_pass->subpasses[subpass].color_attachments[0]])->
+                        image)->native_desc.format : 0u,
+            color_count ? ((VkPs5Image *)
+                ((VkPs5ImageView *)framebuffer->attachments[
+                    render_pass->subpasses[subpass].color_attachments[0]])->
+                        image)->native_desc.depth : 0u,
+            debug_result == AGC_OK ? " message=" : "",
+            debug_result == AGC_OK ? debug_message.message : "");
         return native_command_result(result);
+    }
     uint32_t depth_attachment = render_pass->subpasses[subpass].
         depth_stencil_attachment;
     if (depth_attachment != VK_ATTACHMENT_UNUSED) {
@@ -6631,16 +6856,25 @@ static VkResult native_bind_graphics_attachments(
             kAgcResourceUsageUndefined;
         if (!image || !image->native_image ||
             (usage != kAgcResourceUsageDepthStencilRead &&
-             usage != kAgcResourceUsageDepthStencilWrite))
+             usage != kAgcResourceUsageDepthStencilWrite)) {
+            fprintf(stderr,
+                "vulkan-ps5: depth attachment not renderable attachment=%u "
+                "image=%u native=%u usage=%u\n", depth_attachment,
+                image != NULL, image && image->native_image != NULL, usage);
             return VK_ERROR_INITIALIZATION_FAILED;
+        }
         AgcDepthStencilTargetBinding target =
             AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
         target.image = image->native_image;
         target.array_layer = view->base_array_layer;
         result = agcCmdBindDepthStencilTarget(
             command->native_graphics_command_buffer, &target);
-        if (result != AGC_OK)
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: agcCmdBindDepthStencilTarget failed "
+                "result=0x%x\n", (unsigned int)result);
             return native_command_result(result);
+        }
     }
     command->native_attachments_render_pass = render_pass;
     command->native_attachments_framebuffer = framebuffer;
@@ -6703,8 +6937,12 @@ static VkResult native_bind_graphics_descriptors(
                 return VK_ERROR_FEATURE_NOT_PRESENT;
             VkPs5DescriptorSet *set =
                 command->graphics_sets[mapping->set];
-            if (!set)
+            if (!set) {
+                fprintf(stderr,
+                    "vulkan-ps5: draw descriptor set %u is not bound "
+                    "for binding %u\n", mapping->set, mapping->binding);
                 return VK_ERROR_INITIALIZATION_FAILED;
+            }
             for (uint32_t array = 0u; array < array_size; ++array) {
                 VkDescriptorType layout_type;
                 VkPs5DescriptorValue *value = descriptor_value(
@@ -6713,8 +6951,17 @@ static VkResult native_bind_graphics_descriptors(
                 AgcDescriptorWrite *write = &writes[write_count];
                 if (!value || !value->valid ||
                     !psbc_descriptor_type(layout_type, &psbc_type) ||
-                    psbc_type != mapping->type)
+                    psbc_type != mapping->type) {
+                    fprintf(stderr,
+                        "vulkan-ps5: draw descriptor invalid set=%u "
+                        "binding=%u array=%u value=%u valid=%u "
+                        "layout_type=%u reflected_type=%u\n",
+                        mapping->set, mapping->binding, array,
+                        value != NULL, value ? value->valid : 0u,
+                        value ? (unsigned int)layout_type : UINT32_MAX,
+                        mapping->type);
                     return VK_ERROR_INITIALIZATION_FAILED;
+                }
                 *write = (AgcDescriptorWrite)AGC_DESCRIPTOR_WRITE_INIT;
                 write->set = mapping->set;
                 write->binding = mapping->binding;
@@ -6729,20 +6976,43 @@ static VkResult native_bind_graphics_descriptors(
                     uint64_t range;
                     AgcResourceUsage usage;
                     if (!buffer) {
-                        if (!vk_ps5_device_null_descriptor(command->device))
+                        if (!vk_ps5_device_null_descriptor(command->device)) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw null buffer descriptor "
+                                "rejected set=%u binding=%u array=%u\n",
+                                mapping->set, mapping->binding, array);
                             return VK_ERROR_INITIALIZATION_FAILED;
+                        }
                         write_count++;
                         continue;
                     }
                     if (!buffer->native_buffer ||
-                        value->buffer.offset > buffer->size)
+                        value->buffer.offset > buffer->size) {
+                        fprintf(stderr,
+                            "vulkan-ps5: draw buffer descriptor range base "
+                            "invalid set=%u binding=%u native=%u "
+                            "offset=%llu size=%llu\n",
+                            mapping->set, mapping->binding,
+                            buffer->native_buffer != NULL,
+                            (unsigned long long)value->buffer.offset,
+                            (unsigned long long)buffer->size);
                         return VK_ERROR_INITIALIZATION_FAILED;
+                    }
                     range = value->buffer.range == VK_WHOLE_SIZE ?
                         buffer->size - value->buffer.offset :
                         value->buffer.range;
                     if (!range ||
-                        range > buffer->size - value->buffer.offset)
+                        range > buffer->size - value->buffer.offset) {
+                        fprintf(stderr,
+                            "vulkan-ps5: draw buffer descriptor range "
+                            "invalid set=%u binding=%u range=%llu "
+                            "available=%llu\n",
+                            mapping->set, mapping->binding,
+                            (unsigned long long)range,
+                            (unsigned long long)(buffer->size -
+                                value->buffer.offset));
                         return VK_ERROR_INITIALIZATION_FAILED;
+                    }
                     usage = native_buffer_recorded_usage(command, buffer);
                     if (usage != kAgcResourceUsageShaderRead &&
                         !(mapping->type ==
@@ -6757,13 +7027,23 @@ static VkResult native_bind_graphics_descriptors(
                     VkPs5Sampler *sampler =
                         (VkPs5Sampler *)value->image.sampler;
                     if (!sampler) {
-                        if (!vk_ps5_device_null_descriptor(command->device))
+                        if (!vk_ps5_device_null_descriptor(command->device)) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw null sampler descriptor "
+                                "rejected set=%u binding=%u array=%u\n",
+                                mapping->set, mapping->binding, array);
                             return VK_ERROR_INITIALIZATION_FAILED;
+                        }
                         write_count++;
                         continue;
                     }
-                    if (!sampler->native_sampler)
+                    if (!sampler->native_sampler) {
+                        fprintf(stderr,
+                            "vulkan-ps5: draw sampler descriptor has no "
+                            "native object set=%u binding=%u array=%u\n",
+                            mapping->set, mapping->binding, array);
                         return VK_ERROR_INITIALIZATION_FAILED;
+                    }
                     write->sampler = sampler->native_sampler;
                 } else if (mapping->type ==
                                OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER ||
@@ -6782,10 +7062,23 @@ static VkResult native_bind_graphics_descriptors(
                         kAgcResourceUsageUndefined;
                     if (view) {
                         VkResult view_result = ensure_native_image_view(view);
-                        if (view_result != VK_SUCCESS)
+                        if (view_result != VK_SUCCESS) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw image-view realization "
+                                "failed set=%u binding=%u array=%u "
+                                "format=%u result=%d\n",
+                                mapping->set, mapping->binding, array,
+                                view->format, view_result);
                             return view_result;
-                        if (!view->native_view)
+                        }
+                        if (!view->native_view) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw image view has no native "
+                                "object set=%u binding=%u array=%u format=%u\n",
+                                mapping->set, mapping->binding, array,
+                                view->format);
                             return VK_ERROR_INITIALIZATION_FAILED;
+                        }
                         if (usage != kAgcResourceUsageShaderRead &&
                             !(mapping->type ==
                                   OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
@@ -6794,19 +7087,33 @@ static VkResult native_bind_graphics_descriptors(
                         write->image_view = view->native_view;
                     } else if (!vk_ps5_device_null_descriptor(
                                    command->device)) {
+                        fprintf(stderr,
+                            "vulkan-ps5: draw null image descriptor rejected "
+                            "set=%u binding=%u array=%u\n",
+                            mapping->set, mapping->binding, array);
                         return VK_ERROR_INITIALIZATION_FAILED;
                     }
                     if (mapping->type ==
                         OPENAGC_PSBC_DESCRIPTOR_COMBINED_IMAGE_SAMPLER) {
                         VkPs5Sampler *sampler =
                             (VkPs5Sampler *)value->image.sampler;
-                        if (sampler && !sampler->native_sampler)
+                        if (sampler && !sampler->native_sampler) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw sampler has no native "
+                                "object set=%u binding=%u array=%u\n",
+                                mapping->set, mapping->binding, array);
                             return VK_ERROR_INITIALIZATION_FAILED;
+                        }
                         if (sampler)
                             write->sampler = sampler->native_sampler;
                         else if (!vk_ps5_device_null_descriptor(
-                                     command->device))
+                                     command->device)) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw null sampler rejected "
+                                "set=%u binding=%u array=%u\n",
+                                mapping->set, mapping->binding, array);
                             return VK_ERROR_INITIALIZATION_FAILED;
+                        }
                     }
                 } else {
                     return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -6854,11 +7161,24 @@ static VkResult native_bind_graphics_vertex_buffers(
         if ((pipeline->vertex_binding_mask & (1u << binding)) == 0u)
             continue;
         VkPs5Buffer *buffer = command->vertex_buffers[binding];
-        if (!buffer || !buffer->native_buffer)
+        if (!buffer || !buffer->native_buffer) {
+            fprintf(stderr,
+                "vulkan-ps5: draw missing vertex binding=%u required_mask=0x%x\n",
+                binding, pipeline->vertex_binding_mask);
             return VK_ERROR_INITIALIZATION_FAILED;
+        }
         if (native_buffer_recorded_usage(command, buffer) !=
-                kAgcResourceUsageShaderRead)
-            return VK_SUCCESS;
+                kAgcResourceUsageShaderRead) {
+            VkResult prepare = native_prepare_buffer_range(command, buffer,
+                0u, buffer->size, kAgcResourceUsageShaderRead);
+            if (prepare != VK_SUCCESS) {
+                fprintf(stderr,
+                    "vulkan-ps5: draw vertex binding=%u transition failed "
+                    "result=%d required_mask=0x%x\n",
+                    binding, prepare, pipeline->vertex_binding_mask);
+                return prepare;
+            }
+        }
         bindings[binding_count] = (AgcVertexBufferBinding)
             AGC_VERTEX_BUFFER_BINDING_INIT;
         bindings[binding_count].binding = binding;
@@ -6871,8 +7191,14 @@ static VkResult native_bind_graphics_vertex_buffers(
         int32_t result = agcCmdBindVertexBuffers(
             command->native_graphics_command_buffer,
             binding_count, bindings);
-        if (result != AGC_OK)
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: agcCmdBindVertexBuffers failed result=0x%x "
+                "count=%u required_mask=0x%x\n",
+                (unsigned int)result, binding_count,
+                pipeline->vertex_binding_mask);
             return native_command_result(result);
+        }
     }
     command->native_vertex_graphics_pipeline =
         pipeline->native_graphics_pipeline;
@@ -6936,10 +7262,19 @@ static void record_graphics_draw(
         pipeline->stage_types[2] == OPENAGC_PSBC_STAGE_FRAGMENT;
     if (!pipeline || !command->active_render_pass ||
         (!baseline && !tessellation) || !element_count || !instance_count) {
+        fprintf(stderr,
+            "vulkan-ps5: draw rejected pipeline=%u render_pass=%u "
+            "stages=%u baseline=%u tessellation=%u elements=%u instances=%u\n",
+            pipeline != NULL, command->active_render_pass != NULL,
+            pipeline ? pipeline->stage_count : 0u, baseline, tessellation,
+            element_count, instance_count);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
     if (pipeline->dynamic_rendering != command->active_dynamic_rendering) {
+        fprintf(stderr,
+            "vulkan-ps5: draw dynamic-rendering mismatch pipeline=%u active=%u\n",
+            pipeline->dynamic_rendering, command->active_dynamic_rendering);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -6980,12 +7315,20 @@ static void record_graphics_draw(
     VkResult viewport_result = resolve_viewport_state(
         command, pipeline, &native_viewport_state);
     if (viewport_result != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: draw viewport resolution failed result=%d\n",
+            viewport_result);
         command->record_error = viewport_result;
         return;
     }
     if (!pipeline->native_graphics_pipeline ||
         command->native_bound_graphics !=
             pipeline->native_graphics_pipeline) {
+        fprintf(stderr,
+            "vulkan-ps5: draw native pipeline not bound native=%u match=%u\n",
+            pipeline->native_graphics_pipeline != NULL,
+            command->native_bound_graphics ==
+                pipeline->native_graphics_pipeline);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -6993,28 +7336,55 @@ static void record_graphics_draw(
     bool descriptors_ready;
     bool vertex_buffers_ready;
     VkResult native_result = native_replay_push_constants(command, pipeline);
-    if (native_result == VK_SUCCESS)
+    if (native_result != VK_SUCCESS)
+        fprintf(stderr,
+            "vulkan-ps5: draw push-constant replay failed result=%d\n",
+            native_result);
+    if (native_result == VK_SUCCESS) {
         native_result = native_bind_graphics_descriptors(
             command, pipeline, &descriptors_ready);
-    else
+        if (native_result != VK_SUCCESS)
+            fprintf(stderr,
+                "vulkan-ps5: draw descriptor preparation failed result=%d\n",
+                native_result);
+    } else {
         descriptors_ready = false;
+    }
     if (native_result == VK_SUCCESS && descriptors_ready)
         native_result = native_bind_graphics_vertex_buffers(
             command, pipeline, &vertex_buffers_ready);
     else
         vertex_buffers_ready = false;
     if (native_result == VK_SUCCESS && descriptors_ready &&
-        vertex_buffers_ready)
+        vertex_buffers_ready) {
         native_result = native_bind_graphics_attachments(command);
+        if (native_result != VK_SUCCESS)
+            fprintf(stderr,
+                "vulkan-ps5: draw attachment preparation failed result=%d\n",
+                native_result);
+    }
     if (native_result == VK_SUCCESS && descriptors_ready &&
-        vertex_buffers_ready)
+        vertex_buffers_ready) {
         native_result = native_bind_graphics_viewport_state(
             command, &native_viewport_state);
+        if (native_result != VK_SUCCESS)
+            fprintf(stderr,
+                "vulkan-ps5: draw viewport emission failed result=%d\n",
+                native_result);
+    }
     if (native_result != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: draw native preparation failed result=%d "
+            "descriptors=%u vertex_buffers=%u\n",
+            native_result, descriptors_ready, vertex_buffers_ready);
         command->record_error = native_result;
         return;
     }
     if (!descriptors_ready || !vertex_buffers_ready) {
+        fprintf(stderr,
+            "vulkan-ps5: draw bindings not ready descriptors=%u "
+            "vertex_buffers=%u\n",
+            descriptors_ready, vertex_buffers_ready);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -7047,6 +7417,9 @@ static void record_graphics_draw(
             element_count, instance_count, first_element, first_instance);
     }
     if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: native draw failed indexed=%u result=0x%x\n",
+            indexed, (unsigned int)result);
         command->record_error = native_command_result(result);
         return;
     }
@@ -7055,6 +7428,7 @@ static void record_graphics_draw(
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
+    debug_note_command((VkPs5CommandBuffer *)c, "vkCmdDraw");
     record_graphics_draw((VkPs5CommandBuffer *)c, v, i, fv, 0, fi, false);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -7243,6 +7617,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
 {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBeginRendering");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -7596,6 +7971,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdEndRendering(VkCommandBuffer c)
 {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdEndRendering");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;

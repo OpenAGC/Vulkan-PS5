@@ -358,25 +358,30 @@ RGBA8/BGRA8 formats used by the gate. Mesa's readback image also requires the
 mutable `R8G8B8A8`/`A8B8G8R8_PACK32` UNORM/SRGB compatibility class, which is
 now advertised and accepted. The 46-test generic suite remains the gate.
 
-Hardware qualification is still open. An incorrect constant-source DMA clear
-timed out the graphics queue and was removed. OpenAGC now uses the established
-seven-dword immediate-source `DMA_DATA` form with bounded chunking; its packet
-and capacity behavior are host-tested but the corrected encoder is not yet
-hardware-qualified. The following launch observed a user-process abort while
-the endpoint was still recovering, not a kernel panic. Reboot FW 5.50 before
-retrying the guarded readback run. Do not record a passing hash until the
-rebuilt candidate completes readback, visible presentation, teardown, and
-immediate relaunch.
+The clean-reboot investigation exposed and closed three final defects. The
+native runtime had inverted the ES/LS launch program and GS/HS continuation
+program, BGRA8-UNORM sampled views lacked the already-qualified RGBA SQ encoding
+plus R/B swap, and the aliased dynamic-rendering clear buffer lacked an
+explicit copy-write release before image consumption. Vulkan object wrappers
+may also be destroyed while completed executable command buffers retain their
+native objects, so the ICD now defers buffers, images, views, samplers,
+pipelines, shaders, and memory until command recycling and collects them in
+dependency order. A generic regression proves that deferred native count
+returns to zero after pool reset.
 
-The clean-reboot retry advanced through Zink geometry and fragment compilation
-and exposed a null `vkCmdBindVertexBuffers2` dispatch. The fault registers
-matched that command's seven-argument ABI exactly; Vulkan-PS5 had only exposed
-the original `vkCmdBindVertexBuffers`. The ICD now provides the core and EXT
-proc names, validates Zink's null optional size/stride form, and fails closed on
-dynamic strides because the complete extended-dynamic-state contract is not
-advertised yet. All 46 generic tests and all 46 ASan/UBSan tests pass. The next
-guarded hardware attempt did not upload or launch because the rebooted console
-answered ICMP but WebSrv/FTP ports 8080/2121 were not running.
+The diagnostic-free final candidate passes all 46 generic tests and the
+Prospero shared-ICD verifier (`204` exports; only `RELATIVE`, `GLOB_DAT`, and
+`JUMP_SLOT` relocations). Two consecutive cleanup-guarded FW 5.500.008 runs at
+`20260801T032341Z` and `20260801T032359Z` returned renderer `zink Vulkan 1.2`,
+exact RGBA `64,128,191,255`, visible presentation, no native lifetime error,
+normal self-exit, and immediate relaunch without reboot. Final tested hashes:
+
+- `testps5zink`: `95da10acf89da3e35865890874034b8bffef1c563417309a0e4bb98404540ad9`
+- `libvulkan_ps5.so`: `f2f2a176d0dc4dcb14942471af41d9fa6eebdeaba134084a52de280932b71f52`
+- `libEGL.so.1.0.0`: `0d2922b30b3dbbe25f060331043bb4a4732272d0813023568381306528913fc1`
+- `libgallium-26.3.0-devel.so`: `9da905ef314e3362631406b1d85e013071b7fc80661cb663c7c40920d23eef85`
+
+FW 11.60 qualification remains deferred until that endpoint is available.
 
 ## Milestone 6: multiple viewports (2026-07-29)
 
