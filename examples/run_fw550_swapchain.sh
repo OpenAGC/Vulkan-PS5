@@ -11,9 +11,12 @@ websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-60}
 klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
-elf="$build_dir/vulkan_ps5_swapchain_example.elf"
+elf=${VULKAN_PS5_QUALIFICATION_ELF:-$build_dir/vulkan_ps5_swapchain_example.elf}
 cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
-remote_name=vulkan_ps5_swapchain
+remote_name=${VULKAN_PS5_QUALIFICATION_REMOTE_NAME:-vulkan_ps5_swapchain}
+qualification_label=${VULKAN_PS5_QUALIFICATION_LABEL:-swapchain}
+pass_pattern=${VULKAN_PS5_QUALIFICATION_PASS_PATTERN:-'^swapchain: PASS 1800 frames$'}
+pass_description=${VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION:-'1800 frames'}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 
@@ -23,6 +26,23 @@ if [ ! -f "$elf" ]; then
 fi
 if [ ! -f "$cleanup_elf" ]; then
     echo "missing Prospero cleanup prerequisite: $cleanup_elf" >&2
+    exit 2
+fi
+case "$remote_name" in
+    ''|*[!A-Za-z0-9_-]*)
+        echo "qualification remote name must use A-Z, a-z, 0-9, _, or -" >&2
+        exit 2
+        ;;
+esac
+case "$qualification_label" in
+    ''|*[!A-Za-z0-9_-]*)
+        echo "qualification label must use A-Z, a-z, 0-9, _, or -" >&2
+        exit 2
+        ;;
+esac
+if [ -z "$pass_pattern" ] || [ "${#pass_pattern}" -gt 256 ] ||
+   [ -z "$pass_description" ] || [ "${#pass_description}" -gt 128 ]; then
+    echo "qualification PASS pattern or description is empty or oversized" >&2
     exit 2
 fi
 case "$klog_port" in
@@ -175,7 +195,7 @@ if ! capture_klog; then
     exit 1
 fi
 sed -n '1,200p' "$log"
-if ! grep -E '^swapchain: PASS 1800 frames$' "$log" >/dev/null; then
+if ! grep -E "$pass_pattern" "$log" >/dev/null; then
     failed_pid=$(latest_eboot_pid "$klog")
     if [ -n "$failed_pid" ]; then
         kill_stale_process "$failed_pid" || true
@@ -246,6 +266,6 @@ fi
 if [ "$baseline_warning_count" -eq 1 ]; then
     echo "FW550 swapchain: accepted proven raw-ELF baseline warning amount=0x4000"
 fi
-echo "FW550 swapchain: PASS (1800 frames, clean exit and klog)"
+echo "FW550 ${qualification_label}: PASS (${pass_description}, clean exit and klog)"
 echo "log: $log"
 echo "klog: $target_klog"

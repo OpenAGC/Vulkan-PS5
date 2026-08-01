@@ -492,6 +492,26 @@ swapchain lock across the VSYNC wait.
 PS5_HOST=10.0.1.41 examples/run_fw550_swapchain.sh
 ```
 
+The same gate can qualify an external Vulkan application without weakening
+its cleanup or log checks. Override the ELF, remote directory, display label,
+anchored PASS expression, and human-readable workload description; continue
+to pin the application bytes with `VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256`:
+
+```sh
+PS5_HOST=10.0.1.41 \
+VULKAN_PS5_QUALIFICATION_ELF=../eden-ps5/build-prospero/src/ps5/eden-ps5-vulkan-bootstrap.elf \
+VULKAN_PS5_QUALIFICATION_REMOTE_NAME=eden_ps5_vulkan_bootstrap \
+VULKAN_PS5_QUALIFICATION_LABEL=eden \
+VULKAN_PS5_QUALIFICATION_PASS_PATTERN='^eden-ps5-bootstrap: PASS 600 frames$' \
+VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION='600 frames and compute oracle' \
+VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256=<pinned-sha256> \
+examples/run_fw550_swapchain.sh
+```
+
+Remote names and labels are restricted to alphanumerics, `_`, and `-`; empty
+or oversized PASS controls fail before cleanup or upload. The runner safety
+test covers both the default swapchain artifact and this external-app form.
+
 The runner never retries automatically and requires the process-cleanup ELF
 immediately before launch. It takes a bounded post-run klog
 snapshot, scopes it to the new eboot PID, rejects fatal signals, app crashes,

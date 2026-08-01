@@ -102,6 +102,32 @@ grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
 grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
     "$test_root/clean.out" >/dev/null
 
+: >"$test_root/build/eden-bootstrap.elf"
+if ! (
+    VULKAN_PS5_QUALIFICATION_ELF="$test_root/build/eden-bootstrap.elf" \
+        VULKAN_PS5_QUALIFICATION_REMOTE_NAME=eden_ps5_bootstrap \
+        VULKAN_PS5_QUALIFICATION_LABEL=eden \
+        VULKAN_PS5_QUALIFICATION_PASS_PATTERN='^swapchain: PASS 1800 frames$' \
+        VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION='600 frames and compute oracle' \
+        run_runner clean "$test_root/external.out" "$test_root/external-logs"
+); then
+    cat "$test_root/external.out" >&2
+    exit 1
+fi
+grep -F 'FW550 eden: PASS (600 frames and compute oracle, clean exit and klog)' \
+    "$test_root/external.out" >/dev/null
+
+if (
+    VULKAN_PS5_QUALIFICATION_REMOTE_NAME='../unsafe' \
+        run_runner clean "$test_root/unsafe-name.out" \
+        "$test_root/unsafe-name-logs"
+); then
+    echo "unsafe qualification remote name unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'qualification remote name must use' \
+    "$test_root/unsafe-name.out" >/dev/null
+
 if FAKE_EXPECTED_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
     run_runner clean "$test_root/wrong-hash.out" \
     "$test_root/wrong-hash-logs"; then
