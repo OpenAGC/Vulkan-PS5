@@ -367,6 +367,16 @@ established raw-ELF `amount=0x4000` warning. Evidence is in
 `examples/qualification-logs/20260801T131758Z-swapchain-run1.log` and its
 matching target klog.
 
+The WSI contract was replayed again after the Eden format and attachment
+qualification series at Vulkan-PS5 revision `e78b64eaf8`. ELF
+`049b5ad984083518dfe8d69d13c45db63dc995e82d3ad705401e7b9458a08d5c`
+passed all 1,800 frames, bounded waits, teardown, exact-PID absence, scoped
+kernel-log validation, and immediate websrv recovery on FW 5.500.008. A
+post-run FTP download reproduced the local SHA-256 exactly. The guarded runner
+now requires pinned local and remote hashes for both the workload and cleanup
+ELFs before launch; its fail-closed test covers a wrong workload hash. See
+`analysis/fw550_swapchain_regression_20260802.md`.
+
 The completed Eden profile and all hardware-qualified Vulkan features remain
 supported by the current implementation. Migration must not silently drop an
 advertised feature. Conversely, a native OpenAGC capability is not advertised

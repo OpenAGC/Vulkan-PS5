@@ -14,6 +14,8 @@ pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug
 elf="$build_dir/vulkan_ps5_swapchain_example.elf"
 cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
 remote_name=vulkan_ps5_swapchain
+expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
+expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero sample: $elf" >&2
@@ -35,14 +37,53 @@ case "$klog_settle_delay" in
         exit 2
         ;;
 esac
-if ! command -v nc >/dev/null 2>&1; then
-    echo "nc is required for the bounded kernel-log gate" >&2
+if ! command -v nc >/dev/null 2>&1 || \
+   ! command -v shasum >/dev/null 2>&1; then
+    echo "nc and shasum are required for the bounded qualification gate" >&2
     exit 2
 fi
 if ! command -v uv >/dev/null 2>&1 || [ ! -d "$pyps4debug_dir" ]; then
     echo "ps5debug-NG/PyPS4debug is required for the process-exit gate" >&2
     exit 2
 fi
+
+verify_local_sha256() {
+    file=$1
+    expected=$2
+    label=$3
+    if [ -z "$expected" ]; then
+        echo "$label expected SHA-256 is required" >&2
+        return 1
+    fi
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+    if [ "$actual" != "$expected" ]; then
+        echo "$label SHA-256 mismatch: expected=$expected actual=$actual" >&2
+        return 1
+    fi
+}
+
+verify_remote_sha256() {
+    remote_url=$1
+    expected=$2
+    label=$3
+    downloaded=$(mktemp "${TMPDIR:-/tmp}/vulkan-ps5-upload.XXXXXX")
+    if ! curl -sS --connect-timeout 3 --max-time 30 \
+        -o "$downloaded" "$remote_url"; then
+        rm -f "$downloaded"
+        echo "$label remote SHA-256 download failed" >&2
+        return 1
+    fi
+    actual=$(shasum -a 256 "$downloaded" | awk '{print $1}')
+    rm -f "$downloaded"
+    if [ "$actual" != "$expected" ]; then
+        echo "$label remote SHA-256 mismatch: expected=$expected actual=$actual" >&2
+        return 1
+    fi
+}
+
+verify_local_sha256 "$elf" "$expected_sha256" 'swapchain ELF'
+verify_local_sha256 "$cleanup_elf" "$expected_cleanup_sha256" \
+    'cleanup prerequisite'
 if ! curl -sS --connect-timeout 3 --max-time 5 \
     "http://${PS5_HOST}:8080/" >/dev/null; then
     echo "FW 5.50 websrv is unreachable at ${PS5_HOST}:8080" >&2
@@ -55,6 +96,9 @@ curl -sS --connect-timeout 3 --max-time 30 \
     >/dev/null 2>&1 || true
 curl -sS --connect-timeout 3 --max-time 30 -T "$cleanup_elf" \
     "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" >/dev/null
+verify_remote_sha256 \
+    "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" \
+    "$expected_cleanup_sha256" 'cleanup prerequisite'
 curl -sS --connect-timeout 3 --max-time 10 \
     "http://${PS5_HOST}:8080/hbldr?pipe=0&daemon=1&path=${cleanup_dir}/eboot.elf" \
     >/dev/null
@@ -99,8 +143,19 @@ capture_klog() {
 }
 
 echo "FW550 swapchain run 1/1"
-if ! VULKAN_PS5_WEBSRV_TIMEOUT="$websrv_timeout" \
-    "$script_dir/deploy_websrv.sh" "$elf" "$remote_name" >"$log" 2>&1; then
+remote_dir="/data/homebrew/$remote_name"
+if ! {
+    curl -sS --connect-timeout 3 --max-time 30 \
+        "ftp://${PS5_HOST}:2121/" --quote "MKD $remote_dir" \
+        >/dev/null 2>&1 || true
+    curl -sS --connect-timeout 3 --max-time 30 -T "$elf" \
+        "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf" >/dev/null
+    verify_remote_sha256 \
+        "ftp://${PS5_HOST}:2121${remote_dir}/eboot.elf" \
+        "$expected_sha256" 'swapchain ELF'
+    curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
+        "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
+} >"$log" 2>&1; then
     capture_klog || true
     if [ -s "$klog" ]; then
         failed_pid=$(latest_eboot_pid "$klog")

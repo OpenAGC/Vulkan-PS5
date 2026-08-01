@@ -12,8 +12,16 @@ mkdir -p "$test_root/bin" "$test_root/build" "$test_root/pyps4debug"
 
 cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/sh
+output=
+take_output=0
 for arg do
+    if [ "$take_output" = 1 ]; then
+        output=$arg
+        take_output=0
+        continue
+    fi
     case "$arg" in
+        -o) take_output=1 ;;
         */hbldr*)
             printf '%s\n' \
                 'swapchain: 1800/1800 frames' \
@@ -23,6 +31,7 @@ for arg do
             ;;
     esac
 done
+[ -z "$output" ] || : >"$output"
 EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
@@ -79,6 +88,8 @@ run_runner() {
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_KLOG_MODE="$mode" \
+    VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256="${FAKE_EXPECTED_SHA256:-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}" \
+    VULKAN_PS5_CLEANUP_EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
         sh "$runner" >"$output" 2>&1
 }
 
@@ -90,6 +101,15 @@ grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
     "$test_root/clean.out" >/dev/null
 grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
     "$test_root/clean.out" >/dev/null
+
+if FAKE_EXPECTED_SHA256=0000000000000000000000000000000000000000000000000000000000000000 \
+    run_runner clean "$test_root/wrong-hash.out" \
+    "$test_root/wrong-hash-logs"; then
+    echo "wrong swapchain ELF hash unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'swapchain ELF SHA-256 mismatch' "$test_root/wrong-hash.out" >/dev/null
+unset FAKE_EXPECTED_SHA256
 
 mv "$test_root/build/vulkan_ps5_process_cleanup.elf" \
     "$test_root/build/vulkan_ps5_process_cleanup.elf.missing"
