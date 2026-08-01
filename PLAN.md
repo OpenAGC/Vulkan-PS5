@@ -797,8 +797,11 @@ ordering.
   slice now passes exact clear/readback twice on FW 5.50 with bounded waits and
   immediate relaunch. The following API 48 slice adds fourteen R/RG
   scalar/vector normalized and integer forms and now passes its expanded
-  eighteen-format exact clear/readback gate twice on FW 5.50; qualify shader
-  sampling/storage and scalar/vector attachment exports next.
+  eighteen-format exact clear/readback gate twice on FW 5.50. API 49 then
+  adds exact R8/RG8 SNORM, UINT, and SINT mappings and corrects R8/RG8 UNORM
+  storage creation; its expanded 26-format, 1,664-pixel gate passes twice on
+  FW 5.50. Qualify shader sampling/storage and scalar/vector attachment
+  exports next.
   Integer shader execution and the final identical FW 11.60 replay remain
   before endpoint qualification.
 - `vertexPipelineStoresAndAtomics` is hardware-qualified through one combined

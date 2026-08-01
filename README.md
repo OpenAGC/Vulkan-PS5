@@ -114,12 +114,12 @@ or TRANSFER_DST layouts using only public OpenAGC APIs. Regenerate the embedded
 SPIR-V with `tools/regenerate_meta_shaders.sh`; `--check` verifies committed
 bytes. Compressed and depth/stencil formats are rejected by this color path.
 
-The Eden-required RGBA16/32 signed and unsigned integer images expose sampled,
-storage, color-attachment, and transfer use without unsupported filtering,
-blit, or texel-buffer claims. They are included in the expanded bounded FW
-5.50 gate, which creates all eighteen newly added native views, clears and
-reads back 1,152 exact component patterns, tears down, and immediately
-relaunches the identical ELF. Run it with
+The Eden-required scalar/vector normalized and integer images expose sampled,
+storage, color-attachment, and transfer use with filtering and blit restricted
+to normalized classes. They are included in the expanded bounded FW 5.50
+gate, which creates 26 native views, clears and reads back 1,664 exact
+component patterns, tears down, and immediately relaunches the identical ELF.
+Run it with
 `PS5_HOST=10.0.1.41 VULKAN_PS5_LIVE_KLOG=1
 examples/run_fw550_integer_formats.sh`. Shader sampling/storage and integer
 attachment exports remain separate hardware gates.
@@ -133,6 +133,14 @@ exports, image/view creation, and clear packing. The expanded bounded FW 5.50
 probe passes all eighteen new formats and 1,152 exact clear/readback pixels
 twice with immediate relaunch. Shader sampling/storage and attachment exports
 remain the next qualification gates.
+
+OpenAGC API 49 adds exact native R8/RG8 SNORM, UINT, and SINT layouts,
+descriptors, color targets, and pipeline compatibility. Vulkan advertises
+their numeric-class-appropriate sampled, storage, attachment, transfer,
+filter, and blit features, and also corrects the pre-existing R8/RG8 UNORM
+storage-image creation gap. The pinned FW 5.50 probe passed all eight R8/RG8
+forms twice with exact bits as part of its 26-format oracle. See
+`analysis/fw550_r8_rg8_formats_20260801.md`.
 
 `vkCmdClearAttachments` and render-pass/dynamic-rendering `loadOp=CLEAR`
 share an application-neutral graphics-meta path. It supports arbitrary

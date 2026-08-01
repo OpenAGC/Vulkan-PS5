@@ -157,7 +157,13 @@ static VkMemoryPropertyFlags ps5_memory_flags(
 static int ps5_color_format(VkFormat format) {
     switch (format) {
     case VK_FORMAT_R8_UNORM: return AGC_GFX1013_RT_FORMAT_R8_UNORM;
+    case VK_FORMAT_R8_SNORM: return AGC_GFX1013_RT_FORMAT_R8_SNORM;
+    case VK_FORMAT_R8_UINT: return AGC_GFX1013_RT_FORMAT_R8_UINT;
+    case VK_FORMAT_R8_SINT: return AGC_GFX1013_RT_FORMAT_R8_SINT;
     case VK_FORMAT_R8G8_UNORM: return AGC_GFX1013_RT_FORMAT_RG8_UNORM;
+    case VK_FORMAT_R8G8_SNORM: return AGC_GFX1013_RT_FORMAT_RG8_SNORM;
+    case VK_FORMAT_R8G8_UINT: return AGC_GFX1013_RT_FORMAT_RG8_UINT;
+    case VK_FORMAT_R8G8_SINT: return AGC_GFX1013_RT_FORMAT_RG8_SINT;
     case VK_FORMAT_R8G8B8A8_UNORM: return AGC_GFX1013_RT_FORMAT_RGBA8_UNORM;
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32: return AGC_GFX1013_RT_FORMAT_RGBA8_UNORM;
     case VK_FORMAT_B8G8R8A8_UNORM: return AGC_GFX1013_RT_FORMAT_BGRA8_UNORM;
@@ -1163,6 +1169,12 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         break;
     case VK_FORMAT_R8_UNORM:
     case VK_FORMAT_R8G8_UNORM:
+        pFormatProperties->linearTilingFeatures = storage_color;
+        pFormatProperties->optimalTilingFeatures = storage_color;
+        pFormatProperties->bufferFeatures =
+            VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT |
+            VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
+        break;
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
     case VK_FORMAT_B8G8R8A8_UNORM:
     case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
@@ -1181,6 +1193,8 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         break;
     case VK_FORMAT_R16_UNORM:
     case VK_FORMAT_R16_SNORM:
+    case VK_FORMAT_R8_SNORM:
+    case VK_FORMAT_R8G8_SNORM:
     case VK_FORMAT_R16G16_UNORM:
     case VK_FORMAT_R16G16_SNORM:
     case VK_FORMAT_R16G16B16A16_UNORM:
@@ -1196,6 +1210,10 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
         break;
     case VK_FORMAT_R16G16B16A16_UINT:
     case VK_FORMAT_R16G16B16A16_SINT:
+    case VK_FORMAT_R8_UINT:
+    case VK_FORMAT_R8_SINT:
+    case VK_FORMAT_R8G8_UINT:
+    case VK_FORMAT_R8G8_SINT:
     case VK_FORMAT_R16_UINT:
     case VK_FORMAT_R16_SINT:
     case VK_FORMAT_R16G16_UINT:

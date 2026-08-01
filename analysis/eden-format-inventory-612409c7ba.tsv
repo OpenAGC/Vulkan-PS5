@@ -1,6 +1,6 @@
 # Frozen from Eden source revision 612409c7ba.
 # Source: src/video_core/renderer_vulkan/maxwell_to_vk.cpp SURFACE_FORMAT_LIST
-# State is evaluated against Vulkan-PS5 native_image_format after the API 48 scalar/vector format slice.
+# State is evaluated against Vulkan-PS5 native_image_format after the API 49 R8/RG8 format slice.
 eden_pixel_format	vk_format	eden_usage	vulkan_ps5_state
 A8B8G8R8_UNORM	VK_FORMAT_A8B8G8R8_UNORM_PACK32	usage_attachable | usage_storage	direct
 A8B8G8R8_SNORM	VK_FORMAT_A8B8G8R8_SNORM_PACK32	usage_attachable | usage_storage	gap_uncompressed
@@ -15,9 +15,9 @@ A2R10G10B10_UNORM	VK_FORMAT_A2R10G10B10_UNORM_PACK32	usage_attachable	gap_uncomp
 A1B5G5R5_UNORM	VK_FORMAT_A1R5G5B5_UNORM_PACK16	usage_attachable	gap_uncompressed
 A5B5G5R1_UNORM	VK_FORMAT_R5G5B5A1_UNORM_PACK16	0	gap_uncompressed
 R8_UNORM	VK_FORMAT_R8_UNORM	usage_attachable | usage_storage	direct
-R8_SNORM	VK_FORMAT_R8_SNORM	usage_attachable | usage_storage	gap_uncompressed
-R8_SINT	VK_FORMAT_R8_SINT	usage_attachable | usage_storage	gap_uncompressed
-R8_UINT	VK_FORMAT_R8_UINT	usage_attachable | usage_storage	gap_uncompressed
+R8_SNORM	VK_FORMAT_R8_SNORM	usage_attachable | usage_storage	direct
+R8_SINT	VK_FORMAT_R8_SINT	usage_attachable | usage_storage	direct
+R8_UINT	VK_FORMAT_R8_UINT	usage_attachable | usage_storage	direct
 R16G16B16A16_FLOAT	VK_FORMAT_R16G16B16A16_SFLOAT	usage_attachable | usage_storage	direct
 R16G16B16A16_UNORM	VK_FORMAT_R16G16B16A16_UNORM	usage_attachable | usage_storage	direct
 R16G16B16A16_SNORM	VK_FORMAT_R16G16B16A16_SNORM	usage_attachable | usage_storage	direct
@@ -55,9 +55,9 @@ R16G16_SNORM	VK_FORMAT_R16G16_SNORM	usage_attachable | usage_storage	direct
 R32G32B32_FLOAT	VK_FORMAT_R32G32B32_SFLOAT	0	gap_uncompressed
 A8B8G8R8_SRGB	VK_FORMAT_A8B8G8R8_SRGB_PACK32	usage_attachable	direct
 R8G8_UNORM	VK_FORMAT_R8G8_UNORM	usage_attachable | usage_storage	direct
-R8G8_SNORM	VK_FORMAT_R8G8_SNORM	usage_attachable | usage_storage	gap_uncompressed
-R8G8_SINT	VK_FORMAT_R8G8_SINT	usage_attachable | usage_storage	gap_uncompressed
-R8G8_UINT	VK_FORMAT_R8G8_UINT	usage_attachable | usage_storage	gap_uncompressed
+R8G8_SNORM	VK_FORMAT_R8G8_SNORM	usage_attachable | usage_storage	direct
+R8G8_SINT	VK_FORMAT_R8G8_SINT	usage_attachable | usage_storage	direct
+R8G8_UINT	VK_FORMAT_R8G8_UINT	usage_attachable | usage_storage	direct
 R32G32_UINT	VK_FORMAT_R32G32_UINT	usage_attachable | usage_storage	direct
 R16G16B16X16_FLOAT	VK_FORMAT_R16G16B16A16_SFLOAT	usage_attachable | usage_storage	direct
 R32_UINT	VK_FORMAT_R32_UINT	usage_attachable | usage_storage	direct

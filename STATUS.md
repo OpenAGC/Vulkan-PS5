@@ -368,12 +368,12 @@ below are the implementation and qualification ledger.
 
 The Eden `612409c7ba` format audit is now revision-frozen rather than
 approximate: 112 guest rows map to 109 unique Vulkan formats. The committed
-inventory classifies 50 direct formats after adding the first RGBA16/32
-integer group and the API 48 R/RG scalar/vector group, with 19 remaining
-uncompressed gaps, 28 ASTC plus 10 ETC2/EAC transcode-required forms, and two
-fail-closed D24 forms. The four RGBA integer formats expose sampled, storage,
-color-attachment, and transfer use without unsupported filtering, blit, or
-texel-buffer claims. Exact format queries, image/view creation, signed and
+inventory classifies 56 unique direct formats after adding the API 49 R8/RG8
+group, with 13 remaining unique uncompressed gaps, 28 ASTC plus 10 ETC2/EAC
+transcode-required forms, and two fail-closed D24 forms. The four RGBA integer
+formats expose sampled, storage, color-attachment, and transfer use without
+unsupported filtering, blit, or texel-buffer claims. Exact format queries,
+image/view creation, signed and
 unsigned clear packing, the frozen capability snapshot, both 50/50 host
 suites, and the Prospero build pass. A dedicated linear-image gate then
 created native views for all four formats, cleared and read back all 256 exact
@@ -400,6 +400,18 @@ immediate relaunch. Its SHA-256 is
 `ec8527214b1681525ec7eb92ab5c24f4f05dfa1fbe027c1f9781415f0853a827`;
 see `analysis/fw550_scalar_vector_formats_20260801.md`. Shader sampling,
 storage-image operations, attachment exports, and FW 11.60 remain pending.
+
+OpenAGC API 49 and Vulkan now directly map R8/RG8 SNORM, UINT, and SINT with
+exact native layouts, sampled descriptors, color-target classes, clear
+packing, and storage-image creation. R8/RG8 UNORM storage-image creation was
+also corrected to match its already committed Eden classification. The frozen
+capability baseline, 55/55 normal tests, 55/55 ASAN/UBSAN tests, and full
+Prospero build pass. Pinned ELF
+`73783127fb59f8a31e6c5cdc7500d5d45da5b78ce3d694cd767d92dd72b9f3ed`
+passed twice on FW 5.500.008 with all 26 formats and 1,664 pixels bit-exact,
+bounded waits, cleanup-first execution, clean teardown, PID absence, and
+immediate relaunch. See `analysis/fw550_r8_rg8_formats_20260801.md`; shader
+sampling/storage and attachment-export gates remain pending.
 
 The BC slice now has a real shader-execution gate rather than format-query-only
 coverage. Compute descriptor preparation realizes Vulkan samplers, combined

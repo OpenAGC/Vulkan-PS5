@@ -134,7 +134,13 @@ typedef struct VkPs5Image {
 static bool native_image_format(VkFormat format, AgcFormat *native) {
     switch (format) {
     case VK_FORMAT_R8_UNORM: *native = AGC_FORMAT_R8_UNORM; return true;
+    case VK_FORMAT_R8_SNORM: *native = AGC_FORMAT_R8_SNORM; return true;
+    case VK_FORMAT_R8_UINT: *native = AGC_FORMAT_R8_UINT; return true;
+    case VK_FORMAT_R8_SINT: *native = AGC_FORMAT_R8_SINT; return true;
     case VK_FORMAT_R8G8_UNORM: *native = AGC_FORMAT_RG8_UNORM; return true;
+    case VK_FORMAT_R8G8_SNORM: *native = AGC_FORMAT_RG8_SNORM; return true;
+    case VK_FORMAT_R8G8_UINT: *native = AGC_FORMAT_RG8_UINT; return true;
+    case VK_FORMAT_R8G8_SINT: *native = AGC_FORMAT_RG8_SINT; return true;
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
         *native = AGC_FORMAT_RGBA8_UNORM; return true;
@@ -269,7 +275,11 @@ static bool native_image_storage_supported(VkFormat format,
 {
     if (format == VK_FORMAT_R8G8B8A8_UNORM)
         return tiling == VK_IMAGE_TILING_LINEAR;
-    return format == VK_FORMAT_R16G16B16A16_UINT ||
+    return format == VK_FORMAT_R8_UNORM || format == VK_FORMAT_R8_SNORM ||
+        format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R8_SINT ||
+        format == VK_FORMAT_R8G8_UNORM || format == VK_FORMAT_R8G8_SNORM ||
+        format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R8G8_SINT ||
+        format == VK_FORMAT_R16G16B16A16_UINT ||
         format == VK_FORMAT_R16G16B16A16_SINT ||
         format == VK_FORMAT_R32G32B32A32_UINT ||
         format == VK_FORMAT_R32G32B32A32_SINT ||
@@ -1265,8 +1275,12 @@ vkGetDeviceMemoryOpaqueCaptureAddress(
 
 static uint32_t format_bytes(VkFormat format) {
     switch (format) {
-    case VK_FORMAT_R8_UNORM: case VK_FORMAT_S8_UINT: return 1;
-    case VK_FORMAT_R8G8_UNORM: case VK_FORMAT_R16_SFLOAT:
+    case VK_FORMAT_R8_UNORM: case VK_FORMAT_R8_SNORM:
+    case VK_FORMAT_R8_UINT: case VK_FORMAT_R8_SINT:
+    case VK_FORMAT_S8_UINT: return 1;
+    case VK_FORMAT_R8G8_UNORM: case VK_FORMAT_R8G8_SNORM:
+    case VK_FORMAT_R8G8_UINT: case VK_FORMAT_R8G8_SINT:
+    case VK_FORMAT_R16_SFLOAT:
     case VK_FORMAT_R16_UNORM: case VK_FORMAT_R16_SNORM:
     case VK_FORMAT_R16_UINT: case VK_FORMAT_R16_SINT:
     case VK_FORMAT_D16_UNORM: return 2;
@@ -1303,8 +1317,20 @@ static bool color_target_format(
     switch (format) {
     case VK_FORMAT_R8_UNORM:
         *target_format = AGC_GFX1013_RT_FORMAT_R8_UNORM; break;
+    case VK_FORMAT_R8_SNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_R8_SNORM; break;
+    case VK_FORMAT_R8_UINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_R8_UINT; break;
+    case VK_FORMAT_R8_SINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_R8_SINT; break;
     case VK_FORMAT_R8G8_UNORM:
         *target_format = AGC_GFX1013_RT_FORMAT_RG8_UNORM; break;
+    case VK_FORMAT_R8G8_SNORM:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG8_SNORM; break;
+    case VK_FORMAT_R8G8_UINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG8_UINT; break;
+    case VK_FORMAT_R8G8_SINT:
+        *target_format = AGC_GFX1013_RT_FORMAT_RG8_SINT; break;
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
         *target_format = AGC_GFX1013_RT_FORMAT_RGBA8_UNORM; break;
@@ -6197,6 +6223,18 @@ static uint32_t native_snorm16(float value)
     return (uint32_t)rounded & 0xffffu;
 }
 
+static uint32_t native_snorm8(float value)
+{
+    if (value <= -1.0f)
+        return 0x80u;
+    if (value >= 1.0f)
+        return 0x7fu;
+    const float scaled = value * 127.0f;
+    const int32_t rounded = (int32_t)(scaled +
+        (scaled < 0.0f ? -0.5f : 0.5f));
+    return (uint32_t)rounded & 0xffu;
+}
+
 static bool native_pack_rgba8_clear(VkFormat format,
                                     const VkClearColorValue *clear,
                                     uint32_t *value_out)
@@ -6241,6 +6279,19 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
         pattern[0] = red * 0x01010101u;
         break;
     }
+    case VK_FORMAT_R8_SNORM: {
+        const uint32_t red = native_snorm8(clear->float32[0]);
+        pattern[0] = red * 0x01010101u;
+        break;
+    }
+    case VK_FORMAT_R8_UINT:
+        packed = clear->uint32[0] & 0xffu;
+        pattern[0] = packed * 0x01010101u;
+        break;
+    case VK_FORMAT_R8_SINT:
+        packed = (uint32_t)clear->int32[0] & 0xffu;
+        pattern[0] = packed * 0x01010101u;
+        break;
     case VK_FORMAT_R8G8_UNORM: {
         const uint32_t red = native_unorm8(clear->float32[0]);
         const uint32_t green = native_unorm8(clear->float32[1]);
@@ -6248,6 +6299,23 @@ VkBool32 vk_ps5_pack_clear_color(VkFormat format,
             (red << 16u) | (green << 24u);
         break;
     }
+    case VK_FORMAT_R8G8_SNORM: {
+        const uint32_t red = native_snorm8(clear->float32[0]);
+        const uint32_t green = native_snorm8(clear->float32[1]);
+        pattern[0] = red | (green << 8u) |
+            (red << 16u) | (green << 24u);
+        break;
+    }
+    case VK_FORMAT_R8G8_UINT:
+        packed = (clear->uint32[0] & 0xffu) |
+            ((clear->uint32[1] & 0xffu) << 8u);
+        pattern[0] = packed | (packed << 16u);
+        break;
+    case VK_FORMAT_R8G8_SINT:
+        packed = ((uint32_t)clear->int32[0] & 0xffu) |
+            (((uint32_t)clear->int32[1] & 0xffu) << 8u);
+        pattern[0] = packed | (packed << 16u);
+        break;
     case VK_FORMAT_R8G8B8A8_UNORM:
     case VK_FORMAT_R8G8B8A8_SRGB:
     case VK_FORMAT_A8B8G8R8_UNORM_PACK32:

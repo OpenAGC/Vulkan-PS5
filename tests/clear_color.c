@@ -41,6 +41,12 @@ static void test_clear_pattern_packing(void)
         VK_FORMAT_R8G8_UNORM, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xff80ff80u);
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8_SNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x40404040u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8G8_SNORM, &clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x7f407f40u);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R8G8B8A8_UNORM, &clear, pattern, &words));
     assert(words == 1u && pattern[0] == 0xff00ff80u);
     assert(vk_ps5_pack_clear_color(
@@ -87,6 +93,12 @@ static void test_clear_pattern_packing(void)
         .uint32 = {0x1234u, 0xabcdu, 0x5678u, 0x9abcu},
     };
     assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8_UINT, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0x34343434u);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8G8_UINT, &uint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xcd34cd34u);
+    assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_UINT, &uint_clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0xabcd1234u &&
         pattern[1] == 0x9abc5678u);
@@ -110,6 +122,12 @@ static void test_clear_pattern_packing(void)
     const VkClearColorValue sint_clear = {
         .int32 = {-1, -2, 0x1234, -32768},
     };
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8_SINT, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xffffffffu);
+    assert(vk_ps5_pack_clear_color(
+        VK_FORMAT_R8G8_SINT, &sint_clear, pattern, &words));
+    assert(words == 1u && pattern[0] == 0xfefffeffu);
     assert(vk_ps5_pack_clear_color(
         VK_FORMAT_R16G16B16A16_SINT, &sint_clear, pattern, &words));
     assert(words == 2u && pattern[0] == 0xfffeffffu &&
@@ -145,6 +163,14 @@ static void test_integer_color_image_views(void)
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = create_device(instance, &physical);
     const VkFormat formats[] = {
+        VK_FORMAT_R8_UNORM,
+        VK_FORMAT_R8_SNORM,
+        VK_FORMAT_R8_UINT,
+        VK_FORMAT_R8_SINT,
+        VK_FORMAT_R8G8_UNORM,
+        VK_FORMAT_R8G8_SNORM,
+        VK_FORMAT_R8G8_UINT,
+        VK_FORMAT_R8G8_SINT,
         VK_FORMAT_R16_UNORM,
         VK_FORMAT_R16_SNORM,
         VK_FORMAT_R16_UINT,

@@ -9,7 +9,7 @@
 
 #define IMAGE_WIDTH 8u
 #define IMAGE_HEIGHT 8u
-#define FORMAT_COUNT 18u
+#define FORMAT_COUNT 26u
 #define INTEGER_FEATURES (VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | \
     VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
@@ -39,6 +39,46 @@ typedef struct TestImage {
 } TestImage;
 
 static const FormatCase format_cases[FORMAT_COUNT] = {
+    {
+        VK_FORMAT_R8_UNORM, "r8_unorm",
+        {.float32 = {0.25f, 0.0f, 0.0f, 0.0f}},
+        {UINT32_C(0x00000040), 0u, 0u, 0u}, 1u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R8_SNORM, "r8_snorm",
+        {.float32 = {0.5f, 0.0f, 0.0f, 0.0f}},
+        {UINT32_C(0x00000040), 0u, 0u, 0u}, 1u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R8_UINT, "r8_uint",
+        {.uint32 = {0xabu, 0u, 0u, 0u}},
+        {UINT32_C(0x000000ab), 0u, 0u, 0u}, 1u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R8_SINT, "r8_sint",
+        {.int32 = {-2, 0, 0, 0}},
+        {UINT32_C(0x000000fe), 0u, 0u, 0u}, 1u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R8G8_UNORM, "rg8_unorm",
+        {.float32 = {0.25f, 0.75f, 0.0f, 0.0f}},
+        {UINT32_C(0x0000bf40), 0u, 0u, 0u}, 2u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R8G8_SNORM, "rg8_snorm",
+        {.float32 = {0.5f, -0.5f, 0.0f, 0.0f}},
+        {UINT32_C(0x0000c040), 0u, 0u, 0u}, 2u, NORMALIZED_FEATURES,
+    },
+    {
+        VK_FORMAT_R8G8_UINT, "rg8_uint",
+        {.uint32 = {0x34u, 0xcdu, 0u, 0u}},
+        {UINT32_C(0x0000cd34), 0u, 0u, 0u}, 2u, INTEGER_FEATURES,
+    },
+    {
+        VK_FORMAT_R8G8_SINT, "rg8_sint",
+        {.int32 = {-2, 123, 0, 0}},
+        {UINT32_C(0x00007bfe), 0u, 0u, 0u}, 2u, INTEGER_FEATURES,
+    },
     {
         VK_FORMAT_R16_UNORM, "r16_unorm",
         {.float32 = {0.25f, 0.0f, 0.0f, 0.0f}},
@@ -403,7 +443,8 @@ static int run_probe(void)
             }
         }
     }
-    printf("integer_formats: PASS formats=18 pixels=%u exact-bits\n", checked);
+    printf("integer_formats: PASS formats=%u pixels=%u exact-bits\n",
+        FORMAT_COUNT, checked);
 #else
     puts("integer_formats: PASS command recording");
 #endif
