@@ -369,9 +369,11 @@ pipelines, shaders, and memory until command recycling and collects them in
 dependency order. A generic regression proves that deferred native count
 returns to zero after pool reset.
 
-The diagnostic-free final candidate passes all 46 generic tests and the
-Prospero shared-ICD verifier (`204` exports; only `RELATIVE`, `GLOB_DAT`, and
-`JUMP_SLOT` relocations). Two consecutive cleanup-guarded FW 5.500.008 runs at
+The diagnostic-free final candidate passes all 46 generic tests and all 46
+ASan/UBSan tests, including the strict zero-gap Zink profile and package
+relocation gate. The Prospero shared-ICD verifier reports `204` exports and
+only `RELATIVE`, `GLOB_DAT`, and `JUMP_SLOT` relocations. Two consecutive
+cleanup-guarded FW 5.500.008 runs at
 `20260801T032341Z` and `20260801T032359Z` returned renderer `zink Vulkan 1.2`,
 exact RGBA `64,128,191,255`, visible presentation, no native lifetime error,
 normal self-exit, and immediate relaunch without reboot. Final tested hashes:
