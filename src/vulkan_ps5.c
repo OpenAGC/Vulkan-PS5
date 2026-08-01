@@ -67,7 +67,13 @@ static void PS5_SYSV_ABI vk_ps5_native_debug_message(
     void *user_data, const AgcDebugMessage *message)
 {
     (void)user_data;
-    (void)message;
+    if (!message)
+        return;
+    fprintf(stderr,
+        "vulkan-ps5: OpenAGC %s failed: 0x%08x (%s)\n",
+        message->function_name[0] ? message->function_name : "runtime",
+        (unsigned)message->result,
+        message->message[0] ? message->message : "no diagnostic");
 }
 
 static AgcDeviceProperties ps5_capabilities(void) {
@@ -211,6 +217,7 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     AgcFenceDesc fence_desc = AGC_FENCE_DESC_INIT;
     AgcSubmitInfo submit = AGC_SUBMIT_INFO_INIT;
     int32_t result;
+    const char *failure_stage = "create-fence";
 
     if (!queue || !queue->device || !queue->device->native_graphics_queue ||
         !command_buffer_count || !command_buffers)
@@ -226,20 +233,32 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     }
     submit.command_buffer_count = command_buffer_count;
     submit.command_buffers = command_buffers;
+    failure_stage = "submit";
     result = agcQueueSubmit(queue->device->native_graphics_queue,
         &submit, fence);
-    if (result == AGC_OK)
+    if (result == AGC_OK) {
+        failure_stage = "wait";
         result = agcWaitFence(fence, UINT64_C(5000000000));
+    }
     if (result == AGC_OK) {
         (void)agcDestroyFence(queue->present_ready_fence);
         queue->present_ready_fence = fence;
         fence = NULL;
     }
-    if (fence && agcDestroyFence(fence) != AGC_OK && result == AGC_OK)
-        result = AGC_ERROR_INVALID_STATE;
+    if (fence) {
+        int32_t destroy_result = agcDestroyFence(fence);
+        if (destroy_result != AGC_OK && result == AGC_OK) {
+            failure_stage = "destroy-fence";
+            result = destroy_result;
+        }
+    }
     atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
     if (result == AGC_OK)
         return VK_SUCCESS;
+    fprintf(stderr,
+        "vulkan-ps5: native queue %s failed: 0x%08x "
+        "(command_buffers=%u)\n", failure_stage, (unsigned)result,
+        command_buffer_count);
     if (result == AGC_ERROR_OUT_OF_MEMORY)
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     if (result == AGC_ERROR_NOT_SUPPORTED)

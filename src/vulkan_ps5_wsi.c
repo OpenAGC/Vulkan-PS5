@@ -69,18 +69,27 @@ static bool realtime_deadline(uint64_t timeout, struct timespec *deadline) {
 static VkResult enumerate_surface_formats(uint32_t *count,
                                            VkSurfaceFormatKHR *formats) {
     if (!count) return VK_ERROR_INITIALIZATION_FAILED;
-    const VkSurfaceFormatKHR format = {
-        .format = VK_FORMAT_B8G8R8A8_SRGB,
-        .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+    const VkSurfaceFormatKHR available[] = {
+        {
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+        },
+        {
+            .format = VK_FORMAT_B8G8R8A8_UNORM,
+            .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+        },
     };
     if (!formats) {
-        *count = 1;
+        *count = (uint32_t)(sizeof(available) / sizeof(available[0]));
         return VK_SUCCESS;
     }
-    if (*count == 0) return VK_INCOMPLETE;
-    formats[0] = format;
-    *count = 1;
-    return VK_SUCCESS;
+    uint32_t capacity = *count;
+    uint32_t available_count =
+        (uint32_t)(sizeof(available) / sizeof(available[0]));
+    uint32_t written = capacity < available_count ? capacity : available_count;
+    for (uint32_t i = 0; i < written; ++i) formats[i] = available[i];
+    *count = written;
+    return written < available_count ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 static VkResult enumerate_present_modes(uint32_t *count,
@@ -218,7 +227,9 @@ static VkResult validate_swapchain_create_info(
         !info->surface ||
         (info->flags & ~VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR) ||
         info->minImageCount > VK_PS5_SWAPCHAIN_IMAGE_COUNT ||
-        info->minImageCount == 0 || info->imageFormat != VK_FORMAT_B8G8R8A8_SRGB ||
+        info->minImageCount == 0 ||
+        (info->imageFormat != VK_FORMAT_B8G8R8A8_SRGB &&
+         info->imageFormat != VK_FORMAT_B8G8R8A8_UNORM) ||
         info->imageColorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR ||
         info->imageExtent.width != 1920 || info->imageExtent.height != 1080 ||
         info->imageArrayLayers != 1 || !info->imageUsage ||

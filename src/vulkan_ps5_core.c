@@ -251,12 +251,17 @@ VkResult vk_ps5_enable_image_scanout(VkImage image_handle)
         AGC_IMAGE_SUBRESOURCE_LAYOUT_INIT;
     if (!image || image->memory || image->native_image ||
         image->type != VK_IMAGE_TYPE_2D ||
-        image->format != VK_FORMAT_B8G8R8A8_SRGB ||
+        (image->format != VK_FORMAT_B8G8R8A8_SRGB &&
+         image->format != VK_FORMAT_B8G8R8A8_UNORM) ||
         image->extent.width != 1920u || image->extent.height != 1080u ||
         image->extent.depth != 1u || image->mip_levels != 1u ||
         image->array_layers != 1u || image->samples != VK_SAMPLE_COUNT_1_BIT ||
         image->tiling != VK_IMAGE_TILING_LINEAR)
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    /* VideoOut's qualified storage encoding is BGRA8_SRGB. A mutable Vulkan
+     * swapchain may expose an UNORM base/view over the same compatible bytes,
+     * but must not change the native scanout encoding. */
+    image->native_desc.format = AGC_FORMAT_BGRA8_SRGB;
     image->native_desc.usage |= AGC_IMAGE_USAGE_SCANOUT_BIT;
     int32_t result = agcGetImageLayout(vk_ps5_native_device(image->device),
         &image->native_desc, &image->native_layout);
@@ -425,6 +430,8 @@ typedef struct VkPs5Pipeline {
     AgcGfx1013PolygonMode polygon_mode;
     AgcGfx1013PrimitiveSizeState primitive_size;
     VkBool32 line_width_dynamic;
+    VkBool32 blend_constants_dynamic;
+    VkBool32 stencil_reference_dynamic;
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
@@ -549,6 +556,11 @@ typedef struct VkPs5CommandBuffer {
     VkBool32 dynamic_line_width_set;
     AgcGfx1013DepthBiasState dynamic_depth_bias;
     VkBool32 dynamic_depth_bias_set;
+    float dynamic_blend_constants[4];
+    VkBool32 dynamic_blend_constants_set;
+    uint32_t dynamic_stencil_reference_front;
+    uint32_t dynamic_stencil_reference_back;
+    VkBool32 dynamic_stencil_reference_set;
     AgcGfx1013Viewport dynamic_viewports[VK_PS5_MAX_VIEWPORTS];
     AgcGfx1013ScissorState dynamic_scissors[VK_PS5_MAX_VIEWPORTS];
     uint32_t dynamic_viewport_mask;
@@ -2067,6 +2079,8 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->index_buffer = NULL;
     command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
+    command->dynamic_blend_constants_set = VK_FALSE;
+    command->dynamic_stencil_reference_set = VK_FALSE;
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
@@ -2159,6 +2173,8 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->index_buffer = NULL;
     command->dynamic_line_width_set = VK_FALSE;
     command->dynamic_depth_bias_set = VK_FALSE;
+    command->dynamic_blend_constants_set = VK_FALSE;
+    command->dynamic_stencil_reference_set = VK_FALSE;
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
@@ -3069,6 +3085,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             return VK_ERROR_FEATURE_NOT_PRESENT;
         VkBool32 dynamic_depth_bias = VK_FALSE;
         VkBool32 dynamic_line_width = VK_FALSE;
+        VkBool32 dynamic_blend_constants = VK_FALSE;
+        VkBool32 dynamic_stencil_reference = VK_FALSE;
         VkBool32 dynamic_viewport = VK_FALSE;
         VkBool32 dynamic_scissor = VK_FALSE;
         if (create->pDynamicState) {
@@ -3088,6 +3106,16 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     if (dynamic_line_width)
                         return VK_ERROR_FEATURE_NOT_PRESENT;
                     dynamic_line_width = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_BLEND_CONSTANTS:
+                    if (dynamic_blend_constants)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_blend_constants = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
+                    if (dynamic_stencil_reference)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_stencil_reference = VK_TRUE;
                     break;
                 case VK_DYNAMIC_STATE_VIEWPORT:
                     if (dynamic_viewport)
@@ -3432,6 +3460,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             .line_width = dynamic_line_width ? 1.0f : raster->lineWidth,
         };
         pipeline->line_width_dynamic = dynamic_line_width;
+        pipeline->blend_constants_dynamic = dynamic_blend_constants;
+        pipeline->stencil_reference_dynamic = dynamic_stencil_reference;
         pipeline->depth_bias = (AgcGfx1013DepthBiasState){
             .constant_factor = raster->depthBiasConstantFactor,
             .clamp = raster->depthBiasClamp,
@@ -3810,6 +3840,12 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (dynamic_line_width)
                 native_desc.dynamic_state_mask |=
                     AGC_DYNAMIC_STATE_LINE_WIDTH_BIT;
+            if (dynamic_blend_constants)
+                native_desc.dynamic_state_mask |=
+                    AGC_DYNAMIC_STATE_BLEND_CONSTANTS_BIT;
+            if (dynamic_stencil_reference && native_depth.stencil_test_enable)
+                native_desc.dynamic_state_mask |=
+                    AGC_DYNAMIC_STATE_STENCIL_REFERENCE_BIT;
 
             int32_t native_result = native_layout_valid ?
                 agcCreateGraphicsPipeline(vk_ps5_native_device(device),
@@ -5914,6 +5950,20 @@ vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
                 native_result = agcCmdSetDepthBias(
                     command->native_graphics_command_buffer, &depth_bias);
             }
+            if (native_result == AGC_OK &&
+                pipeline->blend_constants_dynamic &&
+                command->dynamic_blend_constants_set)
+                native_result = agcCmdSetBlendConstants(
+                    command->native_graphics_command_buffer,
+                    command->dynamic_blend_constants);
+            if (native_result == AGC_OK &&
+                pipeline->stencil_reference_dynamic &&
+                pipeline->depth_stencil.stencil_test_enable &&
+                command->dynamic_stencil_reference_set)
+                native_result = agcCmdSetStencilReference(
+                    command->native_graphics_command_buffer,
+                    command->dynamic_stencil_reference_front,
+                    command->dynamic_stencil_reference_back);
         }
     } else {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
@@ -6366,7 +6416,22 @@ vkCmdSetDepthBias(VkCommandBuffer c, float constantFactor,
     }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) { IGNORE(c); IGNORE(v); }
+vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING || !v ||
+        command->record_error != VK_SUCCESS)
+        return;
+    memcpy(command->dynamic_blend_constants, v,
+           sizeof(command->dynamic_blend_constants));
+    command->dynamic_blend_constants_set = VK_TRUE;
+    if (command->bound_graphics &&
+        command->bound_graphics->blend_constants_dynamic &&
+        command->native_bound_graphics ==
+            command->bound_graphics->native_graphics_pipeline &&
+        agcCmdSetBlendConstants(command->native_graphics_command_buffer, v) !=
+            AGC_OK)
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetDepthBounds(VkCommandBuffer c, float a, float b) { IGNORE(c); IGNORE(a); IGNORE(b); }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -6379,7 +6444,30 @@ vkCmdSetStencilWriteMask(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t m) {
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetStencilReference(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t r) {
-    IGNORE(c); IGNORE(f); IGNORE(r);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    const VkStencilFaceFlags known = VK_STENCIL_FACE_FRONT_BIT |
+                                     VK_STENCIL_FACE_BACK_BIT;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!(f & known) || (f & ~known)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (f & VK_STENCIL_FACE_FRONT_BIT)
+        command->dynamic_stencil_reference_front = r & 0xffu;
+    if (f & VK_STENCIL_FACE_BACK_BIT)
+        command->dynamic_stencil_reference_back = r & 0xffu;
+    command->dynamic_stencil_reference_set = VK_TRUE;
+    if (command->bound_graphics &&
+        command->bound_graphics->stencil_reference_dynamic &&
+        command->bound_graphics->depth_stencil.stencil_test_enable &&
+        command->native_bound_graphics ==
+            command->bound_graphics->native_graphics_pipeline &&
+        agcCmdSetStencilReference(command->native_graphics_command_buffer,
+            command->dynamic_stencil_reference_front,
+            command->dynamic_stencil_reference_back) != AGC_OK)
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindIndexBuffer(VkCommandBuffer c, VkBuffer b, VkDeviceSize o, VkIndexType t) {

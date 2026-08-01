@@ -92,10 +92,11 @@ int main(void) {
     VkSurfaceCapabilitiesKHR surface_capabilities;
     assert(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
         physical, surface, &surface_capabilities) == VK_SUCCESS);
-    uint32_t surface_format_count = 1;
-    VkSurfaceFormatKHR surface_format;
+    uint32_t surface_format_count = 2;
+    VkSurfaceFormatKHR surface_formats[2];
     assert(vkGetPhysicalDeviceSurfaceFormatsKHR(
-        physical, surface, &surface_format_count, &surface_format) == VK_SUCCESS);
+        physical, surface, &surface_format_count, surface_formats) == VK_SUCCESS);
+    assert(surface_format_count == 2);
 
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queue_info = {
@@ -127,8 +128,8 @@ int main(void) {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
         .minImageCount = surface_capabilities.minImageCount,
-        .imageFormat = surface_format.format,
-        .imageColorSpace = surface_format.colorSpace,
+        .imageFormat = surface_formats[0].format,
+        .imageColorSpace = surface_formats[0].colorSpace,
         .imageExtent = surface_capabilities.currentExtent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,

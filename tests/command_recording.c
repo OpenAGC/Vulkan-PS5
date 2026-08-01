@@ -802,6 +802,22 @@ int main(int argc, char **argv)
                                      &graphics_pipeline) == VK_SUCCESS);
     assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
+    const VkDynamicState zink_core_dynamic_states[] = {
+        VK_DYNAMIC_STATE_DEPTH_BIAS,
+        VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+        VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+    };
+    const VkPipelineDynamicStateCreateInfo zink_core_dynamic_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 3u,
+        .pDynamicStates = zink_core_dynamic_states,
+    };
+    VkGraphicsPipelineCreateInfo zink_core_dynamic_info = graphics_info;
+    zink_core_dynamic_info.pDynamicState = &zink_core_dynamic_state;
+    VkPipeline zink_core_dynamic_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &zink_core_dynamic_info, NULL, &zink_core_dynamic_pipeline) ==
+        VK_SUCCESS);
     const VkFormat dynamic_color_formats[] = {
         VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
     };
@@ -1005,6 +1021,17 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_ERROR_INITIALIZATION_FAILED);
     assert(vk_ps5_command_buffer_native_state(command) ==
            AGC_COMMAND_BUFFER_STATE_INITIAL);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    const float dynamic_blend_constants[4] = {0.125f, 0.25f, 0.5f, 1.0f};
+    vkCmdSetBlendConstants(command, dynamic_blend_constants);
+    vkCmdSetStencilReference(command, VK_STENCIL_FACE_FRONT_AND_BACK,
+                             0x3cu);
+    vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      zink_core_dynamic_pipeline);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdSetLineWidth(command, 0.5f);
@@ -1741,6 +1768,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, logic_pipeline, NULL);
+    vkDestroyPipeline(device, zink_core_dynamic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);

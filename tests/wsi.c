@@ -104,14 +104,22 @@ int main(void) {
     uint32_t format_count = 0;
     CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface,
                                                 &format_count, NULL));
-    VkSurfaceFormatKHR format;
+    VkSurfaceFormatKHR formats[2];
     uint32_t zero = 0;
     if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &zero,
-                                              &format) != VK_INCOMPLETE)
+                                              formats) != VK_INCOMPLETE)
+        return 1;
+    uint32_t one = 1;
+    if (vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &one,
+                                              formats) != VK_INCOMPLETE ||
+        one != 1 || formats[0].format != VK_FORMAT_B8G8R8A8_SRGB)
         return 1;
     CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface,
-                                                &format_count, &format));
-    if (format.format != VK_FORMAT_B8G8R8A8_SRGB) return 1;
+                                                &format_count, formats));
+    if (format_count != 2 ||
+        formats[0].format != VK_FORMAT_B8G8R8A8_SRGB ||
+        formats[1].format != VK_FORMAT_B8G8R8A8_UNORM)
+        return 1;
 
     uint32_t mode_count = 1;
     VkPresentModeKHR mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -177,8 +185,8 @@ if (extension_count > 32) return 1;
         .flags = VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR,
         .surface = surface,
         .minImageCount = 3,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
+        .imageFormat = formats[0].format,
+        .imageColorSpace = formats[0].colorSpace,
         .imageExtent = capabilities.currentExtent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -374,6 +382,24 @@ if (extension_count > 32) return 1;
 
     vkDestroySwapchainKHR(device, swapchain, NULL);
     vkDestroySwapchainKHR(device, replacement, NULL);
+
+    const VkFormat zink_mutable_formats[] = {
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_SRGB,
+    };
+    const VkImageFormatListCreateInfo zink_format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = 2,
+        .pViewFormats = zink_mutable_formats,
+    };
+    swapchain_info.pNext = &zink_format_list;
+    swapchain_info.oldSwapchain = VK_NULL_HANDLE;
+    swapchain_info.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    VkSwapchainKHR zink_swapchain = VK_NULL_HANDLE;
+    CHECK(vkCreateSwapchainKHR(device, &swapchain_info, NULL,
+                               &zink_swapchain));
+    vkDestroySwapchainKHR(device, zink_swapchain, NULL);
+
     vkDestroyCommandPool(device, command_pool, NULL);
     for (uint32_t i = 0; i < 4; ++i)
         vkDestroySemaphore(device, acquire_semaphores[i], NULL);
