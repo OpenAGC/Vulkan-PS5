@@ -702,6 +702,29 @@ int main(int argc, char **argv)
     assert(vkCreateRenderPass(device, &invalid_color_render_pass_info, NULL,
         &invalid_color_render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(invalid_color_render_pass == VK_NULL_HANDLE);
+    VkSubpassDescription unsupported_subpass = subpass;
+    unsupported_subpass.inputAttachmentCount = 1u;
+    unsupported_subpass.pInputAttachments = colors;
+    VkRenderPassCreateInfo unsupported_render_pass_info = render_pass_info;
+    unsupported_render_pass_info.pSubpasses = &unsupported_subpass;
+    VkRenderPass unsupported_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &unsupported_render_pass_info, NULL,
+        &unsupported_render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_render_pass == VK_NULL_HANDLE);
+    unsupported_subpass = subpass;
+    unsupported_subpass.pResolveAttachments = colors;
+    unsupported_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &unsupported_render_pass_info, NULL,
+        &unsupported_render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_render_pass == VK_NULL_HANDLE);
+    const uint32_t preserve_attachment = 0u;
+    unsupported_subpass = subpass;
+    unsupported_subpass.preserveAttachmentCount = 1u;
+    unsupported_subpass.pPreserveAttachments = &preserve_attachment;
+    unsupported_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &unsupported_render_pass_info, NULL,
+        &unsupported_render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(unsupported_render_pass == VK_NULL_HANDLE);
     const VkImageCreateInfo image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -966,6 +989,56 @@ int main(int argc, char **argv)
     VkFramebuffer mutable_clear_framebuffer;
     assert(vkCreateFramebuffer(device, &mutable_clear_framebuffer_info, NULL,
         &mutable_clear_framebuffer) == VK_SUCCESS);
+    VkAttachmentDescription compatible_attachment =
+        mutable_clear_attachment;
+    compatible_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    compatible_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    compatible_attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkAttachmentReference compatible_reference = mutable_clear_reference;
+    compatible_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkSubpassDescription compatible_subpass = mutable_clear_subpass;
+    compatible_subpass.pColorAttachments = &compatible_reference;
+    VkRenderPassCreateInfo compatible_render_pass_info =
+        mutable_clear_render_pass_info;
+    compatible_render_pass_info.pAttachments = &compatible_attachment;
+    compatible_render_pass_info.pSubpasses = &compatible_subpass;
+    VkRenderPass compatible_render_pass;
+    assert(vkCreateRenderPass(device, &compatible_render_pass_info, NULL,
+        &compatible_render_pass) == VK_SUCCESS);
+    VkAttachmentDescription incompatible_format_attachment =
+        mutable_clear_attachment;
+    incompatible_format_attachment.format = VK_FORMAT_R8G8B8A8_UNORM;
+    VkRenderPassCreateInfo incompatible_format_render_pass_info =
+        mutable_clear_render_pass_info;
+    incompatible_format_render_pass_info.pAttachments =
+        &incompatible_format_attachment;
+    VkRenderPass incompatible_format_render_pass;
+    assert(vkCreateRenderPass(device, &incompatible_format_render_pass_info,
+        NULL, &incompatible_format_render_pass) == VK_SUCCESS);
+    VkAttachmentReference incompatible_reference = mutable_clear_reference;
+    incompatible_reference.attachment = VK_ATTACHMENT_UNUSED;
+    VkSubpassDescription incompatible_reference_subpass =
+        mutable_clear_subpass;
+    incompatible_reference_subpass.pColorAttachments =
+        &incompatible_reference;
+    VkRenderPassCreateInfo incompatible_reference_render_pass_info =
+        mutable_clear_render_pass_info;
+    incompatible_reference_render_pass_info.pSubpasses =
+        &incompatible_reference_subpass;
+    VkRenderPass incompatible_reference_render_pass;
+    assert(vkCreateRenderPass(device, &incompatible_reference_render_pass_info,
+        NULL, &incompatible_reference_render_pass) == VK_SUCCESS);
+    VkAttachmentDescription incompatible_flag_attachment =
+        mutable_clear_attachment;
+    incompatible_flag_attachment.flags =
+        VK_ATTACHMENT_DESCRIPTION_MAY_ALIAS_BIT;
+    VkRenderPassCreateInfo incompatible_flag_render_pass_info =
+        mutable_clear_render_pass_info;
+    incompatible_flag_render_pass_info.pAttachments =
+        &incompatible_flag_attachment;
+    VkRenderPass incompatible_flag_render_pass;
+    assert(vkCreateRenderPass(device, &incompatible_flag_render_pass_info,
+        NULL, &incompatible_flag_render_pass) == VK_SUCCESS);
     const VkFormat imageless_color_formats[] = {
         VK_FORMAT_R8G8B8A8_UNORM,
     };
@@ -1448,6 +1521,35 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(command) == 1u);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    VkRenderPassBeginInfo compatible_begin = mutable_clear_begin;
+    compatible_begin.renderPass = compatible_render_pass;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBeginRenderPass(command, &compatible_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    VkRenderPassBeginInfo incompatible_begin = mutable_clear_begin;
+    const VkRenderPass incompatible_render_passes[] = {
+        incompatible_format_render_pass,
+        incompatible_reference_render_pass,
+        incompatible_flag_render_pass,
+    };
+    for (uint32_t incompatible_index = 0u;
+         incompatible_index < sizeof(incompatible_render_passes) /
+             sizeof(incompatible_render_passes[0]); ++incompatible_index) {
+        incompatible_begin.renderPass =
+            incompatible_render_passes[incompatible_index];
+        assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+        vkCmdBeginRenderPass(command, &incompatible_begin,
+                             VK_SUBPASS_CONTENTS_INLINE);
+        assert(vk_ps5_command_buffer_record_error(command) ==
+               VK_ERROR_INITIALIZATION_FAILED);
+        assert(vkEndCommandBuffer(command) ==
+               VK_ERROR_INITIALIZATION_FAILED);
+        assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    }
     const VkBufferCopy buffer_copies[2] = {
         {0u, 0u, 16u},
         {32u, 32u, 16u},
@@ -2586,6 +2688,10 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyFramebuffer(device, imageless_framebuffer, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
     vkDestroyFramebuffer(device, mutable_clear_framebuffer, NULL);
+    vkDestroyRenderPass(device, incompatible_flag_render_pass, NULL);
+    vkDestroyRenderPass(device, incompatible_reference_render_pass, NULL);
+    vkDestroyRenderPass(device, incompatible_format_render_pass, NULL);
+    vkDestroyRenderPass(device, compatible_render_pass, NULL);
     vkDestroyRenderPass(device, mutable_clear_render_pass, NULL);
     vkDestroyImageView(device, mutable_clear_view, NULL);
     vkDestroyImage(device, mutable_clear_image, NULL);

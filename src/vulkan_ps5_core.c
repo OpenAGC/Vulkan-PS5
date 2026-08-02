@@ -524,6 +524,8 @@ typedef struct VkPs5DescriptorUpdateTemplate {
 
 #define VK_PS5_MAX_RENDER_ATTACHMENTS (AGC_GFX1013_MAX_COLOR_TARGETS + 1u)
 #define VK_PS5_MAX_SUBPASSES 8u
+#define VK_PS5_MAX_RENDER_DEPENDENCIES 16u
+#define VK_PS5_MAX_CORRELATION_MASKS 6u
 #define VK_PS5_MAX_VERTEX_BINDINGS 32u
 #define VK_PS5_MAX_VIEWPORTS AGC_GFX1013_MAX_VIEWPORTS
 #define VK_PS5_VERTEX_TABLE_SIZE 0x4000u
@@ -554,12 +556,18 @@ typedef struct VkPs5PipelineLayout {
 } VkPs5PipelineLayout;
 
 typedef struct VkPs5RenderPass {
+    VkRenderPassCreateFlags flags;
     uint32_t attachment_count;
     uint32_t subpass_count;
+    uint32_t dependency_count;
+    uint32_t correlation_mask_count;
     VkAttachmentDescription attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
+    VkSubpassDependency dependencies[VK_PS5_MAX_RENDER_DEPENDENCIES];
+    uint32_t correlation_masks[VK_PS5_MAX_CORRELATION_MASKS];
     VkImageLayout stencil_initial_layouts[VK_PS5_MAX_RENDER_ATTACHMENTS];
     VkImageLayout stencil_final_layouts[VK_PS5_MAX_RENDER_ATTACHMENTS];
     struct {
+        VkSubpassDescriptionFlags flags;
         uint32_t color_attachment_count;
         uint32_t color_attachments[AGC_GFX1013_MAX_COLOR_TARGETS];
         uint32_t depth_stencil_attachment;
@@ -592,6 +600,63 @@ typedef struct VkPs5Framebuffer {
     VkFormat *view_formats;
     VkPs5ImageView *attachments[VK_PS5_MAX_RENDER_ATTACHMENTS];
 } VkPs5Framebuffer;
+
+static VkBool32 render_pass_dependencies_equal(
+    const VkSubpassDependency *a, const VkSubpassDependency *b)
+{
+    return a->srcSubpass == b->srcSubpass &&
+        a->dstSubpass == b->dstSubpass &&
+        a->srcStageMask == b->srcStageMask &&
+        a->dstStageMask == b->dstStageMask &&
+        a->srcAccessMask == b->srcAccessMask &&
+        a->dstAccessMask == b->dstAccessMask &&
+        a->dependencyFlags == b->dependencyFlags;
+}
+
+static VkBool32 render_passes_compatible(const VkPs5RenderPass *a,
+                                         const VkPs5RenderPass *b)
+{
+    if (!a || !b || a->flags != b->flags ||
+        a->attachment_count != b->attachment_count ||
+        a->subpass_count != b->subpass_count ||
+        a->dependency_count != b->dependency_count ||
+        a->correlation_mask_count != b->correlation_mask_count)
+        return VK_FALSE;
+    for (uint32_t attachment = 0u;
+         attachment < a->attachment_count; ++attachment) {
+        if (a->attachments[attachment].flags !=
+                b->attachments[attachment].flags ||
+            a->attachments[attachment].format !=
+                b->attachments[attachment].format ||
+            a->attachments[attachment].samples !=
+                b->attachments[attachment].samples)
+            return VK_FALSE;
+    }
+    for (uint32_t dependency = 0u;
+         dependency < a->dependency_count; ++dependency)
+        if (!render_pass_dependencies_equal(&a->dependencies[dependency],
+                                             &b->dependencies[dependency]))
+            return VK_FALSE;
+    for (uint32_t mask = 0u; mask < a->correlation_mask_count; ++mask)
+        if (a->correlation_masks[mask] != b->correlation_masks[mask])
+            return VK_FALSE;
+    for (uint32_t subpass = 0u; subpass < a->subpass_count; ++subpass) {
+        if (a->subpasses[subpass].flags != b->subpasses[subpass].flags ||
+            a->subpasses[subpass].view_mask !=
+                b->subpasses[subpass].view_mask ||
+            a->subpasses[subpass].color_attachment_count !=
+                b->subpasses[subpass].color_attachment_count ||
+            a->subpasses[subpass].depth_stencil_attachment !=
+                b->subpasses[subpass].depth_stencil_attachment)
+            return VK_FALSE;
+        for (uint32_t slot = 0u;
+             slot < a->subpasses[subpass].color_attachment_count; ++slot)
+            if (a->subpasses[subpass].color_attachments[slot] !=
+                    b->subpasses[subpass].color_attachments[slot])
+                return VK_FALSE;
+    }
+    return VK_TRUE;
+}
 
 typedef struct VkPs5RuntimeShader {
     AgcShader native_shader;
@@ -5970,11 +6035,15 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
     if (!pCreateInfo->subpassCount || !pCreateInfo->pSubpasses ||
         pCreateInfo->subpassCount > VK_PS5_MAX_SUBPASSES ||
         pCreateInfo->attachmentCount > VK_PS5_MAX_RENDER_ATTACHMENTS ||
-        (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments))
+        (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments) ||
+        pCreateInfo->dependencyCount > VK_PS5_MAX_RENDER_DEPENDENCIES ||
+        (pCreateInfo->dependencyCount && !pCreateInfo->pDependencies))
         return VK_ERROR_INITIALIZATION_FAILED;
     if (multiview &&
         ((multiview->subpassCount != pCreateInfo->subpassCount) ||
          (multiview->subpassCount && !multiview->pViewMasks) ||
+         multiview->correlationMaskCount >
+             VK_PS5_MAX_CORRELATION_MASKS ||
          (multiview->correlationMaskCount &&
           !multiview->pCorrelationMasks)))
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -5990,12 +6059,34 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                  sizeof(*render_pass),
                                                  _Alignof(VkPs5RenderPass));
     if (!render_pass) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    render_pass->flags = pCreateInfo->flags;
     render_pass->attachment_count = pCreateInfo->attachmentCount;
     render_pass->subpass_count = pCreateInfo->subpassCount;
+    render_pass->dependency_count = pCreateInfo->dependencyCount;
+    render_pass->correlation_mask_count = multiview ?
+        multiview->correlationMaskCount : 0u;
     if (render_pass->attachment_count)
         memcpy(render_pass->attachments, pCreateInfo->pAttachments,
                (size_t)render_pass->attachment_count *
                    sizeof(render_pass->attachments[0]));
+    if (render_pass->dependency_count)
+        memcpy(render_pass->dependencies, pCreateInfo->pDependencies,
+               (size_t)render_pass->dependency_count *
+                   sizeof(render_pass->dependencies[0]));
+    if (render_pass->correlation_mask_count)
+        memcpy(render_pass->correlation_masks, multiview->pCorrelationMasks,
+               (size_t)render_pass->correlation_mask_count *
+                   sizeof(render_pass->correlation_masks[0]));
+    for (uint32_t i = 0u; i < render_pass->dependency_count; ++i) {
+        const VkSubpassDependency *dependency = &render_pass->dependencies[i];
+        if ((dependency->srcSubpass != VK_SUBPASS_EXTERNAL &&
+             dependency->srcSubpass >= render_pass->subpass_count) ||
+            (dependency->dstSubpass != VK_SUBPASS_EXTERNAL &&
+             dependency->dstSubpass >= render_pass->subpass_count)) {
+            vk_ps5_device_free(device, pAllocator, render_pass);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
     for (uint32_t i = 0; i < render_pass->attachment_count; ++i) {
         render_pass->stencil_initial_layouts[i] =
             render_pass->attachments[i].initialLayout;
@@ -6004,12 +6095,15 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
     }
     for (uint32_t i = 0; i < render_pass->subpass_count; ++i) {
         const VkSubpassDescription *source = &pCreateInfo->pSubpasses[i];
+        render_pass->subpasses[i].flags = source->flags;
         render_pass->subpasses[i].depth_stencil_attachment =
             VK_ATTACHMENT_UNUSED;
         render_pass->subpasses[i].samples = VK_SAMPLE_COUNT_1_BIT;
         render_pass->subpasses[i].view_mask = multiview ?
             multiview->pViewMasks[i] : 0u;
         if (source->pipelineBindPoint != VK_PIPELINE_BIND_POINT_GRAPHICS ||
+            source->inputAttachmentCount || source->pResolveAttachments ||
+            source->preserveAttachmentCount ||
             source->colorAttachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             (source->colorAttachmentCount && !source->pColorAttachments)) {
             vk_ps5_device_free(device, pAllocator, render_pass);
@@ -6102,7 +6196,10 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
         (pCreateInfo->attachmentCount && !pCreateInfo->pAttachments) ||
         (pCreateInfo->dependencyCount && !pCreateInfo->pDependencies) ||
         pCreateInfo->attachmentCount > VK_PS5_MAX_RENDER_ATTACHMENTS ||
-        pCreateInfo->subpassCount > VK_PS5_MAX_SUBPASSES)
+        pCreateInfo->subpassCount > VK_PS5_MAX_SUBPASSES ||
+        pCreateInfo->dependencyCount > VK_PS5_MAX_RENDER_DEPENDENCIES ||
+        pCreateInfo->correlatedViewMaskCount >
+            VK_PS5_MAX_CORRELATION_MASKS)
         return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->correlatedViewMaskCount &&
         !pCreateInfo->pCorrelatedViewMasks)
@@ -6120,6 +6217,7 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
     VkImageLayout stencil_final[VK_PS5_MAX_RENDER_ATTACHMENTS];
     VkImageLayout depth_layouts[VK_PS5_MAX_SUBPASSES];
     VkImageLayout stencil_layouts[VK_PS5_MAX_SUBPASSES];
+    VkSubpassDependency dependencies[VK_PS5_MAX_RENDER_DEPENDENCIES];
     memset(attachments, 0, sizeof(attachments));
     memset(subpasses, 0, sizeof(subpasses));
     memset(colors, 0, sizeof(colors));
@@ -6230,6 +6328,15 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
         if (dependency->sType != VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2 ||
             dependency->pNext || dependency->viewOffset)
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        dependencies[i] = (VkSubpassDependency){
+            .srcSubpass = dependency->srcSubpass,
+            .dstSubpass = dependency->dstSubpass,
+            .srcStageMask = dependency->srcStageMask,
+            .dstStageMask = dependency->dstStageMask,
+            .srcAccessMask = dependency->srcAccessMask,
+            .dstAccessMask = dependency->dstAccessMask,
+            .dependencyFlags = dependency->dependencyFlags,
+        };
     }
 
     const VkRenderPassCreateInfo legacy = {
@@ -6239,12 +6346,21 @@ vkCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
         .pAttachments = attachments,
         .subpassCount = pCreateInfo->subpassCount,
         .pSubpasses = subpasses,
+        .dependencyCount = pCreateInfo->dependencyCount,
+        .pDependencies = dependencies,
     };
     VkResult result = vkCreateRenderPass(device, &legacy, pAllocator,
                                          pRenderPass);
     if (result != VK_SUCCESS)
         return result;
     VkPs5RenderPass *render_pass = (VkPs5RenderPass *)*pRenderPass;
+    render_pass->correlation_mask_count =
+        pCreateInfo->correlatedViewMaskCount;
+    if (render_pass->correlation_mask_count)
+        memcpy(render_pass->correlation_masks,
+               pCreateInfo->pCorrelatedViewMasks,
+               (size_t)render_pass->correlation_mask_count *
+                   sizeof(render_pass->correlation_masks[0]));
     for (uint32_t i = 0; i < render_pass->attachment_count; ++i) {
         render_pass->stencil_initial_layouts[i] = stencil_initial[i];
         render_pass->stencil_final_layouts[i] = stencil_final[i];
@@ -11896,7 +12012,9 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         required_layers++;
     if (view_mask)
         required_layers--;
-    if (framebuffer->render_pass != render_pass || !render_pass->subpass_count ||
+    const VkBool32 framebuffer_compatible = render_passes_compatible(
+        framebuffer->render_pass, render_pass);
+    if (!framebuffer_compatible || !render_pass->subpass_count ||
         color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
         b->renderArea.offset.x < 0 || b->renderArea.offset.y < 0 ||
         !b->renderArea.extent.width || !b->renderArea.extent.height ||
@@ -11908,10 +12026,10 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             framebuffer->height - (uint32_t)b->renderArea.offset.y ||
         (view_mask && framebuffer->layers != 1u)) {
         fprintf(stderr,
-            "vulkan-ps5: begin render pass rejected rp_match=%u "
+            "vulkan-ps5: begin render pass rejected rp_compatible=%u "
             "subpasses=%u colors=%u area=%d,%d+%ux%u framebuffer=%ux%ux%u "
             "view_mask=0x%x\n",
-            framebuffer->render_pass == render_pass,
+            framebuffer_compatible,
             render_pass->subpass_count, color_count,
             b->renderArea.offset.x, b->renderArea.offset.y,
             b->renderArea.extent.width, b->renderArea.extent.height,
