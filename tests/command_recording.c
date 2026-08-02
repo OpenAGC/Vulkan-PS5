@@ -410,6 +410,12 @@ int main(int argc, char **argv)
     VkImageView texture_view;
     assert(vkCreateImageView(device, &texture_view_info, NULL,
                              &texture_view) == VK_SUCCESS);
+    VkImageViewCreateInfo packed_texture_view_info = texture_view_info;
+    packed_texture_view_info.format = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    VkImageView packed_texture_view;
+    assert(vkCreateImageView(device, &packed_texture_view_info, NULL,
+                             &packed_texture_view) == VK_SUCCESS);
+    vkDestroyImageView(device, packed_texture_view, NULL);
     const VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_LINEAR,

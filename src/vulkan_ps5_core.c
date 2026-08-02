@@ -2019,21 +2019,21 @@ static bool stencil_aspect_layout(VkImageLayout layout, bool *read_only)
 static bool mutable_color_format_pair(VkFormat image_format,
                                       VkFormat view_format)
 {
-    const bool bgra =
+    /* These formats all belong to Vulkan's 32-bit compatibility class. */
+    const bool rgba8 =
         (image_format == VK_FORMAT_B8G8R8A8_SRGB ||
-         image_format == VK_FORMAT_B8G8R8A8_UNORM) &&
-        (view_format == VK_FORMAT_B8G8R8A8_SRGB ||
-         view_format == VK_FORMAT_B8G8R8A8_UNORM);
-    const bool rgba =
-        (image_format == VK_FORMAT_R8G8B8A8_SRGB ||
+         image_format == VK_FORMAT_B8G8R8A8_UNORM ||
+         image_format == VK_FORMAT_R8G8B8A8_SRGB ||
          image_format == VK_FORMAT_R8G8B8A8_UNORM ||
          image_format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
          image_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32) &&
-        (view_format == VK_FORMAT_R8G8B8A8_SRGB ||
+        (view_format == VK_FORMAT_B8G8R8A8_SRGB ||
+         view_format == VK_FORMAT_B8G8R8A8_UNORM ||
+         view_format == VK_FORMAT_R8G8B8A8_SRGB ||
          view_format == VK_FORMAT_R8G8B8A8_UNORM ||
          view_format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
          view_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32);
-    return bgra || rgba;
+    return rgba8;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
