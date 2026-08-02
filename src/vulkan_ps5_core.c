@@ -8675,6 +8675,17 @@ vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkBuffer 
         !(destination->usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT) ||
         (sl != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL &&
          sl != VK_IMAGE_LAYOUT_GENERAL)) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdCopyImageToBuffer validation failed active_rp=%u "
+            "source=%u destination=%u regions=%u source_memory=%u source_native=%u "
+            "destination_memory=%u destination_native=%u source_usage=0x%x "
+            "destination_usage=0x%x layout=%d\n",
+            command->active_render_pass != NULL, source != NULL,
+            destination != NULL, n, source && source->memory,
+            source && source->native_image, destination && destination->memory,
+            destination && destination->native_buffer,
+            source ? source->usage : 0u, destination ? destination->usage : 0u,
+            sl);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -8683,6 +8694,15 @@ vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkBuffer 
         if (!native_image_copy_layers(source, &r[region].imageSubresource,
                 &layers) || !r[region].imageExtent.width ||
             !r[region].imageExtent.height || !r[region].imageExtent.depth) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdCopyImageToBuffer invalid region=%u "
+                "aspect=0x%x mip=%u layer=%u layers=%u extent=%ux%ux%u\n",
+                region, r[region].imageSubresource.aspectMask,
+                r[region].imageSubresource.mipLevel,
+                r[region].imageSubresource.baseArrayLayer,
+                r[region].imageSubresource.layerCount,
+                r[region].imageExtent.width, r[region].imageExtent.height,
+                r[region].imageExtent.depth);
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
@@ -8696,6 +8716,11 @@ vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkBuffer 
         prepare = native_prepare_buffer_range(command, destination, 0u,
             destination->size, kAgcResourceUsageCopyDestination);
     if (prepare != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdCopyImageToBuffer usage preparation failed result=%d "
+            "image_before=%d buffer_size=%llu\n",
+            prepare, native_image_recorded_usage(command, source),
+            (unsigned long long)destination->size);
         command->record_error = prepare;
         return;
     }
@@ -8714,6 +8739,11 @@ vkCmdCopyImageToBuffer(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkBuffer 
             command->native_graphics_command_buffer, source->native_image,
             destination->native_buffer, 1u, &copy);
         if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdCopyImageToBuffer OpenAGC failed region=%u "
+                "result=%d buffer_offset=%llu\n",
+                region, result,
+                (unsigned long long)r[region].bufferOffset);
             command->record_error = native_command_result(result);
             return;
         }
