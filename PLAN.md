@@ -201,6 +201,10 @@ and bounded endpoint gates without ICD-owned PM4 or fence-label code.
    scanout resources, transitions, fences, bounded flip waits, and teardown.
    The API-40 candidate passed 1,800 frames and clean lifecycle with SHA-256
    `0b1d87d02a5fbe480cc74890c613752bb55c2e7b5f4e729413314785e5302888`.
+   The 2026-08-02 Zink regression gate additionally replaced Vulkan's no-op
+   queue/device idle calls with a native-fence wait serialized against submit
+   and present. The corrected ICD passed twice on FW 5.500.008 with immediate
+   relaunch; see `analysis/fw550_zink_idle_teardown_20260802.md`.
 2. Keep Vulkan surface/swapchain semantics and application-facing image state
    in the ICD while all firmware patch and VideoOut hardware policy stays in
    OpenAGC.

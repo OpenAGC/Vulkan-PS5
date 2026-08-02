@@ -225,6 +225,18 @@ reports `geometryShader = VK_TRUE`. Two SDL/Zink runs produced exact RGBA
 `64,128,191,255`, and two strengthened standalone runs produced exactly 4,608
 green pixels on FW 5.50.
 
+The same replay also exposed a teardown race after the pixel oracle had
+already passed. `vkQueueWaitIdle` and `vkDeviceWaitIdle` had been no-ops, so a
+concurrent submit/present path could overlap swapchain or device destruction.
+Both calls now serialize through the native queue submit/present lock and wait
+the most recent OpenAGC fence with a finite two-second bound. Swapchain and
+device destruction fail closed rather than releasing native objects after an
+idle timeout. The corrected Prospero ICD SHA-256 is
+`99308715821fa358980149681cadde4833f6832f8b3c5ff3559939baf5b810f9`;
+two immediate guarded FW 5.50 SDL/EGL/Zink runs returned exact RGBA
+`64,128,191,255`, retired PIDs 88 and 89, and left no fatal, GPU-reset, power,
+or stale-process event. See `analysis/fw550_zink_idle_teardown_20260802.md`.
+
 The pinned integration now passes end to end on FW 5.500.008. Vulkan-PS5
 records reflected push constants, dynamic-rendering RGBA8/BGRA8 clears, global
 color-to-transfer dependencies, Mesa's mutable RGBA/A8B8G8R8 readback format

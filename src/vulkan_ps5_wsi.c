@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -404,6 +405,11 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain_handle,
                       const VkAllocationCallbacks *pAllocator) {
     VkPs5Swapchain *swapchain = swapchain_from_handle(swapchain_handle);
     if (!swapchain) return;
+    if (vkDeviceWaitIdle(device) != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: refusing unsafe swapchain teardown after idle timeout\n");
+        return;
+    }
     lock_flag(&swapchain->surface->lock);
     if (swapchain->surface->active_swapchain == (uintptr_t)swapchain)
         swapchain->surface->active_swapchain = 0;

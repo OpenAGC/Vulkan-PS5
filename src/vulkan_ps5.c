@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define VK_PS5_API_VERSION VK_MAKE_API_VERSION(0, 1, 2, 0)
 #define VK_PS5_VENDOR_ID 0x1002u
@@ -2142,6 +2143,11 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator) {
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
+    if (vkDeviceWaitIdle(device_handle) != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: refusing unsafe device teardown after idle timeout\n");
+        return;
+    }
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
     vk_ps5_collect_deferred_native(device_handle);
     for (uint32_t index = 0u; index < device->meta_attachment_count; ++index) {
@@ -2213,12 +2219,49 @@ vkGetDeviceGroupPeerMemoryFeatures(VkDevice device, uint32_t heapIndex,
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkDeviceWaitIdle(VkDevice device) {
-    return device ? VK_SUCCESS : VK_ERROR_DEVICE_LOST;
+    VkPs5Device *native_device = (VkPs5Device *)device;
+    return native_device ? vkQueueWaitIdle((VkQueue)&native_device->queue) :
+        VK_ERROR_DEVICE_LOST;
+}
+
+static bool vk_ps5_lock_submit_for_idle(atomic_flag *lock) {
+    struct timespec start;
+    struct timespec now;
+    if (!lock || clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+        return false;
+    while (atomic_flag_test_and_set_explicit(lock, memory_order_acquire)) {
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+            return false;
+        const uint64_t seconds = now.tv_sec >= start.tv_sec ?
+            (uint64_t)(now.tv_sec - start.tv_sec) : 0u;
+        const int64_t nanoseconds = (int64_t)now.tv_nsec -
+            (int64_t)start.tv_nsec;
+        if (seconds > VK_PS5_IDLE_TIMEOUT_NS / UINT64_C(1000000000) ||
+            (seconds == VK_PS5_IDLE_TIMEOUT_NS / UINT64_C(1000000000) &&
+             nanoseconds >= (int64_t)(VK_PS5_IDLE_TIMEOUT_NS %
+                 UINT64_C(1000000000))))
+            return false;
+    }
+    return true;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
-vkQueueWaitIdle(VkQueue queue) {
-    return queue ? VK_SUCCESS : VK_ERROR_DEVICE_LOST;
+vkQueueWaitIdle(VkQueue queue_handle) {
+    VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
+    if (!queue || !queue->device || !queue->present_ready_fence)
+        return VK_ERROR_DEVICE_LOST;
+    if (!vk_ps5_lock_submit_for_idle(&queue->submit_lock)) {
+        fprintf(stderr, "vulkan-ps5: native queue idle lock timed out\n");
+        return VK_ERROR_DEVICE_LOST;
+    }
+    const int32_t result = agcWaitFence(
+        queue->present_ready_fence, VK_PS5_IDLE_TIMEOUT_NS);
+    atomic_flag_clear_explicit(&queue->submit_lock, memory_order_release);
+    if (result == AGC_OK)
+        return VK_SUCCESS;
+    fprintf(stderr, "vulkan-ps5: native queue idle wait failed: 0x%08x\n",
+        (unsigned)result);
+    return VK_ERROR_DEVICE_LOST;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL

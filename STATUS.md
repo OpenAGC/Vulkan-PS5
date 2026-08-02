@@ -14,6 +14,16 @@ qualification concern.
 
 Migration status:
 
+- **Bounded idle and teardown:** `vkQueueWaitIdle` and `vkDeviceWaitIdle` now
+  serialize against native submission/presentation and wait the current
+  OpenAGC fence for at most two seconds. Swapchain and device destruction
+  refuse unsafe release when that wait fails. A clean generic build passes
+  61/61 tests, the complete Prospero build is clean, and the corrected ICD
+  passed two immediate guarded SDL/EGL/Zink runs on FW 5.500.008 with exact
+  RGBA `64,128,191,255`, clean PID retirement, and no attributed fatal,
+  GPU-reset, or power event. See
+  `analysis/fw550_zink_idle_teardown_20260802.md`.
+
 - **CTS discovery:** official `vulkan-cts-1.4.6.1` commit
   `5c8aae22885448d70a2873e94a93b24b49505c32` now loads the host ICD directly
   and completes `dEQP-VK.info.*` without a crash. A missing
