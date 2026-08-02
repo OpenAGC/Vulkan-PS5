@@ -356,11 +356,18 @@ int main(int argc, char **argv)
     };
     vkUpdateDescriptorSets(device, 0, NULL, 1, &descriptor_copy);
 
+    const VkFormat ignored_texture_view_format = VK_FORMAT_R8_UNORM;
+    const VkImageFormatListCreateInfo empty_texture_format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = 0u,
+        .pViewFormats = &ignored_texture_view_format,
+    };
     const VkImageCreateInfo texture_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = &empty_texture_format_list,
         .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
         .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_B8G8R8A8_SRGB,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
         .extent = {2, 2, 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -735,6 +742,33 @@ int main(int argc, char **argv)
     VkImageView color_view;
     assert(vkCreateImageView(device, &image_view_info, NULL,
                              &color_view) == VK_SUCCESS);
+    const VkFormat eden_32_bit_view_formats[] = {
+        VK_FORMAT_R16G16_SFLOAT,
+        VK_FORMAT_B10G11R11_UFLOAT_PACK32,
+        VK_FORMAT_R32_SFLOAT,
+        VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+        VK_FORMAT_R16G16_UINT,
+        VK_FORMAT_R32_UINT,
+        VK_FORMAT_R16G16_SINT,
+        VK_FORMAT_R32_SINT,
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        VK_FORMAT_R16G16_UNORM,
+        VK_FORMAT_A8B8G8R8_SNORM_PACK32,
+        VK_FORMAT_R16G16_SNORM,
+        VK_FORMAT_A8B8G8R8_SRGB_PACK32,
+        VK_FORMAT_E5B9G9R9_UFLOAT_PACK32,
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_SRGB,
+        VK_FORMAT_A8B8G8R8_UINT_PACK32,
+        VK_FORMAT_A8B8G8R8_SINT_PACK32,
+        VK_FORMAT_A2B10G10R10_UINT_PACK32,
+    };
+    const VkImageFormatListCreateInfo eden_32_bit_format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = (uint32_t)(sizeof(eden_32_bit_view_formats) /
+                                     sizeof(eden_32_bit_view_formats[0])),
+        .pViewFormats = eden_32_bit_view_formats,
+    };
     VkImage color_image_1;
     assert(vkCreateImage(device, &image_info, NULL,
                          &color_image_1) == VK_SUCCESS);
@@ -755,6 +789,28 @@ int main(int argc, char **argv)
     VkImageView color_view_1;
     assert(vkCreateImageView(device, &image_view_info_1, NULL,
                              &color_view_1) == VK_SUCCESS);
+    VkImageCreateInfo mutable_clear_image_info = image_info;
+    mutable_clear_image_info.pNext = &eden_32_bit_format_list;
+    mutable_clear_image_info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    mutable_clear_image_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+    VkImage mutable_clear_image;
+    VkDeviceMemory mutable_clear_memory;
+    create_bound_test_image(device, &mutable_clear_image_info,
+        &mutable_clear_image, &mutable_clear_memory);
+    VkImageViewCreateInfo mutable_clear_view_info = image_view_info;
+    mutable_clear_view_info.image = mutable_clear_image;
+    mutable_clear_view_info.format = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    VkImageView mutable_clear_view;
+    assert(vkCreateImageView(device, &mutable_clear_view_info, NULL,
+        &mutable_clear_view) == VK_SUCCESS);
+    VkImageViewCreateInfo omitted_compatible_view_info =
+        mutable_clear_view_info;
+    omitted_compatible_view_info.format =
+        VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+    VkImageView omitted_compatible_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &omitted_compatible_view_info, NULL,
+        &omitted_compatible_view) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(omitted_compatible_view == VK_NULL_HANDLE);
     const VkImageCreateInfo image_3d_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_3D,
@@ -871,6 +927,45 @@ int main(int argc, char **argv)
     VkFramebuffer framebuffer;
     assert(vkCreateFramebuffer(device, &framebuffer_info, NULL,
                                &framebuffer) == VK_SUCCESS);
+    const VkAttachmentDescription mutable_clear_attachment = {
+        .format = VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkAttachmentReference mutable_clear_reference = {
+        .attachment = 0u,
+        .layout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkSubpassDescription mutable_clear_subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1u,
+        .pColorAttachments = &mutable_clear_reference,
+    };
+    const VkRenderPassCreateInfo mutable_clear_render_pass_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1u,
+        .pAttachments = &mutable_clear_attachment,
+        .subpassCount = 1u,
+        .pSubpasses = &mutable_clear_subpass,
+    };
+    VkRenderPass mutable_clear_render_pass;
+    assert(vkCreateRenderPass(device, &mutable_clear_render_pass_info, NULL,
+        &mutable_clear_render_pass) == VK_SUCCESS);
+    const VkFramebufferCreateInfo mutable_clear_framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = mutable_clear_render_pass,
+        .attachmentCount = 1u,
+        .pAttachments = &mutable_clear_view,
+        .width = 256u,
+        .height = 256u,
+        .layers = 1u,
+    };
+    VkFramebuffer mutable_clear_framebuffer;
+    assert(vkCreateFramebuffer(device, &mutable_clear_framebuffer_info, NULL,
+        &mutable_clear_framebuffer) == VK_SUCCESS);
     const VkFormat imageless_color_formats[] = {
         VK_FORMAT_R8G8B8A8_UNORM,
     };
@@ -1325,6 +1420,33 @@ int main(int argc, char **argv)
                       graphics_pipeline);
     vkCmdDraw(command, 3, 1, 0, 0);
     assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const VkRenderPassBeginInfo mutable_clear_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = mutable_clear_render_pass,
+        .framebuffer = mutable_clear_framebuffer,
+        .renderArea = {{0, 0}, {256u, 256u}},
+    };
+    const VkClearAttachment mutable_clear_command = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .colorAttachment = 0u,
+        .clearValue.color.float32 = {0.125f, 0.25f, 0.5f, 1.0f},
+    };
+    const VkClearRect mutable_clear_rect = {
+        .rect = {{0, 0}, {256u, 256u}},
+        .baseArrayLayer = 0u,
+        .layerCount = 1u,
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBeginRenderPass(command, &mutable_clear_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdClearAttachments(command, 1u, &mutable_clear_command, 1u,
+                          &mutable_clear_rect);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdEndRenderPass(command);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 1u);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     const VkBufferCopy buffer_copies[2] = {
         {0u, 0u, 16u},
@@ -2390,6 +2512,11 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, color_only_dynamic_pipeline, NULL);
     vkDestroyFramebuffer(device, imageless_framebuffer, NULL);
     vkDestroyFramebuffer(device, framebuffer, NULL);
+    vkDestroyFramebuffer(device, mutable_clear_framebuffer, NULL);
+    vkDestroyRenderPass(device, mutable_clear_render_pass, NULL);
+    vkDestroyImageView(device, mutable_clear_view, NULL);
+    vkDestroyImage(device, mutable_clear_image, NULL);
+    vkFreeMemory(device, mutable_clear_memory, NULL);
     vkDestroyImageView(device, depth_view, NULL);
     vkDestroyImage(device, depth_image, NULL);
     vkFreeMemory(device, depth_memory, NULL);

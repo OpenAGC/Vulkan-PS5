@@ -129,6 +129,8 @@ typedef struct VkPs5Image {
     AgcImage native_image;
     AgcBuffer native_clear_buffer;
     AgcResourceUsage native_usage;
+    uint32_t view_format_count;
+    VkFormat view_formats[];
 } VkPs5Image;
 
 static bool native_image_format(VkFormat format, AgcFormat *native) {
@@ -2016,24 +2018,132 @@ static bool stencil_aspect_layout(VkImageLayout layout, bool *read_only)
     }
 }
 
-static bool mutable_color_format_pair(VkFormat image_format,
-                                      VkFormat view_format)
+enum VkPs5FormatCompatibilityClass {
+    VK_PS5_FORMAT_CLASS_NONE = 0,
+    VK_PS5_FORMAT_CLASS_8_BIT,
+    VK_PS5_FORMAT_CLASS_16_BIT,
+    VK_PS5_FORMAT_CLASS_32_BIT,
+    VK_PS5_FORMAT_CLASS_64_BIT,
+    VK_PS5_FORMAT_CLASS_128_BIT,
+    VK_PS5_FORMAT_CLASS_BC1_RGBA,
+    VK_PS5_FORMAT_CLASS_BC2,
+    VK_PS5_FORMAT_CLASS_BC3,
+    VK_PS5_FORMAT_CLASS_BC4,
+    VK_PS5_FORMAT_CLASS_BC5,
+    VK_PS5_FORMAT_CLASS_BC6H,
+    VK_PS5_FORMAT_CLASS_BC7,
+};
+
+static enum VkPs5FormatCompatibilityClass
+color_format_compatibility_class(VkFormat format)
 {
-    /* These formats all belong to Vulkan's 32-bit compatibility class. */
-    const bool rgba8 =
-        (image_format == VK_FORMAT_B8G8R8A8_SRGB ||
-         image_format == VK_FORMAT_B8G8R8A8_UNORM ||
-         image_format == VK_FORMAT_R8G8B8A8_SRGB ||
-         image_format == VK_FORMAT_R8G8B8A8_UNORM ||
-         image_format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
-         image_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32) &&
-        (view_format == VK_FORMAT_B8G8R8A8_SRGB ||
-         view_format == VK_FORMAT_B8G8R8A8_UNORM ||
-         view_format == VK_FORMAT_R8G8B8A8_SRGB ||
-         view_format == VK_FORMAT_R8G8B8A8_UNORM ||
-         view_format == VK_FORMAT_A8B8G8R8_SRGB_PACK32 ||
-         view_format == VK_FORMAT_A8B8G8R8_UNORM_PACK32);
-    return rgba8;
+    switch (format) {
+    case VK_FORMAT_R4G4_UNORM_PACK8:
+    case VK_FORMAT_R8_UNORM:
+    case VK_FORMAT_R8_SNORM:
+    case VK_FORMAT_R8_UINT:
+    case VK_FORMAT_R8_SINT:
+        return VK_PS5_FORMAT_CLASS_8_BIT;
+
+    case VK_FORMAT_R5G6B5_UNORM_PACK16:
+    case VK_FORMAT_B5G6R5_UNORM_PACK16:
+    case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
+    case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
+    case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+    case VK_FORMAT_R8G8_UNORM:
+    case VK_FORMAT_R8G8_SNORM:
+    case VK_FORMAT_R8G8_UINT:
+    case VK_FORMAT_R8G8_SINT:
+    case VK_FORMAT_R16_UNORM:
+    case VK_FORMAT_R16_SNORM:
+    case VK_FORMAT_R16_UINT:
+    case VK_FORMAT_R16_SINT:
+    case VK_FORMAT_R16_SFLOAT:
+        return VK_PS5_FORMAT_CLASS_16_BIT;
+
+    case VK_FORMAT_R8G8B8A8_UNORM:
+    case VK_FORMAT_R8G8B8A8_SRGB:
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    case VK_FORMAT_B8G8R8A8_SRGB:
+    case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+    case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+    case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+    case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
+    case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+    case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+    case VK_FORMAT_R16G16_UNORM:
+    case VK_FORMAT_R16G16_SNORM:
+    case VK_FORMAT_R16G16_UINT:
+    case VK_FORMAT_R16G16_SINT:
+    case VK_FORMAT_R16G16_SFLOAT:
+    case VK_FORMAT_R32_UINT:
+    case VK_FORMAT_R32_SINT:
+    case VK_FORMAT_R32_SFLOAT:
+    case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+    case VK_FORMAT_E5B9G9R9_UFLOAT_PACK32:
+        return VK_PS5_FORMAT_CLASS_32_BIT;
+
+    case VK_FORMAT_R16G16B16A16_UNORM:
+    case VK_FORMAT_R16G16B16A16_SNORM:
+    case VK_FORMAT_R16G16B16A16_UINT:
+    case VK_FORMAT_R16G16B16A16_SINT:
+    case VK_FORMAT_R16G16B16A16_SFLOAT:
+    case VK_FORMAT_R32G32_UINT:
+    case VK_FORMAT_R32G32_SINT:
+    case VK_FORMAT_R32G32_SFLOAT:
+        return VK_PS5_FORMAT_CLASS_64_BIT;
+
+    case VK_FORMAT_R32G32B32A32_UINT:
+    case VK_FORMAT_R32G32B32A32_SINT:
+    case VK_FORMAT_R32G32B32A32_SFLOAT:
+        return VK_PS5_FORMAT_CLASS_128_BIT;
+
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC1_RGBA;
+    case VK_FORMAT_BC2_UNORM_BLOCK:
+    case VK_FORMAT_BC2_SRGB_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC2;
+    case VK_FORMAT_BC3_UNORM_BLOCK:
+    case VK_FORMAT_BC3_SRGB_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC3;
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC4;
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC5;
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC6H;
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+        return VK_PS5_FORMAT_CLASS_BC7;
+    default:
+        return VK_PS5_FORMAT_CLASS_NONE;
+    }
+}
+
+static bool image_view_format_compatible(VkFormat image_format,
+                                         VkFormat view_format)
+{
+    if (image_format == view_format)
+        return true;
+    const enum VkPs5FormatCompatibilityClass image_class =
+        color_format_compatibility_class(image_format);
+    return image_class != VK_PS5_FORMAT_CLASS_NONE &&
+        image_class == color_format_compatibility_class(view_format);
+}
+
+static bool image_format_list_contains(const VkPs5Image *image,
+                                       VkFormat format)
+{
+    for (uint32_t i = 0u; i < image->view_format_count; ++i)
+        if (image->view_formats[i] == format)
+            return true;
+    return false;
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -2069,20 +2179,19 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         if (next->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
             format_list = (const VkImageFormatListCreateInfo *)next;
     }
-    if (format_list) {
-        if (!format_list->viewFormatCount || !format_list->pViewFormats ||
-            !(pCreateInfo->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+    if (format_list && format_list->viewFormatCount) {
+        if (!format_list->pViewFormats ||
+            (!(pCreateInfo->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+             format_list->viewFormatCount > 1u))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
-        bool includes_image_format = false;
         for (uint32_t i = 0; i < format_list->viewFormatCount; ++i) {
-            if (!mutable_color_format_pair(
+            if (!native_image_format(format_list->pViewFormats[i],
+                                     &(AgcFormat){0}) ||
+                !image_view_format_compatible(
                     pCreateInfo->format, format_list->pViewFormats[i])) {
                 return VK_ERROR_FORMAT_NOT_SUPPORTED;
             }
-            includes_image_format |=
-                format_list->pViewFormats[i] == pCreateInfo->format;
         }
-        if (!includes_image_format) return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
     if (pCreateInfo->samples == VK_SAMPLE_COUNT_4_BIT) {
         VkImageFormatProperties properties;
@@ -2107,7 +2216,11 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
              pCreateInfo->format != VK_FORMAT_B8G8R8A8_UNORM))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
-    VkPs5Image *image = alloc_object(device, pAllocator, sizeof(*image),
+    const uint32_t view_format_count = format_list ?
+        format_list->viewFormatCount : 0u;
+    const size_t image_object_size = sizeof(VkPs5Image) +
+        (size_t)view_format_count * sizeof(VkFormat);
+    VkPs5Image *image = alloc_object(device, pAllocator, image_object_size,
                                      _Alignof(VkPs5Image));
     if (!image) return VK_ERROR_OUT_OF_HOST_MEMORY;
     image->device = device;
@@ -2120,6 +2233,10 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
     image->samples = pCreateInfo->samples;
     image->tiling = pCreateInfo->tiling;
     image->usage = pCreateInfo->usage;
+    image->view_format_count = view_format_count;
+    if (view_format_count)
+        memcpy(image->view_formats, format_list->pViewFormats,
+               (size_t)view_format_count * sizeof(VkFormat));
     image->alignment = 256u;
     AgcGfx1013DepthSurfaceFormat depth_format;
     bool is_depth_format = depth_surface_format(
@@ -2771,9 +2888,12 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         VK_REMAINING_ARRAY_LAYERS ?
         layer_limit - pCreateInfo->subresourceRange.baseArrayLayer :
         pCreateInfo->subresourceRange.layerCount;
-    if ((pCreateInfo->format != image->format &&
+    if ((image->view_format_count &&
+         !image_format_list_contains(image, pCreateInfo->format)) ||
+        (pCreateInfo->format != image->format &&
          (!(image->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) ||
-          !mutable_color_format_pair(image->format, pCreateInfo->format))) ||
+          !image_view_format_compatible(image->format,
+                                        pCreateInfo->format))) ||
         !pCreateInfo->subresourceRange.aspectMask ||
         (pCreateInfo->subresourceRange.aspectMask & ~valid_aspects) ||
         !level_count || !layer_count ||
@@ -10930,12 +11050,12 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
             return VK_ERROR_INITIALIZATION_FAILED;
         VkPipeline pipeline = VK_NULL_HANDLE;
         VkResult result = vk_ps5_device_meta_attachment_pipeline(
-            command->device, image->format, aspects, &pipeline);
+            command->device, view->format, aspects, &pipeline);
         if (result != VK_SUCCESS || !pipeline) {
             fprintf(stderr,
                 "vulkan-ps5: clear attachment pipeline unavailable "
                 "result=%d format=%u aspects=0x%x pipeline=%u\n",
-                result, image->format, aspects, pipeline != VK_NULL_HANDLE);
+                result, view->format, aspects, pipeline != VK_NULL_HANDLE);
             return result == VK_SUCCESS ?
                 VK_ERROR_INITIALIZATION_FAILED : result;
         }
@@ -10968,7 +11088,7 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
         VkPs5Image *image = (VkPs5Image *)view->image;
         VkPipeline pipeline_handle = VK_NULL_HANDLE;
         VkResult result = vk_ps5_device_meta_attachment_pipeline(
-            command->device, image->format, aspects, &pipeline_handle);
+            command->device, view->format, aspects, &pipeline_handle);
         if (result != VK_SUCCESS)
             return result;
         VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
@@ -10979,7 +11099,7 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
             fprintf(stderr,
                 "vulkan-ps5: clear attachment pipeline bind failed "
                 "result=0x%08x format=%u aspects=0x%x\n",
-                (unsigned)native_result, image->format, aspects);
+                (unsigned)native_result, view->format, aspects);
             return native_command_result(native_result);
         }
         command->native_bound_graphics = pipeline->native_graphics_pipeline;
