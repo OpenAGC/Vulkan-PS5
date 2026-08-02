@@ -691,6 +691,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_cull_distance_vert_spv.h")
   set(VULKAN_PS5_GEOMETRY_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_geometry_spv.h")
+  set(VULKAN_PS5_GEOMETRY_FRAGMENT_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_geometry_frag_spv.h")
   set(VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_multi_viewport_geom_spv.h")
   set(VULKAN_PS5_MULTI_VIEWPORT_FRAGMENT_HEADER
@@ -804,6 +806,13 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.geom"
       -o "${VULKAN_PS5_GEOMETRY_HEADER}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.geom"
+    VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_GEOMETRY_FRAGMENT_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
+      --vn vulkan_ps5_geometry_frag_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.frag"
+      -o "${VULKAN_PS5_GEOMETRY_FRAGMENT_HEADER}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/geometry/geometry.frag"
     VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_MULTI_VIEWPORT_GEOMETRY_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V
@@ -946,7 +955,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   add_executable(vulkan_ps5_geometry_example
     examples/triangle/main.c
     "${VULKAN_PS5_TRIANGLE_VERTEX_HEADER}"
-    "${VULKAN_PS5_TRIANGLE_FRAGMENT_HEADER}"
+    "${VULKAN_PS5_GEOMETRY_FRAGMENT_HEADER}"
     "${VULKAN_PS5_GEOMETRY_HEADER}")
   target_compile_definitions(vulkan_ps5_geometry_example
     PRIVATE VULKAN_PS5_GEOMETRY_SAMPLE=1)
@@ -980,7 +989,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     set_tests_properties(
       vulkan_ps5.vertex_pipeline_stores_atomics_command_recording PROPERTIES
       PASS_REGULAR_EXPRESSION
-        "vertex_pipeline_stores_atomics: (PASS command-recording|SKIP geometryShader is not advertised)" TIMEOUT 30)
+        "vertex_pipeline_stores_atomics: PASS command-recording" TIMEOUT 30)
   endif()
   add_executable(vulkan_ps5_query_example
     examples/triangle/main.c

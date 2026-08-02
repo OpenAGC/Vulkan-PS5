@@ -1055,7 +1055,7 @@ static void fill_features(VkPhysicalDeviceFeatures *features) {
     features->drawIndirectFirstInstance = VK_TRUE;
     features->fragmentStoresAndAtomics = VK_TRUE;
     features->fillModeNonSolid = VK_TRUE;
-    features->geometryShader = VK_FALSE;
+    features->geometryShader = VK_TRUE;
     features->imageCubeArray = VK_TRUE;
     features->independentBlend = VK_TRUE;
     features->largePoints = VK_TRUE;

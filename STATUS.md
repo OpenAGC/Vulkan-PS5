@@ -712,7 +712,7 @@ value; the final Zink logs contain no `VK_EXT_depth_clip_enable` warning. This
 closes both the FW 11.60 depth-clip replay and the full SDL/EGL/Zink endpoint
 gate with identical application and library bytes.
 
-### SDL/Zink regression replay and geometry quarantine (2026-08-02)
+### SDL/Zink regression replay and geometry varying fix (2026-08-02)
 
 The latest OpenAGC API 53, openagc-psbc library API 20, Vulkan-PS5, Mesa/Zink,
 and SDL heads were replayed together on FW 5.500.008. Strict OpenAGC attachment
@@ -723,15 +723,13 @@ not declare them. Core Vulkan depth clipping is also explicit when the
 depth-clip extension structure is absent; omission means enabled, not an
 unspecified native default.
 
-The replay then isolated a separate advertised-capability regression. Mesa's
-RGBA readback conversion used a fused NGG geometry pipeline and repeatedly
-returned transparent black even though shader hashes, vertex data, attachment
-transitions, submission, and teardown were valid. The same workload uses a
-vertex/fragment conversion and passes when `geometryShader` is not advertised.
-The ICD therefore fails closed and reports `geometryShader = VK_FALSE` until
-that NGG path has its own deterministic hardware oracle. This reopens one Eden
-startup capability; the implementation remains available to diagnostic probes
-but is not a public promise.
+The replay then isolated an openagc-psbc compiler defect. Mesa's RGBA readback
+conversion used a fused NGG geometry pipeline and returned transparent black
+because deterministic fragment-parameter export assignment covered vertex and
+tessellation-evaluation stages but omitted geometry. The GS therefore exported
+position but not its user varying. Compiler coverage now requires the GS-back
+record to own parameter export zero, and Vulkan again advertises
+`geometryShader = VK_TRUE`.
 
 With that truthful capability set, all 61 generic tests pass. Three consecutive
 cleanup-guarded FW 5.500.008 SDL/EGL/Zink runs returned exact RGBA
@@ -739,6 +737,19 @@ cleanup-guarded FW 5.500.008 SDL/EGL/Zink runs returned exact RGBA
 immediately (`20260802T025708Z`, `20260802T025734Z`, and
 `20260802T030426Z`). The tested ICD SHA-256
 is `a06711072c85a72a9b8f1424815b71b7d137cd709b56768dcf4b8aff80decf6b`.
+
+With geometry re-enabled, two further cleanup-guarded SDL/EGL/Zink runs passed
+exact RGBA `64,128,191,255`, teardown, and immediate relaunch
+(`20260802T032613Z` and `20260802T032634Z`). A strengthened standalone sample
+now carries green through a GS-to-FS user varying; ELF SHA-256
+`abff21e51e69179ccea2feef874d0920c2229384517a3d0d1ab375a9da89c425`
+produced exactly 4,608 green pixels twice
+(`20260802T033240Z-geometry-run1.log` and `run2`). The final diagnostic-free
+ICD SHA-256 is
+`5c71a2983769129be33bf82ffaa4d1b13d37a1aae9cdce6ab9512ad627790b25`;
+its SDL application printed the exact pixel PASS, but the console became
+unreachable before the runner could qualify teardown, so that exact-byte
+teardown replay remains pending.
 
 The follow-up API-53 v1 reserved-field compatibility fix changed the linked
 bytes without changing the Vulkan path. The rebuilt ICD SHA-256
@@ -1635,8 +1646,8 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   ASTC, and ETC remain fail-closed or use Eden's recorded transcode paths; the
   direct uncompressed image inventory is complete. Eden's PS5 branch now has
   the surface/static-entrypoint bridge and bounded FW 5.50 bootstrap evidence.
-  The hard startup profile is intentionally one feature short because
-  `geometryShader` is quarantined after the Zink fused-NGG regression. Current
+  The hard startup profile is now zero-gap after fixing and restoring
+  `geometryShader`. Current
   generic tests pass 61/61 and the static/shared Prospero build is clean.
 - The application-neutral color-clear command is complete for every advertised
   uncompressed color format. `vkCmdClearColorImage` packs arbitrary 1/2/4/8/16

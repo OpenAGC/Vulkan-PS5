@@ -561,12 +561,15 @@ the native-runtime migration.
   hashes. The identical firmware-neutral depth probe passes twice on each
   endpoint. The same final Mesa/EGL/Zink library set passes both endpoints; do
   not reintroduce a firmware-specific clip-control value.
-  The latest-stack FW 5.50 replay reopened `geometryShader`: a Zink fused-NGG
-  conversion intermittently produced transparent black while the equivalent
-  vertex/fragment path was stable. Keep the public feature false and the Eden
-  audit at one explicit capability gap until standalone and Zink-level
-  geometry oracles pass repeatedly. Do not restore advertisement from the old
-  standalone green-pixel evidence alone.
+  The latest-stack FW 5.50 replay reopened and then closed `geometryShader`.
+  The transparent-black Zink result came from openagc-psbc omitting geometry
+  from deterministic pre-raster parameter-export assignment. Compiler coverage
+  now checks the GS export, two SDL/Zink exact-pixel runs pass, and a strengthened
+  standalone GS-to-FS varying oracle passes twice with exactly 4,608 green
+  pixels. Restore the public feature and keep the Eden startup audit at zero
+  gaps. Repeat the final linked ICD after the console is awake because its last
+  foreground runner reached the pixel PASS but lost the websrv connection
+  before teardown qualification.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset
@@ -579,9 +582,9 @@ the native-runtime migration.
   targets upstream `612409c7ba`, and the PS5 branch carries surface,
   static-entrypoint, VMA, frontend, and bounded-renderer bootstrap work through
   `8197e9fb09`. Formats and directly exercised command families are inventoried
-  at the upstream revision. The only current hard ICD startup gap is the
-  deliberately quarantined `geometryShader`; real Eden renderer/shader-cache
-  execution remains broader than the bootstrap evidence.
+  at the upstream revision. The restored and hardware-checked
+  `geometryShader` closes the strict startup profile. Real Eden
+  renderer/shader-cache execution remains broader than the bootstrap evidence.
   The first application-neutral reduction implements the query-only
   `VK_KHR_driver_properties` and `VK_KHR_shader_float_controls` contracts.
   Driver metadata reports the experimental ACO/gfx1013 identity with

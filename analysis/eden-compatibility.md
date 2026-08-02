@@ -8,8 +8,7 @@ requirements. The Eden checkout was inspected read-only; its existing deleted
 `AGENTS.md`/`CLAUDE.md`, modified frontend files, and untracked `.serena/` state
 were not changed.
 
-Run the profile probe in reporting mode through CTest. `--strict` deliberately
-remains nonzero while the quarantined geometry feature is unresolved:
+Run the profile probe in reporting mode through CTest. `--strict` now succeeds:
 
 ```sh
 ctest --test-dir build -R vulkan_ps5.eden_profile_report --output-on-failure
@@ -22,7 +21,7 @@ build/vulkan_ps5_eden_profile_test --strict
 | --- | --- | --- | --- |
 | API | Vulkan 1.1 or newer | ICD reports Vulkan 1.1 | Pass |
 | Device extensions | `VK_EXT_vertex_attribute_divisor`, `VK_EXT_shader_demote_to_helper_invocation`, `VK_KHR_driver_properties`, `VK_KHR_sampler_mirror_clamp_to_edge`, `VK_KHR_shader_float_controls` | All five are enumerated, queryable, and accepted at device creation | Pass |
-| Core/Features2 | 29 mandatory feature bits | 28 are true; `geometryShader` is fail-closed after the latest Zink application-level regression | Gap |
+| Core/Features2 | 29 mandatory feature bits | All 29 are true; the geometry varying-export fix passes standalone and SDL/Zink hardware oracles | Pass |
 | Limits | UBO range 65,536; 16 viewports; 8 color attachments; 8 clip distances | All four exact minima are reported | Pass |
 | Queues | At least one graphics queue; present support when a surface exists | One universal graphics/compute/transfer queue is reported; the WSI family supports present | Pass |
 | Swapchain | `VK_KHR_swapchain` when a surface is supplied | Enumerated and hardware-qualified in Milestone 4 | Pass |
@@ -67,19 +66,18 @@ SHA-256 is
 The automated probe currently reports:
 
 ```text
-eden-profile: missing feature geometryShader
-eden-profile: extensions=0 features=1 limits=0 queues=0 total=1
+eden-profile: extensions=0 features=0 limits=0 queues=0 total=0
 ```
 
 `multiViewport` is hardware-qualified through two static
 viewport/scissor slots selected by `gl_ViewportIndex`. Both bounded FW 5.50
 runs produced exactly 9,216 green and 9,216 red pixels, self-exited, and left
 only the known `amount=0x4000` baseline warning. The corresponding host and
-ASAN/UBSAN suites pass 39/39 with VVL-clean coverage. It no longer completes
-the startup profile by itself: the older standalone geometry probe passed, but
-Mesa's fused-NGG Zink conversion later returned transparent black. The ICD now
-reports `geometryShader = VK_FALSE` until standalone and application-level
-geometry oracles both pass repeatedly.
+ASAN/UBSAN suites pass 39/39 with VVL-clean coverage. The later transparent-
+black Zink conversion was traced to missing geometry-stage parameter-export
+assignment in openagc-psbc. Compiler coverage, two exact SDL/Zink runs, and two
+strengthened standalone GS-to-FS varying runs now pass; the ICD reports
+`geometryShader = VK_TRUE` and the strict startup profile is zero-gap.
 
 The `independentBlend` contract is implemented and hardware-qualified. Graphics
 pipelines translate distinct per-attachment enable state, non-dual-source
@@ -356,7 +354,7 @@ warning. The public Prospero ELF SHA-256 is
 | --- | --- | --- |
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
 | Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 68 unique Vulkan image formats through OpenAGC API 52, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified; the 38-format scalar/vector gate passes 2,432 exact FW 5.50 clear/readback pixels twice. No genuine uncompressed image-format gap remains: RGB32 is deliberately buffer-only, 28 ASTC and 10 ETC2/EAC formats use Eden's transcode paths, and two D24 forms remain fail-closed | Direct image-format inventory complete at the advertised boundary; hardware scalar/vector shader/attachment execution remains |
-| Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths; the fused-NGG application path is under regression isolation | Startup-blocked only by truthful `geometryShader` quarantine |
+| Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths; fused-NGG geometry varyings pass standalone and SDL/Zink hardware oracles | Startup profile passes; real Eden shader-cache execution remains |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet/rejection regressions and two deterministic FW 5.50 readback runs pass | FW 5.50 hardware-qualified at this scope |
 | Presentation | Standard headless surface plus FIFO swapchain is hardware-qualified for 1,800 frames; Eden's PS5 surface bridge and 600-frame bootstrap are FW 5.50-qualified | Real Eden renderer/presentation workload remains |
@@ -383,8 +381,8 @@ depth/stencil clear and conversion helpers use render-pass graphics paths and
 attachment clears. Vulkan-PS5 still implements the general image command, but
 it is not evidence for an Eden requirement. All directly inventoried command
 families now record public OpenAGC work or fail closed for the documented
-unsupported subforms; the live startup blocker is geometry advertisement, not
-a silent command stub.
+unsupported subforms. The startup profile is zero-gap; the next evidence gap is
+real Eden shader-cache and renderer execution, not a silent command stub.
 
 The first refreshed uncompressed slice adds the four directly native integer
 targets `R16G16B16A16_{UINT,SINT}` and `R32G32B32A32_{UINT,SINT}`. They expose
@@ -593,10 +591,10 @@ reset, timeout, or GPU fault. See `analysis/fw550_buffer_copy_20260802.md`.
    query and device-create paths. The rejected packet experiments, GPU-reset
    evidence, both root causes, and runner hardening are documented in
    `fw550_indirect_draw_parameters_20260728.md`.
-   The immediate startup priority is now `geometryShader`: retain the public
-   false bit while comparing the complete fused-NGG state used by the passing
-   standalone probe and failing Mesa conversion. Do not trade the
-   application-level oracle for the earlier narrower green-pixel result.
+   The geometry startup requirement is closed: openagc-psbc assigns GS
+   parameter exports, Vulkan advertises the feature, and both standalone and
+   SDL/Zink application-level hardware oracles pass. The next gate is real Eden
+   shader-cache and renderer execution rather than another startup bit.
 3. Continue the general format matrix after the FW 5.50-qualified 14-format BC
    sampling and cross-mip copy slices: expand required uncompressed formats,
    then replay the final identical candidate on both firmware endpoints. Keep

@@ -260,7 +260,7 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     assert(features2.features.dualSrcBlend == VK_TRUE);
     assert(features2.features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features2.features.fillModeNonSolid == VK_TRUE);
-    assert(features2.features.geometryShader == VK_FALSE);
+    assert(features2.features.geometryShader == VK_TRUE);
     assert(features2.features.imageCubeArray == VK_TRUE);
     assert(features2.features.multiViewport == VK_TRUE);
     assert(features2.features.independentBlend == VK_TRUE);
@@ -473,7 +473,7 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
     assert(features.dualSrcBlend == VK_TRUE);
     assert(features.fragmentStoresAndAtomics == VK_TRUE);
     assert(features.fillModeNonSolid == VK_TRUE);
-    assert(features.geometryShader == VK_FALSE);
+    assert(features.geometryShader == VK_TRUE);
     assert(features.imageCubeArray == VK_TRUE);
     assert(features.multiViewport == VK_TRUE);
     assert(features.independentBlend == VK_TRUE);
@@ -800,7 +800,7 @@ enabled_timeline.pNext = &enabled_depth_clip;
             .dualSrcBlend = VK_TRUE,
             .fragmentStoresAndAtomics = VK_TRUE,
             .fillModeNonSolid = VK_TRUE,
-            .geometryShader = VK_FALSE,
+            .geometryShader = VK_TRUE,
             .imageCubeArray = VK_TRUE,
             .multiViewport = VK_TRUE,
             .independentBlend = VK_TRUE,
@@ -924,7 +924,7 @@ enabled_timeline.pNext = &enabled_depth_clip;
         .dualSrcBlend = VK_TRUE,
         .fragmentStoresAndAtomics = VK_TRUE,
         .fillModeNonSolid = VK_TRUE,
-        .geometryShader = VK_FALSE,
+        .geometryShader = VK_TRUE,
         .imageCubeArray = VK_TRUE,
         .multiViewport = VK_TRUE,
         .independentBlend = VK_TRUE,

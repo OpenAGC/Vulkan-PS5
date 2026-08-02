@@ -215,13 +215,15 @@ for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
 sampling. SDL retains OSMesa as its conservative fallback; the pinned Mesa
 runtime now also passes through the PS5 EGL/WSI bridge.
 
-The 2026-08-02 latest-stack replay corrected an over-advertised capability:
-`geometryShader` is temporarily reported false because Mesa's fused NGG
-geometry conversion was nondeterministic on FW 5.50. Zink then selects its
-vertex/fragment path. The current API-53 candidate passed two consecutive exact
-SDL RGBA readbacks with clean teardown and immediate relaunch. Geometry remains implemented for
-diagnostic probes, but it must regain a deterministic application-level
-hardware oracle before it is advertised to Eden or other Vulkan programs.
+The 2026-08-02 latest-stack replay exposed and fixed a geometry compiler bug.
+`openagc-psbc` assigned fragment-parameter exports for vertex and
+tessellation-evaluation shaders but omitted the geometry stage, so Mesa's fused
+NGG conversion delivered a zero varying and produced transparent black.
+Compiler regression coverage now requires a GS-back parameter export, the
+standalone geometry sample carries color through GS to FS, and Vulkan again
+reports `geometryShader = VK_TRUE`. Two SDL/Zink runs produced exact RGBA
+`64,128,191,255`, and two strengthened standalone runs produced exactly 4,608
+green pixels on FW 5.50.
 
 The pinned integration now passes end to end on FW 5.500.008. Vulkan-PS5
 records reflected push constants, dynamic-rendering RGBA8/BGRA8 clears, global
@@ -734,8 +736,8 @@ the standalone geometry workload is hardware-qualified. That candidate
 reported `geometryShader = VK_TRUE` through both core feature-query forms and
 accepted it through legacy `pEnabledFeatures` and
 `VkPhysicalDeviceFeatures2`, while still rejecting unadvertised features. This
-historical standalone evidence is superseded by the 2026-08-02 application-
-level quarantine above; current builds report the feature false. Both
+historical standalone evidence is now strengthened by the 2026-08-02
+GS-to-FS color-varying oracle; current builds report the feature true. Both
 seven-test host configurations and the Prospero build passed; the
 feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
 `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
@@ -743,7 +745,12 @@ Two independent bounded FW 5.500.008 runs produced exactly 4608 green pixels
 each (`20260728T051424Z-geometry-run1.log` and
 `20260728T051510Z-geometry-run1.log`). Both returned normally, bounded post-run
 websrv checks confirmed the console remained responsive, and neither was
-retried. Those exact historical bytes qualified the standalone path only.
+retried. Those exact historical bytes qualified the standalone path only. The
+strengthened ELF SHA-256
+`abff21e51e69179ccea2feef874d0920c2229384517a3d0d1ab375a9da89c425`
+passed twice with exactly 4,608 green pixels
+(`20260802T033240Z-geometry-run1.log` and
+`20260802T033240Z-geometry-run2.log`).
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its
