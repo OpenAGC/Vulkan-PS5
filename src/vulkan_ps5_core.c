@@ -2732,14 +2732,37 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
          image->format == VK_FORMAT_D32_SFLOAT_S8_UINT ?
             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT :
             VK_IMAGE_ASPECT_DEPTH_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
-    if (pCreateInfo->subresourceRange.baseMipLevel >= image->mip_levels)
+    if (pCreateInfo->subresourceRange.baseMipLevel >= image->mip_levels) {
+#if defined(__PROSPERO__)
+        fprintf(stderr, "vulkan-ps5: image-view reject base-mip: image-type=%u flags=0x%x image-format=%u view-format=%u view-type=%u extent=%ux%ux%u mips=%u layers=%u base-mip=%u levels=%u base-layer=%u view-layers=%u\n",
+            image->type, image->flags, image->format, pCreateInfo->format,
+            pCreateInfo->viewType, image->extent.width, image->extent.height,
+            image->extent.depth, image->mip_levels, image->array_layers,
+            pCreateInfo->subresourceRange.baseMipLevel,
+            pCreateInfo->subresourceRange.levelCount,
+            pCreateInfo->subresourceRange.baseArrayLayer,
+            pCreateInfo->subresourceRange.layerCount);
+#endif
         return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
     const uint32_t mip_depth =
         image->extent.depth >> pCreateInfo->subresourceRange.baseMipLevel;
     const uint32_t layer_limit = compatible_3d_view ?
         (mip_depth ? mip_depth : 1u) : image->array_layers;
-    if (pCreateInfo->subresourceRange.baseArrayLayer >= layer_limit)
+    if (pCreateInfo->subresourceRange.baseArrayLayer >= layer_limit) {
+#if defined(__PROSPERO__)
+        fprintf(stderr, "vulkan-ps5: image-view reject base-layer: image-type=%u flags=0x%x image-format=%u view-format=%u view-type=%u extent=%ux%ux%u mips=%u layers=%u base-mip=%u levels=%u base-layer=%u view-layers=%u layer-limit=%u compatible-3d=%u\n",
+            image->type, image->flags, image->format, pCreateInfo->format,
+            pCreateInfo->viewType, image->extent.width, image->extent.height,
+            image->extent.depth, image->mip_levels, image->array_layers,
+            pCreateInfo->subresourceRange.baseMipLevel,
+            pCreateInfo->subresourceRange.levelCount,
+            pCreateInfo->subresourceRange.baseArrayLayer,
+            pCreateInfo->subresourceRange.layerCount, layer_limit,
+            compatible_3d_view);
+#endif
         return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
     uint32_t level_count = pCreateInfo->subresourceRange.levelCount ==
         VK_REMAINING_MIP_LEVELS ?
         image->mip_levels - pCreateInfo->subresourceRange.baseMipLevel :
