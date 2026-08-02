@@ -1630,12 +1630,14 @@ Initial audit at `../eden-ps5` revision `39763e7321`:
   `20260801T131313Z-query-full.log`. The live profile is now two
   extension plus 25 feature gaps, total 27.
 - The compatibility audit is refreshed against upstream Eden revision
-  `612409c7ba`. VMA and the hard startup profile pass, and the format subset now
-  includes all 14 BC1-BC7 variants with multi-mip cube/cube-array and nonzero
-  mip-view coverage. D24, ASTC, and ETC remain fail-closed; broader
-  uncompressed coverage and the Prospero surface/build/static-entrypoint
-  integration in Eden itself are still missing. Both 40/40 normal and
-  ASAN/UBSAN suites pass, and the static/shared Prospero libraries build clean.
+  `612409c7ba`. VMA passes, and the format subset includes all 14 BC1-BC7
+  variants with multi-mip cube/cube-array and nonzero mip-view coverage. D24,
+  ASTC, and ETC remain fail-closed or use Eden's recorded transcode paths; the
+  direct uncompressed image inventory is complete. Eden's PS5 branch now has
+  the surface/static-entrypoint bridge and bounded FW 5.50 bootstrap evidence.
+  The hard startup profile is intentionally one feature short because
+  `geometryShader` is quarantined after the Zink fused-NGG regression. Current
+  generic tests pass 61/61 and the static/shared Prospero build is clean.
 - The application-neutral color-clear command is complete for every advertised
   uncompressed color format. `vkCmdClearColorImage` packs arbitrary 1/2/4/8/16
   byte UNORM, SRGB, half, float, RGB10A2, and R11G11B10 values over exact

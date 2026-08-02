@@ -575,6 +575,13 @@ the native-runtime migration.
   nonzero mode for closure. The accompanying matrix also records the runtime
   VMA, format, shader, presentation, and allowed Eden-integration work without
   weakening or special-casing Eden's requirements.
+  That `39763e7321` baseline is historical. The live revision-frozen audit now
+  targets upstream `612409c7ba`, and the PS5 branch carries surface,
+  static-entrypoint, VMA, frontend, and bounded-renderer bootstrap work through
+  `8197e9fb09`. Formats and directly exercised command families are inventoried
+  at the upstream revision. The only current hard ICD startup gap is the
+  deliberately quarantined `geometryShader`; real Eden renderer/shader-cache
+  execution remains broader than the bootstrap evidence.
   The first application-neutral reduction implements the query-only
   `VK_KHR_driver_properties` and `VK_KHR_shader_float_controls` contracts.
   Driver metadata reports the experimental ACO/gfx1013 identity with
