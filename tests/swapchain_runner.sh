@@ -91,6 +91,7 @@ cat >"$test_root/bin/uv" <<'EOF'
 #!/bin/sh
 case " $* " in
     *" --pid 321 "*" eboot.bin "*) ;;
+    *" --assert-absent "*" eboot.bin "*) ;;
     *) echo "runner did not use exact launched PID" >&2; exit 2 ;;
 esac
 printf '%s\n' "$*" >>"$FAKE_UV_LOG"
@@ -124,6 +125,9 @@ grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
     "$test_root/clean.out" >/dev/null
 grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
     "$test_root/clean.out" >/dev/null
+grep -F -- '--assert-absent 127.0.0.1 eboot.bin' "$test_root/uv.log" >/dev/null
+grep -F -- '--assert-absent --pid 321 127.0.0.1 eboot.bin' \
+    "$test_root/uv.log" >/dev/null
 
 : >"$test_root/build/eden-bootstrap.elf"
 if ! (

@@ -18,6 +18,9 @@ qualification_label=${VULKAN_PS5_QUALIFICATION_LABEL:-swapchain}
 pass_pattern=${VULKAN_PS5_QUALIFICATION_PASS_PATTERN:-'^swapchain: PASS 1800 frames$'}
 pass_description=${VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION:-'1800 frames'}
 required_pattern=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN:-}
+required_pattern_2=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_2:-}
+required_pattern_3=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_3:-}
+reject_pattern=${VULKAN_PS5_QUALIFICATION_REJECT_PATTERN:-}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 sidecar=${VULKAN_PS5_QUALIFICATION_SIDECAR:-}
@@ -82,8 +85,11 @@ if [ -z "$pass_pattern" ] || [ "${#pass_pattern}" -gt 256 ] ||
     echo "qualification PASS pattern or description is empty or oversized" >&2
     exit 2
 fi
-if [ "${#required_pattern}" -gt 256 ]; then
-    echo "qualification required pattern is oversized" >&2
+if [ "${#required_pattern}" -gt 256 ] || \
+   [ "${#required_pattern_2}" -gt 256 ] || \
+   [ "${#required_pattern_3}" -gt 256 ] || \
+   [ "${#reject_pattern}" -gt 256 ]; then
+    echo "qualification required or reject pattern is oversized" >&2
     exit 2
 fi
 case "$klog_port" in
@@ -160,6 +166,82 @@ if ! curl -sS --connect-timeout 3 --max-time 5 \
 fi
 
 cleanup_dir=/data/homebrew/vulkan_ps5_process_cleanup
+target_pid=
+
+assert_no_eboot_process() {
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" --assert-absent \
+        "$PS5_HOST" eboot.bin
+}
+
+assert_no_scoped_eboot_process() {
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" --assert-absent \
+        --pid "$1" "$PS5_HOST" eboot.bin
+}
+
+kill_stale_process() {
+    target_pid_to_kill=$1
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" --pid "$target_pid_to_kill" \
+        "$PS5_HOST" eboot.bin
+}
+
+kill_named_eboot_process() {
+    uv run --project "$pyps4debug_dir" python \
+        "$script_dir/ps5debug_kill_process.py" "$PS5_HOST" eboot.bin
+}
+
+launch_pinned_cleanup() {
+    if ! curl -sS --connect-timeout 3 --max-time 10 \
+        "http://${PS5_HOST}:8080/hbldr?pipe=0&daemon=1&path=${cleanup_dir}/eboot.elf" \
+        >/dev/null; then
+        echo "pinned cleanup launch failed" >&2
+        return 1
+    fi
+    sleep 2
+    if ! curl -sS --connect-timeout 3 --max-time 5 \
+        "http://${PS5_HOST}:8080/" >/dev/null; then
+        echo "pinned cleanup left websrv unreachable" >&2
+        return 1
+    fi
+}
+
+finalize_process_state() {
+    status=$1
+    cleanup_failed=0
+    trap - 0
+
+    if [ "$status" -ne 0 ]; then
+        echo "qualification failed; relaunching pinned cleanup before exit checks" >&2
+        if ! launch_pinned_cleanup; then
+            cleanup_failed=1
+        fi
+    fi
+
+    if [ -n "$target_pid" ] && ! assert_no_scoped_eboot_process "$target_pid"; then
+        kill_stale_process "$target_pid" || true
+        if ! assert_no_scoped_eboot_process "$target_pid"; then
+            echo "qualification PID $target_pid remained at exit" >&2
+            cleanup_failed=1
+        fi
+    fi
+
+    if ! assert_no_eboot_process; then
+        echo "an exact eboot.bin process remained at exit; attempting cleanup" >&2
+        kill_named_eboot_process || true
+        if ! assert_no_eboot_process; then
+            echo "an exact eboot.bin process remained after exit cleanup" >&2
+            cleanup_failed=1
+        fi
+    fi
+
+    if [ "$status" -eq 0 ] && [ "$cleanup_failed" -ne 0 ]; then
+        exit 1
+    fi
+    exit "$status"
+}
+
 curl -sS --connect-timeout 3 --max-time 30 \
     "ftp://${PS5_HOST}:2121/" --quote "MKD $cleanup_dir" \
     >/dev/null 2>&1 || true
@@ -168,22 +250,12 @@ curl -sS --connect-timeout 3 --max-time 30 -T "$cleanup_elf" \
 verify_remote_sha256 \
     "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" \
     "$expected_cleanup_sha256" 'cleanup prerequisite'
-curl -sS --connect-timeout 3 --max-time 10 \
-    "http://${PS5_HOST}:8080/hbldr?pipe=0&daemon=1&path=${cleanup_dir}/eboot.elf" \
-    >/dev/null
-sleep 2
-if ! curl -sS --connect-timeout 3 --max-time 5 \
-    "http://${PS5_HOST}:8080/" >/dev/null; then
-    echo "FW 5.50 cleanup prerequisite left websrv unreachable" >&2
+trap 'finalize_process_state "$?"' 0
+launch_pinned_cleanup
+if ! assert_no_eboot_process; then
+    echo "cleanup prerequisite did not retire every exact eboot.bin process" >&2
     exit 1
 fi
-
-kill_stale_process() {
-    target_pid=$1
-    uv run --project "$pyps4debug_dir" python \
-        "$script_dir/ps5debug_kill_process.py" --pid "$target_pid" \
-        "$PS5_HOST" eboot.bin
-}
 
 latest_eboot_pid() {
     sed -n 's/^<\([0-9][0-9]*\)> EXEC \/app0\/eboot\.bin .*category=native_game.*/\1/p' "$1" | \
@@ -241,10 +313,7 @@ if ! {
 } >"$log" 2>&1; then
     capture_klog || true
     if [ -s "$klog" ]; then
-        failed_pid=$(latest_eboot_pid "$klog")
-        if [ -n "$failed_pid" ]; then
-            kill_stale_process "$failed_pid" || true
-        fi
+        target_pid=$(latest_eboot_pid "$klog")
     fi
     sed -n '1,200p' "$log" >&2
     if [ -s "$klog" ]; then
@@ -259,20 +328,37 @@ if ! capture_klog; then
 fi
 sed -n '1,200p' "$log"
 if ! grep -E "$pass_pattern" "$log" >/dev/null; then
-    failed_pid=$(latest_eboot_pid "$klog")
-    if [ -n "$failed_pid" ]; then
-        kill_stale_process "$failed_pid" || true
-    fi
+    target_pid=$(latest_eboot_pid "$klog")
     echo "swapchain run did not produce its PASS oracle; log: $log" >&2
     exit 1
 fi
 if [ -n "$required_pattern" ] && ! grep -E "$required_pattern" "$log" >/dev/null; then
-    failed_pid=$(latest_eboot_pid "$klog")
-    if [ -n "$failed_pid" ]; then
-        kill_stale_process "$failed_pid" || true
-    fi
+    target_pid=$(latest_eboot_pid "$klog")
     echo "swapchain run did not produce its required diagnostic oracle; log: $log" >&2
     exit 1
+fi
+if [ -n "$required_pattern_2" ] && ! grep -E "$required_pattern_2" "$log" >/dev/null; then
+    target_pid=$(latest_eboot_pid "$klog")
+    echo "swapchain run did not produce its second required diagnostic oracle; log: $log" >&2
+    exit 1
+fi
+if [ -n "$required_pattern_3" ] && ! grep -E "$required_pattern_3" "$log" >/dev/null; then
+    target_pid=$(latest_eboot_pid "$klog")
+    echo "swapchain run did not produce its third required diagnostic oracle; log: $log" >&2
+    exit 1
+fi
+if [ -n "$reject_pattern" ]; then
+    if grep -E "$reject_pattern" "$log" >/dev/null; then
+        target_pid=$(latest_eboot_pid "$klog")
+        echo "swapchain application log matched its reject oracle; log: $log" >&2
+        exit 1
+    else
+        reject_status=$?
+        if [ "$reject_status" -gt 1 ]; then
+            echo "qualification reject pattern is not a valid extended regular expression" >&2
+            exit 2
+        fi
+    fi
 fi
 
 target_pid=$(latest_eboot_pid "$klog")

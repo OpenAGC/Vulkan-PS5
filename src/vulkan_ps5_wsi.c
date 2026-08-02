@@ -12,6 +12,7 @@
 #include <time.h>
 
 #define VK_PS5_SWAPCHAIN_IMAGE_COUNT 3u
+#define VK_PS5_PRESENT_PROGRESS_INTERVAL UINT64_C(100)
 
 typedef struct VkPs5Surface {
     VkInstance instance;
@@ -32,6 +33,7 @@ typedef struct VkPs5Swapchain {
     bool available_initialized;
     uint32_t next_image;
     uint64_t frame_id;
+    uint64_t successful_presents;
     VkBool32 retired;
 } VkPs5Swapchain;
 
@@ -580,6 +582,8 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
         VkPs5Swapchain *swapchain =
             swapchain_from_handle(pPresentInfo->pSwapchains[i]);
         uint32_t index = pPresentInfo->pImageIndices[i];
+        uint64_t frame_id = 0u;
+        uint64_t successful_present_count = 0u;
         VkResult item_result = VK_SUCCESS;
         if (!swapchain || index >= VK_PS5_SWAPCHAIN_IMAGE_COUNT) {
             item_result = VK_ERROR_INITIALIZATION_FAILED;
@@ -588,7 +592,7 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
                 item_result = VK_ERROR_DEVICE_LOST;
                 goto item_done;
             }
-            uint64_t frame_id = swapchain->frame_id++;
+            frame_id = swapchain->frame_id++;
             if (!swapchain->acquired[index]) {
                 item_result = VK_ERROR_INITIALIZATION_FAILED;
             } else {
@@ -611,10 +615,33 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
             }
             if (item_result == VK_SUCCESS) {
                 swapchain->acquired[index] = false;
+                successful_present_count = ++swapchain->successful_presents;
                 (void)pthread_cond_broadcast(&swapchain->available);
             }
             (void)pthread_mutex_unlock(&swapchain->lock);
         }
+#if defined(__PROSPERO__)
+        /* Detailed first-eight output remains above.  This sparse progress
+         * proof is counted only after a native success is committed while the
+         * swapchain lock is held, so failed native attempts cannot advance it. */
+        if (successful_present_count && diagnostic >= 8u &&
+            successful_present_count % VK_PS5_PRESENT_PROGRESS_INTERVAL == 0u) {
+            if (successful_present_count == 6u *
+                                           VK_PS5_PRESENT_PROGRESS_INTERVAL) {
+                fprintf(stderr,
+                    "vulkan-ps5: native present 600-frame gate complete "
+                    "successes=%llu frame=%llu index=%u\n",
+                    (unsigned long long)successful_present_count,
+                    (unsigned long long)frame_id, index);
+            } else {
+                fprintf(stderr,
+                    "vulkan-ps5: native present progress successes=%llu "
+                    "frame=%llu index=%u\n",
+                    (unsigned long long)successful_present_count,
+                    (unsigned long long)frame_id, index);
+            }
+        }
+#endif
 item_done:
         if (pPresentInfo->pResults) pPresentInfo->pResults[i] = item_result;
         if (overall == VK_SUCCESS && item_result != VK_SUCCESS)
