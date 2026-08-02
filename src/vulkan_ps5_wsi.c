@@ -440,6 +440,15 @@ vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain_handle,
 static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
                                    VkSemaphore semaphore, VkFence fence,
                                    uint32_t *image_index) {
+#if defined(__PROSPERO__)
+    static atomic_uint acquire_diagnostics = ATOMIC_VAR_INIT(0u);
+    const unsigned int diagnostic =
+        atomic_fetch_add(&acquire_diagnostics, 1u);
+    if (diagnostic < 8u)
+        fprintf(stderr,
+            "vulkan-ps5: acquire checkpoint %u entry timeout=%llu\n",
+            diagnostic, (unsigned long long)timeout);
+#endif
     if (!swapchain || !image_index || (!semaphore && !fence))
         return VK_ERROR_INITIALIZATION_FAILED;
     struct timespec deadline = {0};
@@ -465,6 +474,13 @@ static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
                 else
                     swapchain->acquired[index] = false;
                 (void)pthread_mutex_unlock(&swapchain->lock);
+#if defined(__PROSPERO__)
+                if (diagnostic < 8u)
+                    fprintf(stderr,
+                        "vulkan-ps5: acquire checkpoint %u complete "
+                        "index=%u result=%d\n",
+                        diagnostic, index, result);
+#endif
                 return result;
             }
         }
@@ -510,6 +526,16 @@ vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR *pAcquir
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
+#if defined(__PROSPERO__)
+    static atomic_uint present_diagnostics = ATOMIC_VAR_INIT(0u);
+    const unsigned int diagnostic =
+        atomic_fetch_add(&present_diagnostics, 1u);
+    if (diagnostic < 8u)
+        fprintf(stderr,
+            "vulkan-ps5: present checkpoint %u entry swapchains=%u waits=%u\n",
+            diagnostic, pPresentInfo ? pPresentInfo->swapchainCount : 0u,
+            pPresentInfo ? pPresentInfo->waitSemaphoreCount : 0u);
+#endif
     if (!queue || !pPresentInfo ||
         pPresentInfo->sType != VK_STRUCTURE_TYPE_PRESENT_INFO_KHR ||
         (pPresentInfo->swapchainCount &&
@@ -570,6 +596,14 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
                 item_result = vk_ps5_queue_present_native(queue,
                     swapchain->present_chain, index, frame_id,
                     (uint64_t)VK_PS5_PRESENT_TIMEOUT_US * UINT64_C(1000));
+#if defined(__PROSPERO__)
+                if (diagnostic < 8u)
+                    fprintf(stderr,
+                        "vulkan-ps5: present checkpoint %u native result=%d "
+                        "index=%u frame=%llu\n",
+                        diagnostic, item_result, index,
+                        (unsigned long long)frame_id);
+#endif
                 if (pthread_mutex_lock(&swapchain->lock) != 0) {
                     item_result = VK_ERROR_DEVICE_LOST;
                     goto item_done;

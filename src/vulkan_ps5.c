@@ -474,6 +474,11 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     uint32_t command_buffer_count,
     const AgcCommandBuffer *command_buffers)
 {
+#if defined(__PROSPERO__)
+    static atomic_uint native_submit_diagnostics = ATOMIC_VAR_INIT(0u);
+    const unsigned int diagnostic =
+        atomic_fetch_add(&native_submit_diagnostics, 1u);
+#endif
     VkPs5Queue *queue = (VkPs5Queue *)queue_handle;
     AgcFence fence = NULL;
     AgcFenceDesc fence_desc = AGC_FENCE_DESC_INIT;
@@ -493,6 +498,12 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     }
     while (atomic_flag_test_and_set_explicit(
         &queue->submit_lock, memory_order_acquire)) {}
+#if defined(__PROSPERO__)
+    if (diagnostic < 8u)
+        fprintf(stderr,
+            "vulkan-ps5: native-submit checkpoint %u lock-acquired\n",
+            diagnostic);
+#endif
     result = agcCreateFence(queue->device->native_device,
         &fence_desc, &fence);
     if (result != AGC_OK) {
@@ -505,9 +516,21 @@ VkResult vk_ps5_queue_submit_native(VkQueue queue_handle,
     failure_stage = "submit";
     result = agcQueueSubmit(queue->device->native_graphics_queue,
         &submit, fence);
+#if defined(__PROSPERO__)
+    if (diagnostic < 8u)
+        fprintf(stderr,
+            "vulkan-ps5: native-submit checkpoint %u queue result=0x%08x\n",
+            diagnostic, (unsigned int)result);
+#endif
     if (result == AGC_OK) {
         failure_stage = "wait";
         result = agcWaitFence(fence, UINT64_C(5000000000));
+#if defined(__PROSPERO__)
+        if (diagnostic < 8u)
+            fprintf(stderr,
+                "vulkan-ps5: native-submit checkpoint %u wait result=0x%08x\n",
+                diagnostic, (unsigned int)result);
+#endif
     }
     if (result == AGC_OK) {
         (void)agcDestroyFence(queue->present_ready_fence);
