@@ -5833,8 +5833,10 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
             }
             if (attachment != VK_ATTACHMENT_UNUSED) {
                 AgcGfx1013ColorTargetFormat target_format;
-                if (source->pColorAttachments[j].layout !=
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+                if ((source->pColorAttachments[j].layout !=
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+                     source->pColorAttachments[j].layout !=
+                         VK_IMAGE_LAYOUT_GENERAL) ||
                     (render_pass->attachments[attachment].samples !=
                          VK_SAMPLE_COUNT_1_BIT &&
                      render_pass->attachments[attachment].samples !=

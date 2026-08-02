@@ -616,7 +616,10 @@ int main(int argc, char **argv)
         },
     };
     const VkAttachmentReference colors[] = {
-        {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        /* GENERAL is valid for a color attachment and is used by Eden's
+           first-frame presentation render pass. Keep the second attachment
+           optimal so the mixed-layout path is covered as well. */
+        {0, VK_IMAGE_LAYOUT_GENERAL},
         {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
     };
     const VkAttachmentReference depth = {
@@ -638,6 +641,17 @@ int main(int argc, char **argv)
     VkRenderPass render_pass;
     assert(vkCreateRenderPass(device, &render_pass_info, NULL,
                               &render_pass) == VK_SUCCESS);
+    VkAttachmentReference invalid_color = colors[0];
+    invalid_color.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    VkSubpassDescription invalid_color_subpass = subpass;
+    invalid_color_subpass.colorAttachmentCount = 1u;
+    invalid_color_subpass.pColorAttachments = &invalid_color;
+    VkRenderPassCreateInfo invalid_color_render_pass_info = render_pass_info;
+    invalid_color_render_pass_info.pSubpasses = &invalid_color_subpass;
+    VkRenderPass invalid_color_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &invalid_color_render_pass_info, NULL,
+        &invalid_color_render_pass) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_color_render_pass == VK_NULL_HANDLE);
     const VkImageCreateInfo image_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
