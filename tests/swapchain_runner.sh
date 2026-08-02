@@ -109,6 +109,7 @@ run_runner() {
     VULKAN_PS5_PROSPERO_BUILD="$test_root/build" \
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
     VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
+    VULKAN_PS5_CLEANUP_SETTLE_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_CURL_REMOTE="$test_root/remote" \
     FAKE_KLOG_MODE="$mode" \
@@ -136,6 +137,9 @@ if ! (
         VULKAN_PS5_QUALIFICATION_LABEL=eden \
         VULKAN_PS5_QUALIFICATION_PASS_PATTERN='^swapchain: PASS 1800 frames$' \
         VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN='Total Pipeline Count: [1-9][0-9]*' \
+        VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_2='swapchain: cleanup begin' \
+        VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_3='swapchain: swapchain destroyed' \
+        VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_4='swapchain: 1800/1800 frames' \
         VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION='600 frames and compute oracle' \
         run_runner clean "$test_root/external.out" "$test_root/external-logs"
 ); then

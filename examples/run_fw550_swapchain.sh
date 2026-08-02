@@ -10,6 +10,7 @@ log_dir=${VULKAN_PS5_FW550_LOG_DIR:-$script_dir/qualification-logs}
 websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-60}
 klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
+cleanup_settle_delay=${VULKAN_PS5_CLEANUP_SETTLE_DELAY:-2}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf=${VULKAN_PS5_QUALIFICATION_ELF:-$build_dir/vulkan_ps5_swapchain_example.elf}
 cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
@@ -20,6 +21,7 @@ pass_description=${VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION:-'1800 frames'}
 required_pattern=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN:-}
 required_pattern_2=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_2:-}
 required_pattern_3=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_3:-}
+required_pattern_4=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_4:-}
 reject_pattern=${VULKAN_PS5_QUALIFICATION_REJECT_PATTERN:-}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
@@ -88,6 +90,7 @@ fi
 if [ "${#required_pattern}" -gt 256 ] || \
    [ "${#required_pattern_2}" -gt 256 ] || \
    [ "${#required_pattern_3}" -gt 256 ] || \
+   [ "${#required_pattern_4}" -gt 256 ] || \
    [ "${#reject_pattern}" -gt 256 ]; then
     echo "qualification required or reject pattern is oversized" >&2
     exit 2
@@ -101,6 +104,12 @@ esac
 case "$klog_settle_delay" in
     ''|*[!0-9]*)
         echo "VULKAN_PS5_KLOG_SETTLE_DELAY must be a non-negative integer" >&2
+        exit 2
+        ;;
+esac
+case "$cleanup_settle_delay" in
+    ''|*[!0-9]*)
+        echo "VULKAN_PS5_CLEANUP_SETTLE_DELAY must be a non-negative integer" >&2
         exit 2
         ;;
 esac
@@ -199,7 +208,7 @@ launch_pinned_cleanup() {
         echo "pinned cleanup launch failed" >&2
         return 1
     fi
-    sleep 2
+    sleep "$cleanup_settle_delay"
     if ! curl -sS --connect-timeout 3 --max-time 5 \
         "http://${PS5_HOST}:8080/" >/dev/null; then
         echo "pinned cleanup left websrv unreachable" >&2
@@ -345,6 +354,11 @@ fi
 if [ -n "$required_pattern_3" ] && ! grep -E "$required_pattern_3" "$log" >/dev/null; then
     target_pid=$(latest_eboot_pid "$klog")
     echo "swapchain run did not produce its third required diagnostic oracle; log: $log" >&2
+    exit 1
+fi
+if [ -n "$required_pattern_4" ] && ! grep -E "$required_pattern_4" "$log" >/dev/null; then
+    target_pid=$(latest_eboot_pid "$klog")
+    echo "swapchain run did not produce its fourth required diagnostic oracle; log: $log" >&2
     exit 1
 fi
 if [ -n "$reject_pattern" ]; then
