@@ -13,6 +13,8 @@
 
 #define FORMAT_COUNT 36u
 #define FRAGMENT_CLASS_COUNT 3u
+#define CLEAR_ATTACHMENT_WIDTH 1280u
+#define CLEAR_ATTACHMENT_HEIGHT 720u
 
 typedef enum NumericClass {
     NUMERIC_FLOAT = 0,
@@ -165,6 +167,294 @@ static uint32_t find_host_visible_memory_type(
     }
     return UINT32_MAX;
 }
+
+#if defined(OPENAGC_PROSPERO)
+static uint32_t find_device_local_memory_type(
+    VkPhysicalDevice physical, uint32_t compatible_types)
+{
+    VkPhysicalDeviceMemoryProperties properties;
+    vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+    for (uint32_t i = 0u; i < properties.memoryTypeCount; ++i) {
+        if ((compatible_types & (1u << i)) != 0u &&
+            (properties.memoryTypes[i].propertyFlags &
+             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0u)
+            return i;
+    }
+    return UINT32_MAX;
+}
+
+static int run_clear_attachments_regression(VkPhysicalDevice physical,
+                                            VkDevice device, VkQueue queue)
+{
+    int status = 1;
+    VkResult result;
+    VkImage image = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkDeviceMemory image_memory = VK_NULL_HANDLE;
+    VkBuffer readback = VK_NULL_HANDLE;
+    VkDeviceMemory readback_memory = VK_NULL_HANDLE;
+    VkRenderPass render_pass = VK_NULL_HANDLE;
+    VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    VkCommandPool command_pool = VK_NULL_HANDLE;
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    VkFence fence = VK_NULL_HANDLE;
+    void *mapped = NULL;
+    const VkDeviceSize readback_size =
+        (VkDeviceSize)CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT * 4u;
+
+#define CLEAR_TRY(expression) do { \
+    result = (expression); \
+    if (result != VK_SUCCESS) { \
+        printf("format_attachments: clear_attachment %s failed (%d)\\n", \
+            #expression, result); \
+        goto cleanup; \
+    } \
+} while (0)
+
+    const VkImageCreateInfo image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+            VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .extent = {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    CLEAR_TRY(vkCreateImage(device, &image_info, NULL, &image));
+    VkMemoryRequirements image_requirements;
+    vkGetImageMemoryRequirements(device, image, &image_requirements);
+    const uint32_t image_memory_type = find_device_local_memory_type(
+        physical, image_requirements.memoryTypeBits);
+    if (image_memory_type == UINT32_MAX) {
+        printf("format_attachments: clear_attachment has no device-local image memory\\n");
+        goto cleanup;
+    }
+    const VkMemoryAllocateInfo image_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = image_requirements.size,
+        .memoryTypeIndex = image_memory_type,
+    };
+    CLEAR_TRY(vkAllocateMemory(device, &image_allocation, NULL, &image_memory));
+    CLEAR_TRY(vkBindImageMemory(device, image, image_memory, 0u));
+
+    const VkImageViewCreateInfo view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+        },
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+        },
+    };
+    CLEAR_TRY(vkCreateImageView(device, &view_info, NULL, &view));
+
+    const VkAttachmentDescription attachment = {
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkAttachmentReference color_reference = {
+        .attachment = 0u,
+        .layout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    const VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1u,
+        .pColorAttachments = &color_reference,
+    };
+    const VkRenderPassCreateInfo render_pass_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1u,
+        .pAttachments = &attachment,
+        .subpassCount = 1u,
+        .pSubpasses = &subpass,
+    };
+    CLEAR_TRY(vkCreateRenderPass(device, &render_pass_info, NULL, &render_pass));
+    const VkFramebufferCreateInfo framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = render_pass,
+        .attachmentCount = 1u,
+        .pAttachments = &view,
+        .width = CLEAR_ATTACHMENT_WIDTH,
+        .height = CLEAR_ATTACHMENT_HEIGHT,
+        .layers = 1u,
+    };
+    CLEAR_TRY(vkCreateFramebuffer(device, &framebuffer_info, NULL, &framebuffer));
+
+    const VkBufferCreateInfo readback_info = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = readback_size,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    CLEAR_TRY(vkCreateBuffer(device, &readback_info, NULL, &readback));
+    VkMemoryRequirements readback_requirements;
+    vkGetBufferMemoryRequirements(device, readback, &readback_requirements);
+    const uint32_t readback_memory_type = find_host_visible_memory_type(
+        physical, readback_requirements.memoryTypeBits);
+    if (readback_memory_type == UINT32_MAX) {
+        printf("format_attachments: clear_attachment has no host-visible readback memory\\n");
+        goto cleanup;
+    }
+    const VkMemoryAllocateInfo readback_allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = readback_requirements.size,
+        .memoryTypeIndex = readback_memory_type,
+    };
+    CLEAR_TRY(vkAllocateMemory(device, &readback_allocation, NULL, &readback_memory));
+    CLEAR_TRY(vkBindBufferMemory(device, readback, readback_memory, 0u));
+    CLEAR_TRY(vkMapMemory(device, readback_memory, 0u, readback_size, 0u, &mapped));
+
+    const VkCommandPoolCreateInfo pool_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = 0u,
+    };
+    CLEAR_TRY(vkCreateCommandPool(device, &pool_info, NULL, &command_pool));
+    const VkCommandBufferAllocateInfo command_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1u,
+    };
+    CLEAR_TRY(vkAllocateCommandBuffers(device, &command_info, &command));
+    const VkFenceCreateInfo fence_info = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+    CLEAR_TRY(vkCreateFence(device, &fence_info, NULL, &fence));
+
+    const VkCommandBufferBeginInfo begin_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageSubresourceRange image_range = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+    };
+    const VkRenderPassBeginInfo begin_render_pass = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
+    };
+    const VkClearAttachment clear_attachment = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .colorAttachment = 0u,
+        .clearValue.color.float32 = {1.0f, 0.0f, 1.0f, 1.0f},
+    };
+    const VkClearRect clear_rect = {
+        .rect = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
+        .baseArrayLayer = 0u,
+        .layerCount = 1u,
+    };
+    vkCmdBeginRenderPass(command, &begin_render_pass, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdClearAttachments(command, 1u, &clear_attachment, 1u, &clear_rect);
+    vkCmdEndRenderPass(command);
+    const VkImageMemoryBarrier to_transfer_source = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    const VkBufferImageCopy copy = {
+        .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .imageExtent = {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT, 1u},
+    };
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    const VkBufferMemoryBarrier to_host = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = readback,
+        .offset = 0u,
+        .size = readback_size,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    const VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &command,
+    };
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE, UINT64_C(2000000000)));
+    const VkMappedMemoryRange invalidate = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = readback_memory,
+        .size = readback_size,
+    };
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+
+    const uint8_t expected[] = {0xffu, 0x00u, 0xffu, 0xffu};
+    const uint32_t sample_offsets[] = {
+        0u,
+        ((CLEAR_ATTACHMENT_HEIGHT / 2u) * CLEAR_ATTACHMENT_WIDTH +
+         CLEAR_ATTACHMENT_WIDTH / 2u) * 4u,
+        (CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT - 1u) * 4u,
+    };
+    for (uint32_t i = 0u; i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: clear_attachment mismatch sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            goto cleanup;
+        }
+    }
+    puts("format_attachments: CLEAR_ATTACHMENTS PASS format=b8g8r8a8_unorm "
+         "extent=1280x720 checks=3 magenta=ff00ffff");
+    status = 0;
+
+cleanup:
+    if (mapped != NULL)
+        vkUnmapMemory(device, readback_memory);
+    if (fence != VK_NULL_HANDLE)
+        vkDestroyFence(device, fence, NULL);
+    if (command_pool != VK_NULL_HANDLE)
+        vkDestroyCommandPool(device, command_pool, NULL);
+    if (readback != VK_NULL_HANDLE)
+        vkDestroyBuffer(device, readback, NULL);
+    if (readback_memory != VK_NULL_HANDLE)
+        vkFreeMemory(device, readback_memory, NULL);
+    if (framebuffer != VK_NULL_HANDLE)
+        vkDestroyFramebuffer(device, framebuffer, NULL);
+    if (render_pass != VK_NULL_HANDLE)
+        vkDestroyRenderPass(device, render_pass, NULL);
+    if (view != VK_NULL_HANDLE)
+        vkDestroyImageView(device, view, NULL);
+    if (image != VK_NULL_HANDLE)
+        vkDestroyImage(device, image, NULL);
+    if (image_memory != VK_NULL_HANDLE)
+        vkFreeMemory(device, image_memory, NULL);
+    return status;
+
+#undef CLEAR_TRY
+}
+#endif
 
 static VkResult create_test_image(VkPhysicalDevice physical, VkDevice device,
     const FormatCase *format_case, TestImage *test_image)
@@ -364,6 +654,12 @@ static int run_probe(void)
         .pQueueCreateInfos = &queue_info,
     };
     VK_TRY(vkCreateDevice(physical, &device_info, NULL, &device));
+    VkQueue queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(device, 0u, 0u, &queue);
+#if defined(OPENAGC_PROSPERO)
+    if (run_clear_attachments_regression(physical, device, queue) != 0)
+        goto cleanup;
+#endif
 
     VkMappedMemoryRange mapped_ranges[FORMAT_COUNT];
     for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
@@ -438,8 +734,6 @@ static int run_probe(void)
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
     };
     VK_TRY(vkCreateFence(device, &fence_info, NULL, &fence));
-    VkQueue queue = VK_NULL_HANDLE;
-    vkGetDeviceQueue(device, 0u, 0u, &queue);
 
     const VkImageSubresourceRange image_range = {
         VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
