@@ -9566,15 +9566,6 @@ vkCmdPushConstants(VkCommandBuffer c, VkPipelineLayout l, VkShaderStageFlags s,
     if (stages & VK_SHADER_STAGE_COMPUTE_BIT)
         stage_mask |= (1u << kAgcShaderStageCs);
     uint64_t written = native_push_constant_mask(o, n);
-#ifdef __PROSPERO__
-    const uint32_t *words = (const uint32_t *)v;
-    fprintf(stderr,
-        "vulkan-ps5: vkCmdPushConstants stages=0x%x native=0x%x "
-        "offset=%u size=%u words=%08x,%08x,%08x,%08x\n",
-        s, stage_mask, o, n, n >= 4u ? words[0] : 0u,
-        n >= 8u ? words[1] : 0u, n >= 12u ? words[2] : 0u,
-        n >= 16u ? words[3] : 0u);
-#endif
     for (uint32_t stage = 0u; stage < kAgcShaderStageCount; ++stage) {
         if ((stage_mask & (1u << stage)) != 0u) {
             memcpy(command->push_constant_data[stage] + o, v, n);
