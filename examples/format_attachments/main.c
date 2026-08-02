@@ -195,6 +195,24 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     VkRenderPass render_pass, uint32_t width, uint32_t height,
     VkBool32 dynamic_viewport_scissor, VkPipeline *pipeline);
 
+static int report_magenta_samples(const void *mapped,
+    const uint32_t *sample_offsets, uint32_t sample_count, const char *label)
+{
+    static const uint8_t expected[] = {0xffu, 0x00u, 0xffu, 0xffu};
+    for (uint32_t i = 0u; i < sample_count; ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: %s FAIL sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", label, i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            return 0;
+        }
+    }
+    printf("format_attachments: %s PASS checks=%u magenta=ff00ffff\n",
+        label, sample_count);
+    return 1;
+}
+
 static int run_clear_attachments_regression(VkPhysicalDevice physical,
                                             VkDevice device, VkQueue queue)
 {
@@ -450,7 +468,142 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     puts("format_attachments: ZERO_INITIALIZATION PASS format=b8g8r8a8_unorm "
          "extent=1280x720 bytes=3686400 zero=00");
 
-    /* Submission B contains the production attachment clear and its readback,
+    const VkPipelineLayoutCreateInfo graphics_control_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    };
+    CLEAR_TRY(vkCreatePipelineLayout(device, &graphics_control_layout_info,
+        NULL, &graphics_control_layout));
+    CLEAR_TRY(create_shader_module(device,
+        vulkan_ps5_format_attachment_vert_spv,
+        sizeof(vulkan_ps5_format_attachment_vert_spv),
+        &graphics_control_vertex));
+    CLEAR_TRY(create_shader_module(device,
+        vulkan_ps5_format_attachment_fixed_magenta_spv,
+        sizeof(vulkan_ps5_format_attachment_fixed_magenta_spv),
+        &graphics_control_fragment));
+    CLEAR_TRY(create_pipeline(device, graphics_control_layout,
+        graphics_control_vertex, graphics_control_fragment,
+        VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
+        CLEAR_ATTACHMENT_HEIGHT, VK_FALSE, &graphics_control_pipeline));
+
+    const VkRenderPassBeginInfo begin_render_pass = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = framebuffer,
+        .renderArea = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
+    };
+    const VkClearAttachment clear_attachment = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .colorAttachment = 0u,
+        .clearValue.color.float32 = {1.0f, 0.0f, 1.0f, 1.0f},
+    };
+    const VkClearRect clear_rect = {
+        .rect = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
+        .baseArrayLayer = 0u,
+        .layerCount = 1u,
+    };
+    const VkImageMemoryBarrier to_transfer_source = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+
+    /* Make the fixed shader the process's first graphics draw. */
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier first_to_attachment = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &first_to_attachment);
+    vkCmdBeginRenderPass(command, &begin_render_pass,
+        VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        graphics_control_pipeline);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(command);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    const int first_graphics_passed = report_magenta_samples(mapped,
+        sample_offsets,
+        (uint32_t)(sizeof(sample_offsets) / sizeof(sample_offsets[0])),
+        "FIRST_GRAPHICS_DRAW");
+
+    /* Restore an independently verified zero baseline before the production
+     * clear and the later identical fixed draw. */
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier first_to_zero = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &first_to_zero);
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1u,
+        &image_range);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &zero_to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    int second_baseline_zero_passed = 1;
+    for (VkDeviceSize byte = 0u; byte < readback_size; ++byte) {
+        if (((const uint8_t *)mapped)[byte] != 0u) {
+            printf("format_attachments: SECOND_BASELINE_ZERO FAIL byte=%llu "
+                   "got=%02x expected=00\n", (unsigned long long)byte,
+                   ((const uint8_t *)mapped)[byte]);
+            second_baseline_zero_passed = 0;
+            break;
+        }
+    }
+    if (second_baseline_zero_passed) {
+        puts("format_attachments: SECOND_BASELINE_ZERO PASS bytes=3686400 "
+             "zero=00");
+    }
+
+    /* Submission D contains the production attachment clear and its readback,
      * with no baseline clear or diagnostic graphics control in the stream. */
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
@@ -469,36 +622,9 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
         NULL, 1u, &zero_to_attachment);
-    const VkRenderPassBeginInfo begin_render_pass = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = render_pass,
-        .framebuffer = framebuffer,
-        .renderArea = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
-    };
-    const VkClearAttachment clear_attachment = {
-        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-        .colorAttachment = 0u,
-        .clearValue.color.float32 = {1.0f, 0.0f, 1.0f, 1.0f},
-    };
-    const VkClearRect clear_rect = {
-        .rect = {{0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT}},
-        .baseArrayLayer = 0u,
-        .layerCount = 1u,
-    };
     vkCmdBeginRenderPass(command, &begin_render_pass, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdClearAttachments(command, 1u, &clear_attachment, 1u, &clear_rect);
     vkCmdEndRenderPass(command);
-    const VkImageMemoryBarrier to_transfer_source = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = image,
-        .subresourceRange = image_range,
-    };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
         &to_transfer_source);
@@ -527,27 +653,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         puts("format_attachments: PRODUCTION_CLEAR CLEAR_ATTACHMENTS PASS "
              "format=b8g8r8a8_unorm extent=1280x720 checks=3 "
              "magenta=ff00ffff");
-        status = 0;
-        goto cleanup;
     }
-
-    const VkPipelineLayoutCreateInfo graphics_control_layout_info = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-    };
-    CLEAR_TRY(vkCreatePipelineLayout(device, &graphics_control_layout_info,
-        NULL, &graphics_control_layout));
-    CLEAR_TRY(create_shader_module(device,
-        vulkan_ps5_format_attachment_vert_spv,
-        sizeof(vulkan_ps5_format_attachment_vert_spv),
-        &graphics_control_vertex));
-    CLEAR_TRY(create_shader_module(device,
-        vulkan_ps5_format_attachment_fixed_magenta_spv,
-        sizeof(vulkan_ps5_format_attachment_fixed_magenta_spv),
-        &graphics_control_fragment));
-    CLEAR_TRY(create_pipeline(device, graphics_control_layout,
-        graphics_control_vertex, graphics_control_fragment,
-        VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
-        CLEAR_ATTACHMENT_HEIGHT, VK_FALSE, &graphics_control_pipeline));
 
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
@@ -584,21 +690,18 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
         UINT64_C(2000000000)));
     CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
-    int graphics_control_passed = 1;
-    for (uint32_t i = 0u;
-         i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
-        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
-        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
-            printf("format_attachments: GRAPHICS_CONTROL FAIL sample=%u "
-                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
-                   pixel[0], pixel[1], pixel[2], pixel[3]);
-            graphics_control_passed = 0;
-            break;
-        }
-    }
-    if (graphics_control_passed) {
-        puts("format_attachments: GRAPHICS_CONTROL PASS checks=3 "
-             "magenta=ff00ffff; color attachment clear failed");
+    const int graphics_control_passed = report_magenta_samples(mapped,
+        sample_offsets,
+        (uint32_t)(sizeof(sample_offsets) / sizeof(sample_offsets[0])),
+        "SECOND_GRAPHICS_DRAW");
+    printf("format_attachments: FIRST_GRAPHICS_AB first=%s "
+           "intermediate_zero=%s second=%s\n",
+        first_graphics_passed ? "PASS" : "FAIL",
+        second_baseline_zero_passed ? "PASS" : "FAIL",
+        graphics_control_passed ? "PASS" : "FAIL");
+    if (attachment_clear_passed) {
+        status = (first_graphics_passed && graphics_control_passed) ? 0 : 1;
+        goto cleanup;
     }
 
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
