@@ -182,7 +182,7 @@ if(VULKAN_PS5_BUILD_TESTS)
     add_test(NAME vulkan_ps5.swapchain_runner
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/swapchain_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")
-    set_tests_properties(vulkan_ps5.swapchain_runner PROPERTIES TIMEOUT 15)
+    set_tests_properties(vulkan_ps5.swapchain_runner PROPERTIES TIMEOUT 25)
     add_test(NAME vulkan_ps5.system_exit_runner
       COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/system_exit_runner.sh"
         "${CMAKE_CURRENT_SOURCE_DIR}")

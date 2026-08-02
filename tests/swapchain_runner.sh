@@ -36,6 +36,7 @@ for arg do
         */hbldr*)
             printf '%s\n' \
                 'swapchain: 1800/1800 frames' \
+                "Total Pipeline Count: ${FAKE_PIPELINE_COUNT:-3}" \
                 'swapchain: cleanup begin' \
                 'swapchain: swapchain destroyed' \
                 'swapchain: PASS 1800 frames'
@@ -130,6 +131,7 @@ if ! (
         VULKAN_PS5_QUALIFICATION_REMOTE_NAME=eden_ps5_bootstrap \
         VULKAN_PS5_QUALIFICATION_LABEL=eden \
         VULKAN_PS5_QUALIFICATION_PASS_PATTERN='^swapchain: PASS 1800 frames$' \
+        VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN='Total Pipeline Count: [1-9][0-9]*' \
         VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION='600 frames and compute oracle' \
         run_runner clean "$test_root/external.out" "$test_root/external-logs"
 ); then
@@ -138,6 +140,17 @@ if ! (
 fi
 grep -F 'FW550 eden: PASS (600 frames and compute oracle, clean exit and klog)' \
     "$test_root/external.out" >/dev/null
+
+if (
+    VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN='required diagnostic is absent' \
+        run_runner clean "$test_root/missing-required.out" \
+        "$test_root/missing-required-logs"
+); then
+    echo "missing required diagnostic oracle unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'did not produce its required diagnostic oracle' \
+    "$test_root/missing-required.out" >/dev/null
 
 printf 'init\n' >"$test_root/build/eden.launch"
 sidecar_sha=$(shasum -a 256 "$test_root/build/eden.launch" | awk '{print $1}')

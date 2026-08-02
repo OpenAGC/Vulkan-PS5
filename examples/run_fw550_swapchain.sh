@@ -17,6 +17,7 @@ remote_name=${VULKAN_PS5_QUALIFICATION_REMOTE_NAME:-vulkan_ps5_swapchain}
 qualification_label=${VULKAN_PS5_QUALIFICATION_LABEL:-swapchain}
 pass_pattern=${VULKAN_PS5_QUALIFICATION_PASS_PATTERN:-'^swapchain: PASS 1800 frames$'}
 pass_description=${VULKAN_PS5_QUALIFICATION_PASS_DESCRIPTION:-'1800 frames'}
+required_pattern=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN:-}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
 sidecar=${VULKAN_PS5_QUALIFICATION_SIDECAR:-}
@@ -79,6 +80,10 @@ esac
 if [ -z "$pass_pattern" ] || [ "${#pass_pattern}" -gt 256 ] ||
    [ -z "$pass_description" ] || [ "${#pass_description}" -gt 128 ]; then
     echo "qualification PASS pattern or description is empty or oversized" >&2
+    exit 2
+fi
+if [ "${#required_pattern}" -gt 256 ]; then
+    echo "qualification required pattern is oversized" >&2
     exit 2
 fi
 case "$klog_port" in
@@ -259,6 +264,14 @@ if ! grep -E "$pass_pattern" "$log" >/dev/null; then
         kill_stale_process "$failed_pid" || true
     fi
     echo "swapchain run did not produce its PASS oracle; log: $log" >&2
+    exit 1
+fi
+if [ -n "$required_pattern" ] && ! grep -E "$required_pattern" "$log" >/dev/null; then
+    failed_pid=$(latest_eboot_pid "$klog")
+    if [ -n "$failed_pid" ]; then
+        kill_stale_process "$failed_pid" || true
+    fi
+    echo "swapchain run did not produce its required diagnostic oracle; log: $log" >&2
     exit 1
 fi
 

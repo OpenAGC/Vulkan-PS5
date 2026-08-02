@@ -590,6 +590,12 @@ examples/run_fw550_swapchain.sh
 Remote names and labels are restricted to alphanumerics, `_`, and `-`; empty
 or oversized PASS controls fail before cleanup or upload. The runner safety
 test covers both the default swapchain artifact and this external-app form.
+Set `VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN` when a successful launch must
+also print a secondary diagnostic oracle, such as a nonzero persistent shader
+pipeline count on an immediate relaunch. The optional expression is bounded to
+256 bytes and a missing match fails closed after exact-process cleanup. Runner
+coverage includes both the matching and missing-diagnostic cases; its CTest
+timeout is 25 seconds to accommodate the additional guarded negative launch.
 
 An application with a bounded external launch or mode contract can use this
 same gate without weakening the ELF pin. Set
