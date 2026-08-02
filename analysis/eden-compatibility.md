@@ -2,11 +2,10 @@
 
 This is the live Milestone 6 gap matrix for upstream `../eden-ps5` revision
 `612409c7ba`. The current `../eden-ps5` branch carries the PS5 integration
-series through `8197e9fb09`; the frozen format and command inventories below
+series through `a5e4fc4826`; the frozen format and command inventories below
 still use the upstream revision so PS5-only glue cannot change the application
-requirements. The Eden checkout was inspected read-only; its existing deleted
-`AGENTS.md`/`CLAUDE.md`, modified frontend files, and untracked `.serena/` state
-were not changed.
+requirements. The Eden checkout was inspected read-only for this refresh; no
+Eden file was changed.
 
 Run the profile probe in reporting mode through CTest. `--strict` now succeeds:
 
@@ -353,7 +352,7 @@ warning. The public Prospero ELF SHA-256 is
 | Area | Current evidence | State |
 | --- | --- | --- |
 | VMA | A configurable VMA consumer matches Eden's dynamic functions, external synchronization, upload/download/stream/device-local policies, images, manual bind, and block suballocation; direct and loader/VVL modes pass; one bounded FW 5.50 run passed every oracle and exited through SystemService with exact-PID removal | Hardware-qualified at this scope |
-| Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 68 unique Vulkan image formats through OpenAGC API 52, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified; the 38-format scalar/vector gate passes 2,432 exact FW 5.50 clear/readback pixels twice. No genuine uncompressed image-format gap remains: RGB32 is deliberately buffer-only, 28 ASTC and 10 ETC2/EAC formats use Eden's transcode paths, and two D24 forms remain fail-closed | Direct image-format inventory complete at the advertised boundary; hardware scalar/vector shader/attachment execution remains |
+| Formats | Eden revision `612409c7ba` maps 112 guest `PixelFormat` entries to 109 unique Vulkan formats. The ICD directly maps 68 unique Vulkan image formats through OpenAGC API 52, including all 14 BC1-BC7 forms. Multi-mip 2D/cube/cube-array images and nonzero mip views are host-qualified; the 38-format scalar/vector gate passes 2,432 exact FW 5.50 clear/readback pixels twice. OpenAGC `c1ddcce` implements storage-width-compatible 8/16/32/64/128-bit color views and explicit BC-family pairs; Vulkan-PS5 `99e1249` validates and retains `VkImageFormatListCreateInfo`. ASTC/ETC2/EAC stay on Eden's transcode paths and D24 remains fail-closed | Direct inventory and earlier per-format gates are qualified; generalized mutable reinterpretation is implemented but still needs a clean integrated build and real-Eden FW 5.50/FW 11.60 qualification |
 | Shader pipelines | VS/FS/CS/GS/tessellation, descriptors, specialization constants, push constants, vertex input, MRT, depth/stencil, and queries have qualified paths; fused-NGG geometry varyings pass standalone and SDL/Zink hardware oracles | Startup profile passes; real Eden shader-cache execution remains |
 | Indirect draws | Single/multi indexed and non-indexed commands record validated gfx1013 PM4 through OpenAGC; the complete two-draw gate validates BaseVertex, BaseInstance, InstanceIndex, and DrawID with exact equal-half readback | Hardware-qualified and publicly advertised; internal and public gates exited cleanly without a GPU reset |
 | Buffer copies | `vkCmdCopyBuffer` records OpenAGC `DMA_DATA` per region after transfer-usage, binding, alignment, bounds, aliasing, address-range, and aggregate DCB-space validation; exact packet/rejection regressions and two deterministic FW 5.50 readback runs pass | FW 5.50 hardware-qualified at this scope |
@@ -383,6 +382,74 @@ it is not evidence for an Eden requirement. All directly inventoried command
 families now record public OpenAGC work or fail closed for the documented
 unsupported subforms. The startup profile is zero-gap; the next evidence gap is
 real Eden shader-cache and renderer execution, not a silent command stub.
+
+### Mutable image-view compatibility audit
+
+This audit is frozen to Eden `612409c7ba`, even though the observed PS5
+diagnostic was produced by the integration branch. Eden's
+`src/video_core/compatible_formats.cpp` defines its image-view relationships,
+and `src/video_core/renderer_vulkan/vk_texture_cache.cpp` converts those
+relationships into a `VkImageFormatListCreateInfo`. When a format has more
+than one view, Eden sets both `VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT` and
+`VK_IMAGE_CREATE_EXTENDED_USAGE_BIT`; when `VK_KHR_image_format_list` is
+available it supplies the complete list at image creation. This is normal
+Vulkan behavior and must not be reduced to a swapchain-only RGBA8 exception.
+
+The pinned Eden requirements and the current native boundary are:
+
+| Compatibility family | Eden `612409c7ba` requirement | Current implementation | Qualification state |
+| --- | --- | --- | --- |
+| 8-bit uncompressed | R8 UINT/UNORM/SINT/SNORM are mutually view-compatible | Vulkan-PS5 groups every implemented native 8-bit color format; OpenAGC `c1ddcce` accepts single-plane, non-depth 1x1 formats with the same one-byte texel width | Source and OpenAGC unit coverage present; no mutable-view firmware oracle |
+| 16-bit uncompressed | R16 and RG8 float/integer/normalized members share one view class | Vulkan-PS5 groups the implemented packed-16, RG8, and R16 formats; OpenAGC applies the same two-byte storage rule | Source and representative OpenAGC unit coverage present; no mutable-view firmware oracle |
+| 32-bit uncompressed | Eden's native-BGR class contains 19 formats, including `B8G8R8A8_UNORM` and `A8B8G8R8_UNORM_PACK32` | Vulkan-PS5 enumerates the implemented 32-bit members, validates every non-empty image format-list entry, retains the exact list on the image, and rejects a compatible format omitted from that list. OpenAGC applies its four-byte storage rule | OpenAGC's 19-test/19,926-assertion host gate, Vulkan-PS5's 62-test host gate, both Prospero builds, and the exact FW 5.50 mutable-view attachment clear pass. Other 32-bit reinterpretations and FW 11.60 remain unqualified |
+| 64-bit uncompressed | RG32 and RGBA16 float/integer/normalized members share one view class | Vulkan-PS5 groups every native member; OpenAGC applies its eight-byte storage rule | Source and representative OpenAGC unit coverage present; no mutable-view firmware oracle |
+| 128-bit uncompressed | RGBA32 float/uint/sint share one view class | Vulkan-PS5 groups all three native members; OpenAGC applies its sixteen-byte storage rule | Source and representative OpenAGC unit coverage present; no mutable-view firmware oracle |
+| 96-bit uncompressed | Eden lists only `R32G32B32_FLOAT`, so the view table adds no non-identity relationship | Vulkan-PS5 deliberately has no 96-bit mutable class and does not expose RGB32 images | Correctly remains buffer-only/fail-closed for images |
+| BC compressed | Eden requires UNORM/SNORM or UNORM/SRGB pairing for BC4, BC5, BC6H, and BC7; BC1/BC2/BC3 are identity-only in the pinned Eden view table | Vulkan-PS5 implements separate BC1 through BC7 families. OpenAGC `c1ddcce` uses explicit family IDs, so equal block byte size alone cannot make BC1 compatible with BC4 | Existing BC sampling/copy execution is qualified on FW 5.50, but mutable BC reinterpretation itself is not; FW 11.60 replay is pending |
+| ASTC | Eden defines UNORM/SRGB pairs for each of 14 block dimensions, but the inventory classifies all 28 Vulkan mappings as `transcode_required_astc` | Neither Vulkan-PS5 nor OpenAGC admits ASTC as a native mutable format. The ICD must remain unadvertised so Eden selects its RGBA8/BC transcode path | Fail closed at the native boundary; the real-Eden transcode path remains unqualified |
+| ETC2/EAC | The inventory contains ten formats classified `transcode_required_etc2_eac`; Eden does not add cross-format mutable pairs for them | No native Vulkan-PS5/OpenAGC image format or mutable-view promise | Fail closed at the native boundary; the real-Eden transcode path remains unqualified |
+| D24 | Three guest rows map to the two Vulkan D24 spellings and require attachment use | Vulkan-PS5 does not advertise or create either D24 image format. OpenAGC's compatibility predicate explicitly rejects depth/stencil formats | Intentional fail-closed policy until a correct native path or conversion exists |
+
+OpenAGC commit `c1ddcce84fd77bf262d34a494b92fdb4936a1168`
+keeps Vulkan policy out of the public native runtime. It derives ordinary
+color compatibility from `AgcRuntimeFormatInfo` only when both formats are
+single-plane, non-depth/stencil, one-texel blocks with equal byte widths. BC
+formats instead use explicit BC1/BC2/BC3/BC4/BC5/BC6/BC7 family identifiers;
+the regression rejects the tempting but invalid equal-size BC1-to-BC4 case.
+The OpenAGC host gate passes after this change. The Vulkan layer remains
+responsible for Vulkan class membership, mutable-create flags, and exact
+format-list retention/enforcement.
+
+At the Vulkan layer, a present but empty `VkImageFormatListCreateInfo` is not
+a restriction. A non-empty list is copied into the `VkPs5Image` object after
+every entry is proven native and compatible. `vkCreateImageView` then requires
+both general mutable-class compatibility and membership in that retained list.
+Attachment-clear meta-pipeline selection uses the framebuffer image view's
+format, not the allocation's base format. The targeted regression constructs
+a `VK_FORMAT_B8G8R8A8_UNORM` mutable image, creates and clears an
+`VK_FORMAT_A8B8G8R8_UNORM_PACK32` view from its declared 19-member Eden list,
+and requires an otherwise compatible omitted format to fail.
+
+These implementation facts promote only the exact traced mutable-view clear
+path to FW 5.50 hardware-qualified. Cleanup-first run
+`examples/qualification-logs/20260802T115623Z-swapchain-run1.log`, using Eden
+ELF SHA-256
+`a707e44eb900c399af594adaed45f7b28a20363dab53bade741b9f61edca64d8`,
+creates the format-51 view over the format-44 image, binds the view-compatible
+clear pipeline, and records a native draw. It then stops at the later sampled-
+read to storage-write image-transition contract, so it does not prove
+presentation or orderly teardown. Closure still requires two cleanup-first
+real-Eden FW 5.50 runs proving sustained render/presentation, bounded teardown,
+exact process absence, and immediate relaunch. The identical pinned bytes must
+then pass on FW 11.60. Other uncompressed reinterpretations, mutable BC, ASTC,
+ETC2/EAC, and D24 execution must not be inferred from the exact traced result.
+
+The factual sources for this section are the pinned Eden files
+`src/video_core/compatible_formats.cpp` and
+`src/video_core/renderer_vulkan/vk_texture_cache.cpp`,
+`analysis/eden-format-inventory-612409c7ba.tsv`, OpenAGC `src/runtime.c` and
+`tests/test_runtime.c` at `c1ddcce`, and Vulkan-PS5
+`src/vulkan_ps5_core.c` plus `tests/command_recording.c` at `99e1249`.
 
 The first refreshed uncompressed slice adds the four directly native integer
 targets `R16G16B16A16_{UINT,SINT}` and `R32G32B32A32_{UINT,SINT}`. They expose
