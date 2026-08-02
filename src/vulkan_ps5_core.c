@@ -589,7 +589,7 @@ typedef struct VkPs5FramebufferAttachmentInfo {
 } VkPs5FramebufferAttachmentInfo;
 
 typedef struct VkPs5Framebuffer {
-    VkPs5RenderPass *render_pass;
+    VkPs5RenderPass render_pass;
     uint32_t attachment_count;
     uint32_t width;
     uint32_t height;
@@ -675,14 +675,25 @@ static void dump_render_pass(const char *label, const VkPs5RenderPass *pass)
         "subpasses=%u dependencies=%u correlation-masks=%u\n",
         label, pass->flags, pass->attachment_count, pass->subpass_count,
         pass->dependency_count, pass->correlation_mask_count);
-    for (uint32_t i = 0u; i < pass->attachment_count; ++i) {
+    const uint32_t attachment_count = pass->attachment_count <
+        VK_PS5_MAX_RENDER_ATTACHMENTS ? pass->attachment_count :
+        VK_PS5_MAX_RENDER_ATTACHMENTS;
+    const uint32_t subpass_count = pass->subpass_count <
+        VK_PS5_MAX_SUBPASSES ? pass->subpass_count : VK_PS5_MAX_SUBPASSES;
+    const uint32_t dependency_count = pass->dependency_count <
+        VK_PS5_MAX_RENDER_DEPENDENCIES ? pass->dependency_count :
+        VK_PS5_MAX_RENDER_DEPENDENCIES;
+    const uint32_t correlation_mask_count = pass->correlation_mask_count <
+        VK_PS5_MAX_CORRELATION_MASKS ? pass->correlation_mask_count :
+        VK_PS5_MAX_CORRELATION_MASKS;
+    for (uint32_t i = 0u; i < attachment_count; ++i) {
         fprintf(stderr,
             "vulkan-ps5: render-pass dump %s attachment[%u] "
             "flags=0x%x format=%u samples=0x%x\n",
             label, i, pass->attachments[i].flags,
             pass->attachments[i].format, pass->attachments[i].samples);
     }
-    for (uint32_t i = 0u; i < pass->subpass_count; ++i) {
+    for (uint32_t i = 0u; i < subpass_count; ++i) {
         fprintf(stderr,
             "vulkan-ps5: render-pass dump %s subpass[%u] flags=0x%x "
             "view-mask=0x%x colors=%u depth=%u samples=0x%x\n",
@@ -691,8 +702,12 @@ static void dump_render_pass(const char *label, const VkPs5RenderPass *pass)
             pass->subpasses[i].color_attachment_count,
             pass->subpasses[i].depth_stencil_attachment,
             pass->subpasses[i].samples);
-        for (uint32_t slot = 0u;
-             slot < pass->subpasses[i].color_attachment_count; ++slot) {
+        const uint32_t color_attachment_count =
+            pass->subpasses[i].color_attachment_count <
+                AGC_GFX1013_MAX_COLOR_TARGETS ?
+            pass->subpasses[i].color_attachment_count :
+            AGC_GFX1013_MAX_COLOR_TARGETS;
+        for (uint32_t slot = 0u; slot < color_attachment_count; ++slot) {
             fprintf(stderr,
                 "vulkan-ps5: render-pass dump %s subpass[%u] "
                 "color[%u]=%u\n",
@@ -700,7 +715,7 @@ static void dump_render_pass(const char *label, const VkPs5RenderPass *pass)
                 pass->subpasses[i].color_attachments[slot]);
         }
     }
-    for (uint32_t i = 0u; i < pass->dependency_count; ++i) {
+    for (uint32_t i = 0u; i < dependency_count; ++i) {
         const VkSubpassDependency *dependency = &pass->dependencies[i];
         fprintf(stderr,
             "vulkan-ps5: render-pass dump %s dependency[%u] "
@@ -710,7 +725,7 @@ static void dump_render_pass(const char *label, const VkPs5RenderPass *pass)
             dependency->srcAccessMask, dependency->dstAccessMask,
             dependency->dependencyFlags);
     }
-    for (uint32_t i = 0u; i < pass->correlation_mask_count; ++i) {
+    for (uint32_t i = 0u; i < correlation_mask_count; ++i) {
         fprintf(stderr,
             "vulkan-ps5: render-pass dump %s correlation-mask[%u]=0x%x\n",
             label, i, pass->correlation_masks[i]);
@@ -5945,7 +5960,7 @@ vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
     VkPs5Framebuffer *framebuffer = alloc_object(
         device, pAllocator, framebuffer_size, _Alignof(VkPs5Framebuffer));
     if (!framebuffer) return VK_ERROR_OUT_OF_HOST_MEMORY;
-    framebuffer->render_pass = render_pass;
+    framebuffer->render_pass = *render_pass;
     framebuffer->attachment_count = pCreateInfo->attachmentCount;
     framebuffer->width = pCreateInfo->width;
     framebuffer->height = pCreateInfo->height;
@@ -11864,7 +11879,6 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
         VK_ATTACHMENT_UNUSED;
     render_pass->subpasses[0].samples = VK_SAMPLE_COUNT_1_BIT;
     render_pass->subpasses[0].view_mask = info->viewMask;
-    framebuffer->render_pass = render_pass;
     framebuffer->layers = 1u;
 
     VkSampleCountFlagBits samples = 0;
@@ -11999,6 +12013,7 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
     render_pass->subpasses[0].samples = samples ? samples :
         VK_SAMPLE_COUNT_1_BIT;
     framebuffer->attachment_count = attachment_count;
+    framebuffer->render_pass = *render_pass;
 
     const VkRenderPassBeginInfo begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -12091,11 +12106,11 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
     if (view_mask)
         required_layers--;
     const VkBool32 framebuffer_compatible = render_passes_compatible(
-        framebuffer->render_pass, render_pass);
+        &framebuffer->render_pass, render_pass);
 #if defined(__PROSPERO__)
     if (!framebuffer_compatible)
         diagnose_incompatible_render_passes(
-            framebuffer->render_pass, render_pass);
+            &framebuffer->render_pass, render_pass);
 #endif
     if (!framebuffer_compatible || !render_pass->subpass_count ||
         color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||

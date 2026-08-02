@@ -1521,6 +1521,8 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(command) == 1u);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    vkDestroyRenderPass(device, mutable_clear_render_pass, NULL);
+    mutable_clear_render_pass = VK_NULL_HANDLE;
     VkRenderPassBeginInfo compatible_begin = mutable_clear_begin;
     compatible_begin.renderPass = compatible_render_pass;
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
