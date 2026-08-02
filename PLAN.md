@@ -561,6 +561,12 @@ the native-runtime migration.
   hashes. The identical firmware-neutral depth probe passes twice on each
   endpoint. The same final Mesa/EGL/Zink library set passes both endpoints; do
   not reintroduce a firmware-specific clip-control value.
+  The latest-stack FW 5.50 replay reopened `geometryShader`: a Zink fused-NGG
+  conversion intermittently produced transparent black while the equivalent
+  vertex/fragment path was stable. Keep the public feature false and the Eden
+  audit at one explicit capability gap until standalone and Zink-level
+  geometry oracles pass repeatedly. Do not restore advertisement from the old
+  standalone green-pixel evidence alone.
   Milestone 6 now has an automated Eden suitability baseline derived from
   `../eden-ps5` revision `39763e7321`. Vulkan 1.1, all four explicit limits,
   the universal queue, swapchain, geometry, tessellation, and host query reset

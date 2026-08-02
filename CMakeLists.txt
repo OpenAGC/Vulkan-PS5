@@ -980,7 +980,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     set_tests_properties(
       vulkan_ps5.vertex_pipeline_stores_atomics_command_recording PROPERTIES
       PASS_REGULAR_EXPRESSION
-        "vertex_pipeline_stores_atomics: PASS command-recording" TIMEOUT 30)
+        "vertex_pipeline_stores_atomics: (PASS command-recording|SKIP geometryShader is not advertised)" TIMEOUT 30)
   endif()
   add_executable(vulkan_ps5_query_example
     examples/triangle/main.c

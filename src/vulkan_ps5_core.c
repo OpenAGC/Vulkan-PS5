@@ -4638,7 +4638,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->native_rasterization_flags = depth_clip_state ?
             (depth_clip_state->depthClipEnable ?
                 AGC_RASTERIZATION_DEPTH_CLIP_ENABLE_BIT :
-                AGC_RASTERIZATION_DEPTH_CLIP_DISABLE_BIT) : 0u;
+                AGC_RASTERIZATION_DEPTH_CLIP_DISABLE_BIT) :
+            AGC_RASTERIZATION_DEPTH_CLIP_ENABLE_BIT;
         pipeline->rasterizer_discard_enable =
             raster->rasterizerDiscardEnable;
         pipeline->cull_mode = (AgcCullModeFlags)raster->cullMode;
@@ -8971,6 +8972,7 @@ vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) {
     command->dynamic_blend_constants_set = VK_TRUE;
     if (command->bound_graphics &&
         command->bound_graphics->blend_constants_dynamic &&
+        color_blend_uses_constants(&command->bound_graphics->color_blend) &&
         command->native_bound_graphics ==
             command->bound_graphics->native_graphics_pipeline &&
         agcCmdSetBlendConstants(command->native_graphics_command_buffer, v) !=
@@ -9177,11 +9179,13 @@ static VkResult native_bind_graphics_attachments(
         VkPs5ImageView *view = attachment < framebuffer->attachment_count ?
             framebuffer->attachments[attachment] : NULL;
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+        AgcFormat native_format;
         AgcResourceUsage usage = image ?
             native_image_recorded_usage(command, image) :
             kAgcResourceUsageUndefined;
         if (!image || !image->native_image ||
             view_index >= view->layer_count ||
+            !native_image_format(view->format, &native_format) ||
             usage != kAgcResourceUsageColorTarget) {
             fprintf(stderr,
                 "vulkan-ps5: color attachment not renderable slot=%u "
@@ -9194,6 +9198,7 @@ static VkResult native_bind_graphics_attachments(
             AGC_COLOR_TARGET_BINDING_INIT;
         targets[slot].image = image->native_image;
         targets[slot].array_layer = view->base_array_layer + view_index;
+        targets[slot].format = native_format;
     }
     int32_t result = agcCmdBindColorTargets(
         command->native_graphics_command_buffer, color_count, targets);
@@ -9204,10 +9209,10 @@ static VkResult native_bind_graphics_attachments(
         fprintf(stderr,
             "vulkan-ps5: agcCmdBindColorTargets failed result=0x%x "
             "count=%u binding_size=%u binding_version=%u "
-            "binding_flags=%u binding_reserved0=%u binding_reserved=%llu "
+            "binding_flags=%u binding_format=%u binding_reserved=%llu "
             "image_usage=0x%x image_format=%u image_depth=%u%s%s\n",
             (unsigned int)result, color_count, targets[0].struct_size,
-            targets[0].version, targets[0].flags, targets[0].reserved0,
+            targets[0].version, targets[0].flags, targets[0].format,
             (unsigned long long)(targets[0].reserved[0] |
                 targets[0].reserved[1] | targets[0].reserved[2] |
                 targets[0].reserved[3]),
@@ -10481,11 +10486,19 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
             if (native_result == AGC_OK)
                 command->native_descriptor_bind_count++;
             AgcColorTargetBinding target = AGC_COLOR_TARGET_BINDING_INIT;
+            AgcFormat native_target_format;
             target.image = destination->native_image;
             target.mip_level = region->dstSubresource.mipLevel;
             target.array_layer = destination->type == VK_IMAGE_TYPE_3D ?
                 (uint32_t)destination_z :
                 region->dstSubresource.baseArrayLayer + slice;
+            if (!native_image_format(destination->format,
+                    &native_target_format)) {
+                vk_ps5_device_free((VkDevice)command->device, NULL,
+                    self_restore);
+                return VK_ERROR_FORMAT_NOT_SUPPORTED;
+            }
+            target.format = native_target_format;
             if (native_result == AGC_OK) {
                 native_step = "destination attachment";
                 native_result = agcCmdBindColorTargets(
@@ -10668,9 +10681,14 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
         VkPipeline pipeline = VK_NULL_HANDLE;
         VkResult result = vk_ps5_device_meta_attachment_pipeline(
             command->device, image->format, aspects, &pipeline);
-        if (result != VK_SUCCESS || !pipeline)
+        if (result != VK_SUCCESS || !pipeline) {
+            fprintf(stderr,
+                "vulkan-ps5: clear attachment pipeline unavailable "
+                "result=%d format=%u aspects=0x%x pipeline=%u\n",
+                result, image->format, aspects, pipeline != VK_NULL_HANDLE);
             return result == VK_SUCCESS ?
                 VK_ERROR_INITIALIZATION_FAILED : result;
+        }
         for (uint32_t rect_index = 0u; rect_index < rect_count; ++rect_index) {
             const VkClearRect *rect = &rects[rect_index];
             if (rect->rect.offset.x < 0 || rect->rect.offset.y < 0 ||
@@ -10707,8 +10725,13 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
         int32_t native_result = agcCmdBindGraphicsPipeline(
             command->native_graphics_command_buffer,
             pipeline->native_graphics_pipeline);
-        if (native_result != AGC_OK)
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: clear attachment pipeline bind failed "
+                "result=0x%08x format=%u aspects=0x%x\n",
+                (unsigned)native_result, image->format, aspects);
             return native_command_result(native_result);
+        }
         command->native_bound_graphics = pipeline->native_graphics_pipeline;
         command->native_descriptor_graphics_pipeline = NULL;
         command->native_vertex_graphics_pipeline = NULL;
@@ -10732,11 +10755,17 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                 command->native_graphics_command_buffer,
                 attachment->clearValue.depthStencil.stencil & UINT8_MAX,
                 attachment->clearValue.depthStencil.stencil & UINT8_MAX);
-        if (native_result != AGC_OK)
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: clear attachment constants/state failed "
+                "result=0x%08x format=%u aspects=0x%x\n",
+                (unsigned)native_result, image->format, aspects);
             return native_command_result(native_result);
+        }
 
         for (uint32_t rect_index = 0u; rect_index < rect_count; ++rect_index) {
             const VkClearRect *rect = &rects[rect_index];
+            const char *native_step = "viewport/scissor";
             AgcViewport viewport = AGC_VIEWPORT_INIT;
             viewport.width = (float)framebuffer->width;
             viewport.height = (float)framebuffer->height;
@@ -10754,13 +10783,23 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                 const uint32_t array_layer = view->base_array_layer +
                     rect->baseArrayLayer + layer;
                 if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+                    native_step = "color target bind";
                     AgcColorTargetBinding target =
                         AGC_COLOR_TARGET_BINDING_INIT;
+                    AgcFormat native_target_format;
                     target.image = image->native_image;
                     target.array_layer = array_layer;
-                    native_result = agcCmdBindColorTargets(
-                        command->native_graphics_command_buffer, 1u, &target);
+                    if (!native_image_format(view->format,
+                            &native_target_format)) {
+                        native_result = AGC_ERROR_NOT_SUPPORTED;
+                    } else {
+                        target.format = native_target_format;
+                        native_result = agcCmdBindColorTargets(
+                            command->native_graphics_command_buffer, 1u,
+                            &target);
+                    }
                 } else {
+                    native_step = "depth/stencil target bind";
                     AgcDepthStencilTargetBinding target =
                         AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
                     target.image = image->native_image;
@@ -10771,15 +10810,29 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                         native_result = agcCmdBindDepthStencilTarget(
                             command->native_graphics_command_buffer, &target);
                 }
-                if (native_result == AGC_OK)
+                if (native_result == AGC_OK) {
+                    native_step = "draw";
                     native_result = agcCmdDraw(
                         command->native_graphics_command_buffer,
                         3u, 1u, 0u, 0u);
+                }
                 if (native_result == AGC_OK)
                     command->native_draw_count++;
             }
-            if (native_result != AGC_OK)
+            if (native_result != AGC_OK) {
+                AgcDebugMessage message = AGC_DEBUG_MESSAGE_INIT;
+                const int32_t debug_result = agcGetLastDebugMessage(
+                    vk_ps5_native_device(command->device), &message);
+                fprintf(stderr,
+                    "vulkan-ps5: clear attachment draw failed "
+                    "step=%s result=0x%08x format=%u aspects=0x%x "
+                    "rect=%u%s%s\n",
+                    native_step,
+                    (unsigned)native_result, image->format, aspects,
+                    rect_index, debug_result == AGC_OK ? ": " : "",
+                    debug_result == AGC_OK ? message.message : "");
                 return native_command_result(native_result);
+            }
         }
     }
 
@@ -10984,10 +11037,17 @@ vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
             if (native_result == AGC_OK)
                 command->native_descriptor_bind_count++;
             AgcColorTargetBinding target = AGC_COLOR_TARGET_BINDING_INIT;
+            AgcFormat native_target_format;
             target.image = destination->native_image;
             target.mip_level = region->dstSubresource.mipLevel;
             target.array_layer =
                 region->dstSubresource.baseArrayLayer + layer;
+            if (!native_image_format(destination->format,
+                    &native_target_format)) {
+                command->record_error = VK_ERROR_FORMAT_NOT_SUPPORTED;
+                return;
+            }
+            target.format = native_target_format;
             if (native_result == AGC_OK) {
                 native_step = "destination attachment";
                 native_result = agcCmdBindColorTargets(
@@ -11317,6 +11377,16 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         b->renderArea.extent.height >
             framebuffer->height - (uint32_t)b->renderArea.offset.y ||
         (view_mask && framebuffer->layers != 1u)) {
+        fprintf(stderr,
+            "vulkan-ps5: begin render pass rejected rp_match=%u "
+            "subpasses=%u colors=%u area=%d,%d+%ux%u framebuffer=%ux%ux%u "
+            "view_mask=0x%x\n",
+            framebuffer->render_pass == render_pass,
+            render_pass->subpass_count, color_count,
+            b->renderArea.offset.x, b->renderArea.offset.y,
+            b->renderArea.extent.width, b->renderArea.extent.height,
+            framebuffer->width, framebuffer->height, framebuffer->layers,
+            view_mask);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -11472,6 +11542,10 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         VkResult clear_result = native_clear_attachments(command,
             clear_count, clears, clear_rect_count, clear_rects);
         if (clear_result != VK_SUCCESS) {
+            fprintf(stderr,
+                "vulkan-ps5: render-pass loadOp clear failed result=%d "
+                "attachments=%u rects=%u\n",
+                clear_result, clear_count, clear_rect_count);
             command->active_render_pass = NULL;
             command->active_framebuffer = NULL;
             command->record_error = clear_result;

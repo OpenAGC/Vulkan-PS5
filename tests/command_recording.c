@@ -951,6 +951,21 @@ int main(int argc, char **argv)
     assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
         &zink_core_dynamic_info, NULL, &zink_core_dynamic_pipeline) ==
         VK_SUCCESS);
+    const VkPipelineColorBlendAttachmentState unused_constant_attachments[] = {
+        {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT},
+        {.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT},
+    };
+    VkPipelineColorBlendStateCreateInfo unused_constant_blend = blend;
+    unused_constant_blend.pAttachments = unused_constant_attachments;
+    VkGraphicsPipelineCreateInfo unused_constant_info = zink_core_dynamic_info;
+    unused_constant_info.pColorBlendState = &unused_constant_blend;
+    VkPipeline unused_constant_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &unused_constant_info, NULL, &unused_constant_pipeline) == VK_SUCCESS);
     const VkFormat dynamic_color_formats[] = {
         VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM,
     };
@@ -1181,6 +1196,12 @@ int main(int argc, char **argv)
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       zink_core_dynamic_pipeline);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      unused_constant_pipeline);
+    vkCmdSetBlendConstants(command, dynamic_blend_constants);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
@@ -2250,6 +2271,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, line_pipeline, NULL);
     vkDestroyPipeline(device, static_bias_pipeline, NULL);
     vkDestroyPipeline(device, logic_pipeline, NULL);
+    vkDestroyPipeline(device, unused_constant_pipeline, NULL);
     vkDestroyPipeline(device, zink_core_dynamic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);

@@ -712,6 +712,42 @@ value; the final Zink logs contain no `VK_EXT_depth_clip_enable` warning. This
 closes both the FW 11.60 depth-clip replay and the full SDL/EGL/Zink endpoint
 gate with identical application and library bytes.
 
+### SDL/Zink regression replay and geometry quarantine (2026-08-02)
+
+The latest OpenAGC API 53, openagc-psbc library API 20, Vulkan-PS5, Mesa/Zink,
+and SDL heads were replayed together on FW 5.500.008. Strict OpenAGC attachment
+validation exposed two ICD defects: mutable SRGB scanout images need the
+compatible UNORM view format forwarded to native color-target binding, and
+unused dynamic blend constants must not be forwarded to a pipeline that does
+not declare them. Core Vulkan depth clipping is also explicit when the
+depth-clip extension structure is absent; omission means enabled, not an
+unspecified native default.
+
+The replay then isolated a separate advertised-capability regression. Mesa's
+RGBA readback conversion used a fused NGG geometry pipeline and repeatedly
+returned transparent black even though shader hashes, vertex data, attachment
+transitions, submission, and teardown were valid. The same workload uses a
+vertex/fragment conversion and passes when `geometryShader` is not advertised.
+The ICD therefore fails closed and reports `geometryShader = VK_FALSE` until
+that NGG path has its own deterministic hardware oracle. This reopens one Eden
+startup capability; the implementation remains available to diagnostic probes
+but is not a public promise.
+
+With that truthful capability set, all 61 generic tests pass. Three consecutive
+cleanup-guarded FW 5.500.008 SDL/EGL/Zink runs returned exact RGBA
+`64,128,191,255`, visibly presented, completed native teardown, and relaunched
+immediately (`20260802T025708Z`, `20260802T025734Z`, and
+`20260802T030426Z`). The tested ICD SHA-256
+is `a06711072c85a72a9b8f1424815b71b7d137cd709b56768dcf4b8aff80decf6b`.
+
+The follow-up API-53 v1 reserved-field compatibility fix changed the linked
+bytes without changing the Vulkan path. The rebuilt ICD SHA-256
+`6ac5a0454bb9ec380d86287441cc93af11bd41c2cfa2c57a91b1abee6d4dbc7f`
+then passed two more consecutive cleanup-guarded FW 5.500.008 replays with the
+same exact RGBA, visible presentation, PID-attributed teardown, and immediate
+relaunch (`20260802T031213Z` and `20260802T031241Z`). This is the current
+development candidate; FW 11.60 replay remains a final-gate requirement.
+
 ## Milestone 6: multiple viewports (2026-07-29)
 
 `multiViewport` is advertised and accepted through legacy and Features2

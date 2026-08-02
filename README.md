@@ -215,6 +215,14 @@ for scalar layout, alpha-to-one, dynamic rendering, and swizzled custom border
 sampling. SDL retains OSMesa as its conservative fallback; the pinned Mesa
 runtime now also passes through the PS5 EGL/WSI bridge.
 
+The 2026-08-02 latest-stack replay corrected an over-advertised capability:
+`geometryShader` is temporarily reported false because Mesa's fused NGG
+geometry conversion was nondeterministic on FW 5.50. Zink then selects its
+vertex/fragment path. The current API-53 candidate passed two consecutive exact
+SDL RGBA readbacks with clean teardown and immediate relaunch. Geometry remains implemented for
+diagnostic probes, but it must regain a deterministic application-level
+hardware oracle before it is advertised to Eden or other Vulkan programs.
+
 The pinned integration now passes end to end on FW 5.500.008. Vulkan-PS5
 records reflected push constants, dynamic-rendering RGBA8/BGRA8 clears, global
 color-to-transfer dependencies, Mesa's mutable RGBA/A8B8G8R8 readback format
@@ -722,18 +730,20 @@ triangle coverage and cannot pass through a vertex-only path accidentally. The
 host command regression records an indexed draw with the fused VS+GS primitive
 record; its Prospero output is `vulkan_ps5_geometry_example.elf`. Two
 independent FW 5.500.008 launches each produced exactly 4608 green pixels, so
-the standalone geometry workload is hardware-qualified. The ICD now reports
-`geometryShader = VK_TRUE` through both core feature-query forms and accepts it
-through legacy `pEnabledFeatures` and `VkPhysicalDeviceFeatures2`, while still
-rejecting unadvertised features. The sample queries and requests geometry
-normally. Both seven-test host configurations and the Prospero build pass; the
+the standalone geometry workload is hardware-qualified. That candidate
+reported `geometryShader = VK_TRUE` through both core feature-query forms and
+accepted it through legacy `pEnabledFeatures` and
+`VkPhysicalDeviceFeatures2`, while still rejecting unadvertised features. This
+historical standalone evidence is superseded by the 2026-08-02 application-
+level quarantine above; current builds report the feature false. Both
+seven-test host configurations and the Prospero build passed; the
 feature-requesting ELF links with `-lunwind -lc++abi -lc++ -lm` and has SHA-256
 `386aae854e1aaf504a750aa29904c491e35220d52c718c3bcf048f54de6803a4`.
 Two independent bounded FW 5.500.008 runs produced exactly 4608 green pixels
 each (`20260728T051424Z-geometry-run1.log` and
 `20260728T051510Z-geometry-run1.log`). Both returned normally, bounded post-run
 websrv checks confirmed the console remained responsive, and neither was
-retried. The standard public `geometryShader` path is hardware-qualified.
+retried. Those exact historical bytes qualified the standalone path only.
 
 `vulkan_ps5_tessellation_example` uses a three-control-point patch, level-two
 TCS factors, and a TES that scales the evaluated triangle to 62.5 percent. Its

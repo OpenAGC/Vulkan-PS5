@@ -507,6 +507,9 @@ int main(int argc, char **argv) {
     assert(vk_ps5_pipeline_has_native_shaders(native_graphics_pipeline));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(
         native_graphics_pipeline));
+    assert(vk_ps5_pipeline_native_rasterization_flags(
+        native_graphics_pipeline) ==
+        AGC_RASTERIZATION_DEPTH_CLIP_ENABLE_BIT);
     VkPipelineRasterizationStateCreateInfo clamp_rasterization =
         native_rasterization;
     clamp_rasterization.depthClampEnable = VK_TRUE;
