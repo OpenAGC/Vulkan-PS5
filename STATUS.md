@@ -14,6 +14,23 @@ qualification concern.
 
 Migration status:
 
+- **Eden consecutive descriptor updates:** descriptor writes, copies, and
+  update templates now roll across compatible consecutive bindings as Vulkan
+  requires, including sparse/zero-count bindings, declaration-order-independent
+  flattened slots, and array offsets that advance across bindings. Template
+  payloads are copied safely from byte-aligned `offset`/`stride` locations.
+  The dedicated regression covers Eden's two one-element storage-buffer
+  bindings plus sparse, offset, direct-write, copy, unaligned-data, and
+  incompatible type/stage/immutable-sampler cases. All 62 host tests, targeted
+  ASan/UBSan, and standalone/source-integrated Prospero builds pass. Exact Eden
+  ELF `4eae3b998f9a92664d41b86325a62bc8f9d2186a8c592e471ac180038923e490`
+  reached `rasterizer-buffer-cache-runtime`, every later constructor
+  checkpoint, and the final `eden-ps5: INIT CHECKPOINT rasterizer` oracle on
+  FW 5.500.008 in `20260802T074820Z-swapchain-run1.log`. The bounded run then
+  entered a separate audio/thread-resource coredump, so rendering, descriptor
+  execution, teardown, and relaunch are not claimed by this slice. See
+  `analysis/fw550_eden_descriptor_rollover_20260802.md`.
+
 - **Eden unnormalized samplers:** `vkCreateSampler` now accepts the Vulkan-valid
   unnormalized-coordinate subset, rejects filter, mip, LOD, address,
   anisotropy, and comparison combinations that the Vulkan contract forbids,

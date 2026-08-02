@@ -5292,13 +5292,180 @@ vkDestroySampler(VkDevice device, VkSampler sampler,
     if (object) vk_ps5_device_free(device, pAllocator, object);
 }
 static const VkDescriptorSetLayoutBinding *descriptor_layout_binding(
+    const VkPs5DescriptorSetLayout *layout, uint32_t binding,
+    uint32_t *first_descriptor)
+{
+    uint64_t first = 0u;
+    if (!layout) return NULL;
+    for (uint32_t i = 0; i < layout->binding_count; ++i) {
+        const VkDescriptorSetLayoutBinding *candidate = &layout->bindings[i];
+        if (candidate->binding == binding) {
+            if (first > UINT32_MAX) return NULL;
+            if (first_descriptor) *first_descriptor = (uint32_t)first;
+            return candidate;
+        }
+        first += candidate->descriptorCount;
+    }
+    return NULL;
+}
+
+typedef struct VkPs5DescriptorCursor {
+    const VkPs5DescriptorSetLayout *layout;
+    VkDescriptorType descriptor_type;
+    VkShaderStageFlags stage_flags;
+    VkBool32 immutable_samplers;
+    VkBool32 signature_valid;
+    uint32_t binding;
+    uint32_t array_element;
+} VkPs5DescriptorCursor;
+
+/* Vulkan descriptor writes roll over numerically consecutive bindings, while
+ * layout bindings may be supplied in any order. Resolve the flattened set
+ * slot on each step; omitted and explicit zero-count bindings are skipped. */
+static const VkDescriptorSetLayoutBinding *descriptor_layout_next_binding(
     const VkPs5DescriptorSetLayout *layout, uint32_t binding)
 {
-    if (!layout) return NULL;
-    for (uint32_t i = 0; i < layout->binding_count; ++i)
-        if (layout->bindings[i].binding == binding)
-            return &layout->bindings[i];
-    return NULL;
+    const VkDescriptorSetLayoutBinding *next = NULL;
+    if (!layout || binding == UINT32_MAX) return NULL;
+    for (uint32_t i = 0u; i < layout->binding_count; ++i) {
+        const VkDescriptorSetLayoutBinding *candidate = &layout->bindings[i];
+        if (candidate->binding > binding &&
+            (!next || candidate->binding < next->binding))
+            next = candidate;
+    }
+    return next;
+}
+
+static VkBool32 descriptor_cursor_accept_binding(
+    VkPs5DescriptorCursor *cursor,
+    const VkDescriptorSetLayoutBinding *binding)
+{
+    if (!binding->descriptorCount) return VK_TRUE;
+    if (binding->descriptorType != cursor->descriptor_type)
+        return VK_FALSE;
+    const VkBool32 immutable_samplers =
+        binding->pImmutableSamplers != NULL;
+    if (!cursor->signature_valid) {
+        cursor->stage_flags = binding->stageFlags;
+        cursor->immutable_samplers = immutable_samplers;
+        cursor->signature_valid = VK_TRUE;
+        return VK_TRUE;
+    }
+    return binding->stageFlags == cursor->stage_flags &&
+        immutable_samplers == cursor->immutable_samplers;
+}
+
+static VkBool32 descriptor_cursor_begin(
+    const VkPs5DescriptorSetLayout *layout, uint32_t binding,
+    uint32_t array_element, VkDescriptorType descriptor_type,
+    VkPs5DescriptorCursor *cursor)
+{
+    const VkDescriptorSetLayoutBinding *current =
+        descriptor_layout_binding(layout, binding, NULL);
+    if (!cursor || !current) return VK_FALSE;
+    *cursor = (VkPs5DescriptorCursor){
+        .layout = layout,
+        .descriptor_type = descriptor_type,
+        .binding = binding,
+    };
+    uint32_t remaining = array_element;
+    for (;;) {
+        if (!descriptor_cursor_accept_binding(cursor, current))
+            return VK_FALSE;
+        if (current->descriptorCount && remaining < current->descriptorCount) {
+            cursor->binding = current->binding;
+            cursor->array_element = remaining;
+            return VK_TRUE;
+        }
+        if (current->descriptorCount)
+            remaining -= current->descriptorCount;
+        const VkDescriptorSetLayoutBinding *next =
+            descriptor_layout_next_binding(layout, current->binding);
+        if (!next) {
+            if (remaining) return VK_FALSE;
+            cursor->binding = current->binding;
+            cursor->array_element = current->descriptorCount;
+            return VK_TRUE;
+        }
+        current = next;
+    }
+}
+
+static VkBool32 descriptor_cursor_next(VkPs5DescriptorCursor *cursor,
+                                       uint32_t *descriptor_index)
+{
+    for (;;) {
+        uint32_t first = 0u;
+        const VkDescriptorSetLayoutBinding *binding = descriptor_layout_binding(
+            cursor->layout, cursor->binding, &first);
+        if (!binding) return VK_FALSE;
+        if (binding->descriptorCount) {
+            if (!descriptor_cursor_accept_binding(cursor, binding))
+                return VK_FALSE;
+            if (cursor->array_element < binding->descriptorCount) {
+                if (cursor->array_element > UINT32_MAX - first)
+                    return VK_FALSE;
+                *descriptor_index = first + cursor->array_element++;
+                return VK_TRUE;
+            }
+        }
+        const VkDescriptorSetLayoutBinding *next =
+            descriptor_layout_next_binding(cursor->layout, cursor->binding);
+        if (!next) return VK_FALSE;
+        cursor->binding = next->binding;
+        cursor->array_element = 0u;
+    }
+}
+
+static VkBool32 descriptor_range_valid(
+    const VkPs5DescriptorSetLayout *layout, uint32_t binding,
+    uint32_t array_element, uint32_t descriptor_count,
+    VkDescriptorType descriptor_type)
+{
+    VkPs5DescriptorCursor cursor;
+    uint32_t descriptor_index;
+    if (!descriptor_cursor_begin(layout, binding, array_element,
+            descriptor_type, &cursor))
+        return VK_FALSE;
+    for (uint32_t i = 0u; i < descriptor_count; ++i)
+        if (!descriptor_cursor_next(&cursor, &descriptor_index))
+            return VK_FALSE;
+    return VK_TRUE;
+}
+
+static VkPs5DescriptorValue *descriptor_value(
+    VkPs5DescriptorSet *set, uint32_t binding, uint32_t array_element,
+    VkDescriptorType *type)
+{
+    uint32_t first = 0u;
+    const VkDescriptorSetLayoutBinding *layout_binding = set ?
+        descriptor_layout_binding(set->layout, binding, &first) : NULL;
+    if (!layout_binding || array_element >= layout_binding->descriptorCount)
+        return NULL;
+    if (type) *type = layout_binding->descriptorType;
+    return &set->values[first + array_element];
+}
+
+VkBool32 vk_ps5_descriptor_set_buffer_info(
+    VkDescriptorSet descriptor_set, uint32_t binding, uint32_t array_element,
+    VkDescriptorBufferInfo *info)
+{
+    VkDescriptorType layout_type;
+    VkPs5DescriptorValue *value = descriptor_value(
+        (VkPs5DescriptorSet *)descriptor_set, binding, array_element,
+        &layout_type);
+    if (!info || !value || !value->valid || value->type != layout_type)
+        return VK_FALSE;
+    switch (layout_type) {
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+        *info = value->buffer;
+        return VK_TRUE;
+    default:
+        return VK_FALSE;
+    }
 }
 
 static VkBool32 descriptor_template_type_supported(VkDescriptorType type)
@@ -5340,14 +5507,10 @@ vkCreateDescriptorUpdateTemplate(
     for (uint32_t i = 0; i < pCreateInfo->descriptorUpdateEntryCount; ++i) {
         const VkDescriptorUpdateTemplateEntry *entry =
             &pCreateInfo->pDescriptorUpdateEntries[i];
-        const VkDescriptorSetLayoutBinding *binding =
-            descriptor_layout_binding(layout, entry->dstBinding);
-        if (!entry->descriptorCount || !binding ||
-            binding->descriptorType != entry->descriptorType ||
-            !descriptor_template_type_supported(entry->descriptorType) ||
-            entry->dstArrayElement > binding->descriptorCount ||
-            entry->descriptorCount >
-                binding->descriptorCount - entry->dstArrayElement)
+        if (!descriptor_template_type_supported(entry->descriptorType) ||
+            !descriptor_range_valid(layout, entry->dstBinding,
+                entry->dstArrayElement, entry->descriptorCount,
+                entry->descriptorType))
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -6042,33 +6205,26 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
                        uint32_t descriptorCopyCount,
                        const VkCopyDescriptorSet *pDescriptorCopies) {
     (void)device;
+    if ((descriptorWriteCount && !pDescriptorWrites) ||
+        (descriptorCopyCount && !pDescriptorCopies))
+        return;
     for (uint32_t i = 0; i < descriptorWriteCount; ++i) {
         const VkWriteDescriptorSet *write = &pDescriptorWrites[i];
         VkPs5DescriptorSet *set = (VkPs5DescriptorSet *)write->dstSet;
-        if (!set) continue;
-        uint32_t first = 0;
-        const VkDescriptorSetLayoutBinding *layout_binding = NULL;
-        for (uint32_t j = 0; j < set->layout->binding_count; ++j) {
-            const VkDescriptorSetLayoutBinding *candidate =
-                &set->layout->bindings[j];
-            if (candidate->binding == write->dstBinding) {
-                layout_binding = candidate;
-                break;
-            }
-            first += candidate->descriptorCount;
-        }
-        if (!layout_binding || layout_binding->descriptorType !=
-                write->descriptorType ||
-            write->dstArrayElement > layout_binding->descriptorCount ||
-            write->descriptorCount > layout_binding->descriptorCount -
-                write->dstArrayElement)
+        if (!set || !descriptor_template_type_supported(
+                write->descriptorType) ||
+            !descriptor_range_valid(set->layout, write->dstBinding,
+                write->dstArrayElement, write->descriptorCount,
+                write->descriptorType))
             continue;
+        VkBool32 buffer_info = VK_FALSE;
         switch (write->descriptorType) {
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
             if (!write->pBufferInfo) continue;
+            buffer_info = VK_TRUE;
             break;
         case VK_DESCRIPTOR_TYPE_SAMPLER:
         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -6079,54 +6235,57 @@ vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorWriteCount,
         default:
             continue;
         }
-        first += write->dstArrayElement;
+        VkPs5DescriptorCursor cursor;
+        if (!descriptor_cursor_begin(set->layout, write->dstBinding,
+                write->dstArrayElement, write->descriptorType, &cursor))
+            continue;
         for (uint32_t j = 0; j < write->descriptorCount; ++j) {
-            set->values[first + j].type = write->descriptorType;
-            if (write->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-                write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
-                write->descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
-                write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
-                set->values[first + j].buffer = write->pBufferInfo[j];
+            uint32_t descriptor_index;
+            if (!descriptor_cursor_next(&cursor, &descriptor_index)) break;
+            VkPs5DescriptorValue *value = &set->values[descriptor_index];
+            value->type = write->descriptorType;
+            if (buffer_info)
+                value->buffer = write->pBufferInfo[j];
             else
-                set->values[first + j].image = write->pImageInfo[j];
-            set->values[first + j].valid = VK_TRUE;
+                value->image = write->pImageInfo[j];
+            value->valid = VK_TRUE;
         }
     }
     for (uint32_t i = 0; i < descriptorCopyCount; ++i) {
         const VkCopyDescriptorSet *copy = &pDescriptorCopies[i];
         VkPs5DescriptorSet *source = (VkPs5DescriptorSet *)copy->srcSet;
         VkPs5DescriptorSet *dest = (VkPs5DescriptorSet *)copy->dstSet;
-        uint32_t source_first = 0, dest_first = 0;
-        const VkDescriptorSetLayoutBinding *source_binding = NULL;
-        const VkDescriptorSetLayoutBinding *dest_binding = NULL;
         if (!source || !dest) continue;
-        for (uint32_t j = 0; j < source->layout->binding_count; ++j) {
-            if (source->layout->bindings[j].binding == copy->srcBinding) {
-                source_binding = &source->layout->bindings[j];
-                break;
-            }
-            source_first += source->layout->bindings[j].descriptorCount;
-        }
-        for (uint32_t j = 0; j < dest->layout->binding_count; ++j) {
-            if (dest->layout->bindings[j].binding == copy->dstBinding) {
-                dest_binding = &dest->layout->bindings[j];
-                break;
-            }
-            dest_first += dest->layout->bindings[j].descriptorCount;
-        }
+        const VkDescriptorSetLayoutBinding *source_binding =
+            descriptor_layout_binding(source->layout, copy->srcBinding, NULL);
+        const VkDescriptorSetLayoutBinding *dest_binding =
+            descriptor_layout_binding(dest->layout, copy->dstBinding, NULL);
         if (!source_binding || !dest_binding ||
             source_binding->descriptorType != dest_binding->descriptorType ||
-            copy->srcArrayElement > source_binding->descriptorCount ||
-            copy->descriptorCount > source_binding->descriptorCount -
-                copy->srcArrayElement ||
-            copy->dstArrayElement > dest_binding->descriptorCount ||
-            copy->descriptorCount > dest_binding->descriptorCount -
-                copy->dstArrayElement)
+            !descriptor_range_valid(source->layout, copy->srcBinding,
+                copy->srcArrayElement, copy->descriptorCount,
+                source_binding->descriptorType) ||
+            !descriptor_range_valid(dest->layout, copy->dstBinding,
+                copy->dstArrayElement, copy->descriptorCount,
+                dest_binding->descriptorType))
             continue;
-        source_first += copy->srcArrayElement;
-        dest_first += copy->dstArrayElement;
-        memmove(&dest->values[dest_first], &source->values[source_first],
-            (size_t)copy->descriptorCount * sizeof(VkPs5DescriptorValue));
+        VkPs5DescriptorCursor source_cursor;
+        VkPs5DescriptorCursor dest_cursor;
+        if (!descriptor_cursor_begin(source->layout, copy->srcBinding,
+                copy->srcArrayElement, source_binding->descriptorType,
+                &source_cursor) ||
+            !descriptor_cursor_begin(dest->layout, copy->dstBinding,
+                copy->dstArrayElement, dest_binding->descriptorType,
+                &dest_cursor))
+            continue;
+        for (uint32_t j = 0u; j < copy->descriptorCount; ++j) {
+            uint32_t source_index;
+            uint32_t dest_index;
+            if (!descriptor_cursor_next(&source_cursor, &source_index) ||
+                !descriptor_cursor_next(&dest_cursor, &dest_index))
+                break;
+            dest->values[dest_index] = source->values[source_index];
+        }
     }
 }
 
@@ -6145,29 +6304,29 @@ vkUpdateDescriptorSetWithTemplate(VkDevice device, VkDescriptorSet descriptorSet
     for (uint32_t i = 0; i < update_template->entry_count; ++i) {
         const VkDescriptorUpdateTemplateEntry *entry =
             &update_template->entries[i];
+        VkPs5DescriptorCursor cursor;
+        if (!descriptor_cursor_begin(set->layout, entry->dstBinding,
+                entry->dstArrayElement, entry->descriptorType, &cursor))
+            return;
         for (uint32_t j = 0; j < entry->descriptorCount; ++j) {
+            uint32_t descriptor_index;
+            if (!descriptor_cursor_next(&cursor, &descriptor_index)) return;
             const uint8_t *data = (const uint8_t *)pData + entry->offset +
                 (size_t)j * entry->stride;
-            VkWriteDescriptorSet write = {
-                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                .dstSet = descriptorSet,
-                .dstBinding = entry->dstBinding,
-                .dstArrayElement = entry->dstArrayElement + j,
-                .descriptorCount = 1,
-                .descriptorType = entry->descriptorType,
-            };
+            VkPs5DescriptorValue *value = &set->values[descriptor_index];
+            value->type = entry->descriptorType;
             switch (entry->descriptorType) {
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
             case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
             case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
             case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-                write.pBufferInfo = (const VkDescriptorBufferInfo *)data;
+                memcpy(&value->buffer, data, sizeof(value->buffer));
                 break;
             default:
-                write.pImageInfo = (const VkDescriptorImageInfo *)data;
+                memcpy(&value->image, data, sizeof(value->image));
                 break;
             }
-            vkUpdateDescriptorSets(device, 1, &write, 0, NULL);
+            value->valid = VK_TRUE;
         }
     }
 }
@@ -8440,24 +8599,6 @@ vkCmdClearColorImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
         return;
     command->record_error = native_clear_color_image(command,
         (VkPs5Image *)i, l, v, n, r);
-}
-
-static VkPs5DescriptorValue *descriptor_value(
-    VkPs5DescriptorSet *set, uint32_t binding, uint32_t array_element,
-    VkDescriptorType *type)
-{
-    uint32_t first = 0u;
-    if (!set) return NULL;
-    for (uint32_t i = 0; i < set->layout->binding_count; ++i) {
-        const VkDescriptorSetLayoutBinding *candidate = &set->layout->bindings[i];
-        if (candidate->binding == binding) {
-            if (array_element >= candidate->descriptorCount) return NULL;
-            if (type) *type = candidate->descriptorType;
-            return &set->values[first + array_element];
-        }
-        first += candidate->descriptorCount;
-    }
-    return NULL;
 }
 
 static uint64_t native_push_constant_mask(uint32_t offset, uint32_t size)

@@ -1046,6 +1046,12 @@ gfx1013 `DISPATCH_DIRECT` and `DRAW_INDEX_AUTO` packet sequences.
 Uniform/storage-buffer descriptor sets are stored through standard Vulkan
 updates, encoded into GPU-visible OpenAGC tables, and patched into the compiler-
 selected user-SGPR immediately before compute dispatch or graphics draws.
+Writes, copies, and descriptor update templates share Vulkan's consecutive-
+binding traversal: omitted or explicit zero-count bindings are skipped,
+nonzero array offsets may cross bindings, and compatible type, stage, and
+immutable-sampler usage is enforced before any update. The host regression
+also verifies unaligned template `offset`/`stride` payloads and Eden's exact
+two-storage-buffer template.
 Graphics buffer descriptors are covered by a TCS command-recording test so the
 tessellation qualification workload can use a standard storage-buffer oracle.
 Indexed draws bind standard

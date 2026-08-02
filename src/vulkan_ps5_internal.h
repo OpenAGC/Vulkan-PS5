@@ -100,6 +100,9 @@ VkBool32 vk_ps5_pack_depth_stencil_clear(VkFormat format,
 VkBool32 vk_ps5_command_buffer_push_constant_word(
     VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
     uint32_t *value);
+VkBool32 vk_ps5_descriptor_set_buffer_info(
+    VkDescriptorSet descriptor_set, uint32_t binding, uint32_t array_element,
+    VkDescriptorBufferInfo *info);
 VkBool32 vk_ps5_pipeline_has_native_shaders(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_compute_pipeline(VkPipeline pipeline);
 VkBool32 vk_ps5_pipeline_has_native_graphics_pipeline(VkPipeline pipeline);

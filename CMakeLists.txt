@@ -129,6 +129,12 @@ if(VULKAN_PS5_BUILD_TESTS)
   add_executable(vulkan_ps5_lifecycle_test tests/lifecycle.c)
   target_link_libraries(vulkan_ps5_lifecycle_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.lifecycle COMMAND vulkan_ps5_lifecycle_test)
+  add_executable(vulkan_ps5_descriptor_updates_test
+    tests/descriptor_updates.c)
+  target_link_libraries(vulkan_ps5_descriptor_updates_test
+    PRIVATE vulkan_ps5_static)
+  add_test(NAME vulkan_ps5.descriptor_updates
+    COMMAND vulkan_ps5_descriptor_updates_test)
   add_executable(vulkan_ps5_clear_color_test tests/clear_color.c)
   target_link_libraries(vulkan_ps5_clear_color_test PRIVATE vulkan_ps5_static)
   add_test(NAME vulkan_ps5.clear_color COMMAND vulkan_ps5_clear_color_test)
