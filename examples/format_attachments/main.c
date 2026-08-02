@@ -205,7 +205,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
 #define CLEAR_TRY(expression) do { \
     result = (expression); \
     if (result != VK_SUCCESS) { \
-        printf("format_attachments: clear_attachment %s failed (%d)\\n", \
+        printf("format_attachments: clear_attachment %s failed (%d)\n", \
             #expression, result); \
         goto cleanup; \
     } \
@@ -223,7 +223,8 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
@@ -233,7 +234,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     const uint32_t image_memory_type = find_device_local_memory_type(
         physical, image_requirements.memoryTypeBits);
     if (image_memory_type == UINT32_MAX) {
-        printf("format_attachments: clear_attachment has no device-local image memory\\n");
+        printf("format_attachments: clear_attachment has no device-local image memory\n");
         goto cleanup;
     }
     const VkMemoryAllocateInfo image_allocation = {
@@ -307,7 +308,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     const uint32_t readback_memory_type = find_host_visible_memory_type(
         physical, readback_requirements.memoryTypeBits);
     if (readback_memory_type == UINT32_MAX) {
-        printf("format_attachments: clear_attachment has no host-visible readback memory\\n");
+        printf("format_attachments: clear_attachment has no host-visible readback memory\n");
         goto cleanup;
     }
     const VkMemoryAllocateInfo readback_allocation = {
@@ -416,18 +417,80 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
          CLEAR_ATTACHMENT_WIDTH / 2u) * 4u,
         (CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT - 1u) * 4u,
     };
+    int attachment_clear_passed = 1;
     for (uint32_t i = 0u; i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
         const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
         if (memcmp(pixel, expected, sizeof(expected)) != 0) {
             printf("format_attachments: clear_attachment mismatch sample=%u "
-                   "got=%02x%02x%02x%02x expected=ff00ffff\\n", i,
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            attachment_clear_passed = 0;
+            break;
+        }
+    }
+    if (attachment_clear_passed) {
+        puts("format_attachments: CLEAR_ATTACHMENTS PASS format=b8g8r8a8_unorm "
+             "extent=1280x720 checks=3 magenta=ff00ffff");
+        status = 0;
+        goto cleanup;
+    }
+
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier to_transfer_clear = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_clear);
+    const VkClearColorValue transfer_clear = {
+        .float32 = {1.0f, 0.0f, 1.0f, 1.0f},
+    };
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_GENERAL,
+        &transfer_clear, 1u, &image_range);
+    const VkImageMemoryBarrier transfer_clear_to_source = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &transfer_clear_to_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    for (uint32_t i = 0u; i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: TRANSFER_CLEAR CONTROL FAIL sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
                    pixel[0], pixel[1], pixel[2], pixel[3]);
             goto cleanup;
         }
     }
-    puts("format_attachments: CLEAR_ATTACHMENTS PASS format=b8g8r8a8_unorm "
-         "extent=1280x720 checks=3 magenta=ff00ffff");
-    status = 0;
+    puts("format_attachments: TRANSFER_CLEAR CONTROL PASS checks=3 "
+         "magenta=ff00ffff; color attachment clear failed");
 
 cleanup:
     if (mapped != NULL)
