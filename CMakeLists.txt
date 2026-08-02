@@ -583,6 +583,10 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER}"
     "${VULKAN_PS5_FORMAT_ATTACHMENT_UINT_HEADER}"
     "${VULKAN_PS5_FORMAT_ATTACHMENT_SINT_HEADER}")
+  add_executable(vulkan_ps5_scanout_matrix_probe
+    examples/scanout_matrix/main.c
+    "${VULKAN_PS5_FORMAT_ATTACHMENT_VERT_HEADER}"
+    "${VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER}")
   add_custom_command(OUTPUT "${VULKAN_PS5_MULTIVIEW_VERT_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.2
       --vn vulkan_ps5_multiview_vert_spv
@@ -1336,6 +1340,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_format_storage_probe
       vulkan_ps5_format_sampling_probe
       vulkan_ps5_format_attachments_probe
+      vulkan_ps5_scanout_matrix_probe
       vulkan_ps5_multiview_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
@@ -1384,6 +1389,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_format_storage_probe
       vulkan_ps5_format_sampling_probe
       vulkan_ps5_format_attachments_probe
+      vulkan_ps5_scanout_matrix_probe
       vulkan_ps5_multiview_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
@@ -1443,6 +1449,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_format_sampling_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_format_attachments_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_scanout_matrix_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_multiview_probe PRIVATE
       SceSystemService)
