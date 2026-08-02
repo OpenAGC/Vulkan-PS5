@@ -742,6 +742,8 @@ int main(int argc, char **argv)
     };
     VkImage color_image;
     assert(vkCreateImage(device, &image_info, NULL, &color_image) == VK_SUCCESS);
+    assert(vk_ps5_image_blit_format(color_image) ==
+           VK_FORMAT_R8G8B8A8_UNORM);
     VkMemoryRequirements image_requirements;
     vkGetImageMemoryRequirements(device, color_image, &image_requirements);
     const VkMemoryAllocateInfo image_memory_info = {

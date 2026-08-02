@@ -6,6 +6,7 @@
 #include <time.h>
 
 VkBool32 vk_ps5_swapchain_has_native_present_chain(VkSwapchainKHR swapchain);
+VkFormat vk_ps5_image_blit_format(VkImage image);
 
 #define CHECK(call) do { \
     VkResult check_result = (call); \
@@ -210,6 +211,11 @@ if (extension_count > 32) return 1;
         VK_INCOMPLETE || short_count != 2)
         return 1;
     CHECK(vkGetSwapchainImagesKHR(device, swapchain, &image_count, images));
+    for (uint32_t i = 0; i < image_count; ++i) {
+        if (vk_ps5_image_blit_format(images[i]) !=
+            VK_FORMAT_B8G8R8A8_SRGB)
+            return 1;
+    }
     const VkCommandPoolCreateInfo command_pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .queueFamilyIndex = 0,
@@ -398,6 +404,17 @@ if (extension_count > 32) return 1;
     VkSwapchainKHR zink_swapchain = VK_NULL_HANDLE;
     CHECK(vkCreateSwapchainKHR(device, &swapchain_info, NULL,
                                &zink_swapchain));
+    uint32_t zink_image_count = 3;
+    VkImage zink_images[3] = {VK_NULL_HANDLE};
+    CHECK(vkGetSwapchainImagesKHR(device, zink_swapchain,
+                                  &zink_image_count, zink_images));
+    if (zink_image_count != 3)
+        return 1;
+    for (uint32_t i = 0; i < zink_image_count; ++i) {
+        if (vk_ps5_image_blit_format(zink_images[i]) !=
+            VK_FORMAT_B8G8R8A8_SRGB)
+            return 1;
+    }
     vkDestroySwapchainKHR(device, zink_swapchain, NULL);
 
     vkDestroyCommandPool(device, command_pool, NULL);

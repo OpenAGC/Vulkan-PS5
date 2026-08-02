@@ -448,6 +448,23 @@ VkResult vk_ps5_enable_image_scanout(VkImage image_handle)
     return VK_SUCCESS;
 }
 
+VkFormat vk_ps5_image_blit_format(VkImage image_handle)
+{
+    const VkPs5Image *image = (const VkPs5Image *)image_handle;
+    if (!image)
+        return VK_FORMAT_UNDEFINED;
+    if (!(image->native_desc.usage & AGC_IMAGE_USAGE_SCANOUT_BIT))
+        return image->format;
+    switch (image->native_desc.format) {
+    case AGC_FORMAT_BGRA8_UNORM:
+        return VK_FORMAT_B8G8R8A8_UNORM;
+    case AGC_FORMAT_BGRA8_SRGB:
+        return VK_FORMAT_B8G8R8A8_SRGB;
+    default:
+        return VK_FORMAT_UNDEFINED;
+    }
+}
+
 AgcImage vk_ps5_native_image(VkImage image_handle)
 {
     VkPs5Image *image = (VkPs5Image *)image_handle;
@@ -11310,6 +11327,8 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
     uint32_t region_count, const VkImageBlit *regions, VkFilter filter)
 {
     AgcGfx1013ColorTargetFormat destination_format;
+    const VkFormat destination_blit_format =
+        vk_ps5_image_blit_format((VkImage)destination);
     const bool self_blit = source && source == destination;
     AgcResourceTransition *self_restore = NULL;
     uint32_t self_restore_count = 0u;
@@ -11331,7 +11350,7 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
          source_layout != VK_IMAGE_LAYOUT_GENERAL) ||
         (destination_layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
          destination_layout != VK_IMAGE_LAYOUT_GENERAL) ||
-        !color_target_format(destination->format, &destination_format) ||
+        !color_target_format(destination_blit_format, &destination_format) ||
         !(source->native_desc.usage & AGC_IMAGE_USAGE_SAMPLED_BIT) ||
         !(destination->native_desc.usage &
             AGC_IMAGE_USAGE_COLOR_TARGET_BIT))
@@ -11341,7 +11360,7 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
     VkPipeline pipeline_handle = VK_NULL_HANDLE;
     VkSampler sampler_handle = VK_NULL_HANDLE;
     VkResult result = vk_ps5_device_meta_blit_resources(command->device,
-        destination->format, filter, source->type == VK_IMAGE_TYPE_3D,
+        destination_blit_format, filter, source->type == VK_IMAGE_TYPE_3D,
         &pipeline_handle, &sampler_handle);
     if (result != VK_SUCCESS || !pipeline_handle || !sampler_handle)
         return result == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : result;
@@ -11542,7 +11561,7 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
             target.array_layer = destination->type == VK_IMAGE_TYPE_3D ?
                 (uint32_t)destination_z :
                 region->dstSubresource.baseArrayLayer + slice;
-            if (!native_image_format(destination->format,
+            if (!native_image_format(destination_blit_format,
                     &native_target_format)) {
                 vk_ps5_device_free((VkDevice)command->device, NULL,
                     self_restore);
