@@ -372,6 +372,9 @@ static VkResult initialize_native_image_layout(VkDevice device,
     }
     if (image->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)
         image->native_desc.flags |= AGC_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    if (image->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT)
+        image->native_desc.flags |=
+            AGC_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
     if (!image->native_desc.usage)
         image->native_desc.usage = AGC_IMAGE_USAGE_TRANSFER_DST_BIT;
     image->native_layout = (AgcImageLayout)AGC_IMAGE_LAYOUT_INIT;
@@ -2051,7 +2054,10 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         (pCreateInfo->flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                                VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT |
                                VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
-                               VK_IMAGE_CREATE_PROTECTED_BIT))) {
+                               VK_IMAGE_CREATE_PROTECTED_BIT)) ||
+        ((pCreateInfo->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) &&
+         (pCreateInfo->imageType != VK_IMAGE_TYPE_3D ||
+          pCreateInfo->arrayLayers != 1u))) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
     const VkImageFormatListCreateInfo *format_list = NULL;
@@ -2715,14 +2721,24 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         !native_image_format(pCreateInfo->format, &(AgcFormat){0}))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkPs5Image *image = (VkPs5Image *)pCreateInfo->image;
+    const VkBool32 compatible_3d_view =
+        image->type == VK_IMAGE_TYPE_3D &&
+        (image->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) &&
+        (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_2D ||
+         pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY);
     VkImageAspectFlags valid_aspects = image->is_depth_surface ?
         (image->format == VK_FORMAT_S8_UINT ? VK_IMAGE_ASPECT_STENCIL_BIT :
          image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
          image->format == VK_FORMAT_D32_SFLOAT_S8_UINT ?
             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT :
             VK_IMAGE_ASPECT_DEPTH_BIT) : VK_IMAGE_ASPECT_COLOR_BIT;
-    if (pCreateInfo->subresourceRange.baseMipLevel >= image->mip_levels ||
-        pCreateInfo->subresourceRange.baseArrayLayer >= image->array_layers)
+    if (pCreateInfo->subresourceRange.baseMipLevel >= image->mip_levels)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    const uint32_t mip_depth =
+        image->extent.depth >> pCreateInfo->subresourceRange.baseMipLevel;
+    const uint32_t layer_limit = compatible_3d_view ?
+        (mip_depth ? mip_depth : 1u) : image->array_layers;
+    if (pCreateInfo->subresourceRange.baseArrayLayer >= layer_limit)
         return VK_ERROR_FEATURE_NOT_PRESENT;
     uint32_t level_count = pCreateInfo->subresourceRange.levelCount ==
         VK_REMAINING_MIP_LEVELS ?
@@ -2730,7 +2746,7 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         pCreateInfo->subresourceRange.levelCount;
     uint32_t layer_count = pCreateInfo->subresourceRange.layerCount ==
         VK_REMAINING_ARRAY_LAYERS ?
-        image->array_layers - pCreateInfo->subresourceRange.baseArrayLayer :
+        layer_limit - pCreateInfo->subresourceRange.baseArrayLayer :
         pCreateInfo->subresourceRange.layerCount;
     if ((pCreateInfo->format != image->format &&
          (!(image->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) ||
@@ -2740,8 +2756,10 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         !level_count || !layer_count ||
         level_count > image->mip_levels -
             pCreateInfo->subresourceRange.baseMipLevel ||
-        layer_count > image->array_layers -
+        layer_count > layer_limit -
             pCreateInfo->subresourceRange.baseArrayLayer)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (compatible_3d_view && level_count != 1u)
         return VK_ERROR_FEATURE_NOT_PRESENT;
     switch (pCreateInfo->viewType) {
     case VK_IMAGE_VIEW_TYPE_3D:
@@ -2751,11 +2769,13 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
             return VK_ERROR_FEATURE_NOT_PRESENT;
         break;
     case VK_IMAGE_VIEW_TYPE_2D:
-        if (image->type != VK_IMAGE_TYPE_2D || layer_count != 1u)
+        if ((!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D) ||
+            layer_count != 1u)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         break;
     case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
-        if (image->type != VK_IMAGE_TYPE_2D || image->is_depth_surface)
+        if ((!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D) ||
+            image->is_depth_surface)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         break;
     case VK_IMAGE_VIEW_TYPE_CUBE:

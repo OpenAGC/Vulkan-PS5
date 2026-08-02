@@ -1326,6 +1326,9 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
             !(usage & VK_IMAGE_USAGE_SAMPLED_BIT))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
+    if ((flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT) &&
+        type != VK_IMAGE_TYPE_3D)
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
     pImageFormatProperties->maxExtent.width = type == VK_IMAGE_TYPE_3D ?
         capabilities.max_image_dimension_3d : capabilities.max_image_dimension_2d;
     pImageFormatProperties->maxExtent.height = type == VK_IMAGE_TYPE_1D ? 1 :

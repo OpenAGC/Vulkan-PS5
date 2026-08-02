@@ -42,6 +42,16 @@ int main(void)
         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TYPE_3D, VK_IMAGE_TILING_LINEAR,
         VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
         &format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32, VK_IMAGE_TYPE_3D,
+        VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT,
+        &format_properties) == VK_SUCCESS);
+    assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32, VK_IMAGE_TYPE_2D,
+        VK_IMAGE_TILING_LINEAR, VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT,
+        &format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
 
     const float priority = 1.0f;
     const VkDeviceQueueCreateInfo queue_info = {
@@ -152,6 +162,101 @@ int main(void)
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(invalid_view == VK_NULL_HANDLE);
 
+    VkImageCreateInfo slice_image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT,
+        .imageType = VK_IMAGE_TYPE_3D,
+        .format = VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        .extent = {16u, 8u, 4u},
+        .mipLevels = 2u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_LINEAR,
+        .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+    };
+    VkImageCreateInfo invalid_slice_image_info = slice_image_info;
+    invalid_slice_image_info.imageType = VK_IMAGE_TYPE_2D;
+    invalid_slice_image_info.extent.depth = 1u;
+    VkImage invalid_slice_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &invalid_slice_image_info, NULL,
+                         &invalid_slice_image) ==
+           VK_ERROR_FORMAT_NOT_SUPPORTED);
+    assert(invalid_slice_image == VK_NULL_HANDLE);
+
+    VkImageCreateInfo unflagged_3d_info = slice_image_info;
+    unflagged_3d_info.flags = 0u;
+    VkImage unflagged_3d_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &unflagged_3d_info, NULL,
+                         &unflagged_3d_image) == VK_SUCCESS);
+    VkImageViewCreateInfo slice_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = unflagged_3d_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = slice_image_info.format,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+        },
+    };
+    VkImageView rejected_slice_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL,
+                             &rejected_slice_view) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(rejected_slice_view == VK_NULL_HANDLE);
+    vkDestroyImage(device, unflagged_3d_image, NULL);
+
+    VkImage slice_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &slice_image_info, NULL, &slice_image) ==
+           VK_SUCCESS);
+    VkMemoryRequirements slice_requirements;
+    vkGetImageMemoryRequirements(device, slice_image, &slice_requirements);
+    const VkMemoryAllocateInfo slice_allocation_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = slice_requirements.size,
+        .memoryTypeIndex = find_memory_type(physical,
+                                             slice_requirements.memoryTypeBits),
+    };
+    VkDeviceMemory slice_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &slice_allocation_info, NULL,
+                            &slice_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, slice_image, slice_memory, 0u) ==
+           VK_SUCCESS);
+
+    slice_view_info.image = slice_image;
+    slice_view_info.subresourceRange.baseArrayLayer = 2u;
+    VkImageView slice_2d_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL, &slice_2d_view) ==
+           VK_SUCCESS);
+    slice_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    slice_view_info.subresourceRange.baseArrayLayer = 1u;
+    slice_view_info.subresourceRange.layerCount = 3u;
+    VkImageView slice_array_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL,
+                             &slice_array_view) == VK_SUCCESS);
+    slice_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    slice_view_info.subresourceRange.baseMipLevel = 1u;
+    slice_view_info.subresourceRange.baseArrayLayer = 1u;
+    slice_view_info.subresourceRange.layerCount = 1u;
+    VkImageView minified_slice_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL,
+                             &minified_slice_view) == VK_SUCCESS);
+
+    slice_view_info.subresourceRange.baseArrayLayer = 2u;
+    rejected_slice_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL,
+                             &rejected_slice_view) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(rejected_slice_view == VK_NULL_HANDLE);
+    slice_view_info.subresourceRange.baseArrayLayer = 0u;
+    slice_view_info.subresourceRange.baseMipLevel = 0u;
+    slice_view_info.subresourceRange.levelCount = 2u;
+    rejected_slice_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL,
+                             &rejected_slice_view) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(rejected_slice_view == VK_NULL_HANDLE);
+
     const VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_NEAREST,
@@ -212,6 +317,11 @@ int main(void)
     vkDestroyDescriptorPool(device, pool, NULL);
     vkDestroyDescriptorSetLayout(device, set_layout, NULL);
     vkDestroySampler(device, sampler, NULL);
+    vkDestroyImageView(device, minified_slice_view, NULL);
+    vkDestroyImageView(device, slice_array_view, NULL);
+    vkDestroyImageView(device, slice_2d_view, NULL);
+    vkDestroyImage(device, slice_image, NULL);
+    vkFreeMemory(device, slice_memory, NULL);
     vkDestroyImageView(device, mip_view, NULL);
     vkDestroyImageView(device, layer_view, NULL);
     vkDestroyImageView(device, array_view, NULL);
