@@ -220,7 +220,7 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    path. Preserve fail-closed behavior for unqualified formats or operations.
 2. Continue the focused CTS/deqp gate from the official
    `vulkan-cts-1.4.6.1` discovery baseline. Its information group now completes
-   without a dispatcher crash (18 pass, two `NotSupported`, one fail). The
+   without a dispatcher crash (19 pass, two `NotSupported`, zero fail). The
    sample-count property gap is host-closed with public OpenAGC 4x color,
    D16, D32, and S8 sampled-image support. Qualify sampled pixels on FW 5.50,
    then resolve the remaining mandatory Vulkan 1.2 feature failure before
@@ -233,8 +233,10 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    types and dynamic broadcast on FW 5.50 with two identical-byte passes.
    Basic six-view multiview is now host-closed and passes the `0x21` red/blue
    pixel oracle twice on FW 5.50 with exact cleanup, teardown, and immediate
-   relaunch. Close the remaining `borderColorSwizzle` mandatory feature, then
-   add the remaining FW 5.50 value/rendering oracles. Keep the
+   relaunch. Explicit and image-derived border-color swizzle are now host-
+   closed; the explicit B↔R custom-border pixel oracle passes twice on FW 5.50
+   and the pinned CTS mandatory-feature case passes. Add the remaining FW 5.50
+   value/rendering oracles, then broaden the targeted case list. Keep the
    conformance version non-conformant until the required suite supports a
    stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a

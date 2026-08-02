@@ -198,6 +198,7 @@ int main(void)
     vkGetPhysicalDeviceFeatures2(physical, &supported_features);
     if (!supported_custom_border.customBorderColors ||
         !supported_custom_border.customBorderColorWithoutFormat ||
+        !supported_border_swizzle.borderColorSwizzle ||
         !supported_border_swizzle.borderColorSwizzleFromImage) {
         printf("custom_border_color: required feature contract is unavailable\n");
         return 1;
@@ -212,6 +213,7 @@ int main(void)
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT,
         .pNext = &enabled_custom_border,
+        .borderColorSwizzle = VK_TRUE,
         .borderColorSwizzleFromImage = VK_TRUE,
     };
 #elif defined(VULKAN_PS5_SAMPLE_RATE_SHADING_PROBE)
@@ -630,8 +632,18 @@ int main(void)
     VkImageView texture_view;
     VK_CHECK(vkCreateImageView(device, &texture_view_info, NULL, &texture_view));
 #ifdef VULKAN_PS5_CUSTOM_BORDER_COLOR_PROBE
+    const VkSamplerBorderColorComponentMappingCreateInfoEXT border_mapping = {
+        .sType =
+            VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT,
+        .components = {
+            VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G,
+            VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_A,
+        },
+        .srgb = VK_FALSE,
+    };
     const VkSamplerCustomBorderColorCreateInfoEXT custom_border_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT,
+        .pNext = &border_mapping,
         .customBorderColor = {.float32 = {1.0f, 0.0f, 0.0f, 1.0f}},
         .format = VK_FORMAT_UNDEFINED,
     };

@@ -423,8 +423,8 @@ deqp-vk \
 
 The first direct run exposed and now regression-tests
 `vkGetDeviceProcAddr(device, "vkGetDeviceProcAddr")` self-lookup. The current
-information group reaches completion: 18 pass, two correctly report
-`NotSupported`, and one fails on mandatory Vulkan 1.2 features. The
+information group now reports 19 pass, two correctly report `NotSupported`,
+and zero fail. The former mandatory Vulkan 1.2 feature failure is closed. The
 sample-count failure is closed by capability-derived 4x color/depth/stencil
 limits plus sampled RGBA8, D16, D32, and S8 image support. The sampled 4x depth
 descriptor path is host-tested through public OpenAGC APIs; hardware pixel
@@ -448,10 +448,15 @@ ELF passed twice on FW 5.500.008; the normal and sanitizer suites now pass
 60/60 and the Prospero build is clean. Basic six-view multiview then passed a
 view-mask `0x21` pixel oracle twice on FW 5.500.008: view 0 rendered red and
 view 5 blue through typed OpenAGC `ViewIndex` state and array-layer binding.
-The normal and sanitizer suites now pass 61/61. `borderColorSwizzle` is the
-only remaining mandatory feature gap before the information group can pass.
+The normal and sanitizer suites now pass 61/61. Border-color swizzle accepts
+the explicit sampler component-mapping chain and preserves the already-proven
+image-derived mapping path. Its B↔R custom-border probe passed all 18,432
+covered pixels twice on FW 5.500.008 with identical ELF bytes. The pinned CTS
+mandatory-feature case and complete information group now pass with no failed
+cases; this remains targeted discovery evidence, not a conformance claim.
 See `analysis/fw550_subgroup_broadcast_20260802.md` and
-`analysis/fw550_multiview_20260802.md`.
+`analysis/fw550_multiview_20260802.md`, and
+`analysis/fw550_border_color_swizzle_20260802.md`.
 
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its

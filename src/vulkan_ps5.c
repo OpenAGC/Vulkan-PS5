@@ -1649,7 +1649,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
             VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *swizzle =
                 (VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *)next;
-            swizzle->borderColorSwizzle = VK_FALSE;
+            swizzle->borderColorSwizzle = VK_TRUE;
             swizzle->borderColorSwizzleFromImage = VK_TRUE;
             break;
         }
@@ -1903,13 +1903,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
             break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT: {
-            const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *swizzle =
-                (const VkPhysicalDeviceBorderColorSwizzleFeaturesEXT *)next;
-            if (swizzle->borderColorSwizzle)
-                return VK_TRUE;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT:
             break;
-        }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES:
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT: {

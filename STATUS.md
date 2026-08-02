@@ -64,6 +64,16 @@ Migration status:
   `00b5361b49d00fdb133ce2e2882618be82cba918df7b83732e268b8a96b01e22`.
   The mandatory-feature log is now down to `borderColorSwizzle` alone. See
   `analysis/fw550_multiview_20260802.md`.
+  `borderColorSwizzle` is now closed too. Both extension feature bits are
+  advertised and enableable; sampler creation accepts and validates the
+  explicit component-mapping chain while the public OpenAGC image-view mapping
+  supplies the native sample swizzle. Normal and ASAN/UBSan suites pass 61/61.
+  The exact B↔R custom-border probe counted 18,432/18,432 blue pixels twice on
+  FW 5.500.008 using ELF SHA-256
+  `8e7ed28d20788293fce2a85a5e17072eb557a872efe2f14627620f5d2105012c`.
+  Pinned CTS `dEQP-VK.info.*` now reports 19 pass, zero fail, and two expected
+  `NotSupported` cases. See
+  `analysis/fw550_border_color_swizzle_20260802.md`.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised

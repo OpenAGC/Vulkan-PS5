@@ -5124,6 +5124,19 @@ static AgcAddressMode native_sampler_address(VkSamplerAddressMode mode)
     }
 }
 
+static bool valid_border_component_mapping(const VkComponentMapping *mapping)
+{
+    if (!mapping) return false;
+    const VkComponentSwizzle swizzles[4] = {
+        mapping->r, mapping->g, mapping->b, mapping->a,
+    };
+    for (uint32_t i = 0u; i < 4u; ++i)
+        if (swizzles[i] < VK_COMPONENT_SWIZZLE_IDENTITY ||
+            swizzles[i] > VK_COMPONENT_SWIZZLE_A)
+            return false;
+    return true;
+}
+
 static VkResult create_native_sampler(VkDevice device,
     const VkSamplerCreateInfo *info, VkPs5Sampler *sampler)
 {
@@ -5177,6 +5190,8 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         pCreateInfo->sType != VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO)
         return VK_ERROR_INITIALIZATION_FAILED;
     const VkSamplerCustomBorderColorCreateInfoEXT *custom_border = NULL;
+    const VkSamplerBorderColorComponentMappingCreateInfoEXT *border_mapping =
+        NULL;
     for (const VkBaseInStructure *next =
              (const VkBaseInStructure *)pCreateInfo->pNext;
          next; next = next->pNext) {
@@ -5185,10 +5200,20 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
             !custom_border) {
             custom_border =
                 (const VkSamplerCustomBorderColorCreateInfoEXT *)next;
+        } else if (next->sType ==
+                       VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT &&
+                   !border_mapping) {
+            border_mapping =
+                (const VkSamplerBorderColorComponentMappingCreateInfoEXT *)next;
         } else {
             return VK_ERROR_FEATURE_NOT_PRESENT;
         }
     }
+    if (border_mapping &&
+        (!valid_border_component_mapping(&border_mapping->components) ||
+         (border_mapping->srgb != VK_FALSE &&
+          border_mapping->srgb != VK_TRUE)))
+        return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->flags ||
         pCreateInfo->unnormalizedCoordinates ||
         pCreateInfo->minLod < 0.0f || pCreateInfo->maxLod < pCreateInfo->minLod)
@@ -5217,7 +5242,7 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
         break;
     case VK_BORDER_COLOR_FLOAT_CUSTOM_EXT:
     case VK_BORDER_COLOR_INT_CUSTOM_EXT: {
-        if (!custom_border || custom_border->pNext) {
+        if (!custom_border) {
             vk_ps5_device_free(device, pAllocator, sampler);
             return VK_ERROR_INITIALIZATION_FAILED;
         }

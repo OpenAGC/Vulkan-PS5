@@ -152,6 +152,8 @@ int main(int argc, char **argv)
 } while (0)
     REQUIRE_EXTENSION_FEATURE(custom_border.customBorderColorWithoutFormat,
                               "customBorderColorWithoutFormat");
+    REQUIRE_EXTENSION_FEATURE(border_swizzle.borderColorSwizzle,
+                              "borderColorSwizzle");
     REQUIRE_EXTENSION_FEATURE(border_swizzle.borderColorSwizzleFromImage,
                               "borderColorSwizzleFromImage");
     if (properties.limits.strictLines) {

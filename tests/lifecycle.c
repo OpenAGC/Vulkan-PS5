@@ -344,7 +344,7 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
         .pNext = &border_swizzle_features,
     };
     vkGetPhysicalDeviceFeatures2(physical, &border_swizzle_features2);
-    assert(border_swizzle_features.borderColorSwizzle == VK_FALSE);
+    assert(border_swizzle_features.borderColorSwizzle == VK_TRUE);
     assert(border_swizzle_features.borderColorSwizzleFromImage == VK_TRUE);
     VkPhysicalDeviceMaintenance5Features maintenance5_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES,

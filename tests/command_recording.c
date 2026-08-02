@@ -391,9 +391,19 @@ int main(int argc, char **argv)
     VkSampler anisotropic_sampler;
     assert(vkCreateSampler(device, &anisotropic_sampler_info, NULL,
                            &anisotropic_sampler) == VK_SUCCESS);
+    const VkSamplerBorderColorComponentMappingCreateInfoEXT border_mapping = {
+        .sType =
+            VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT,
+        .components = {
+            VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_G,
+            VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_A,
+        },
+        .srgb = VK_FALSE,
+    };
     const VkSamplerCustomBorderColorCreateInfoEXT custom_border_info = {
         .sType =
             VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT,
+        .pNext = &border_mapping,
         .customBorderColor = {.float32 = {0.25f, 0.5f, 0.75f, 1.0f}},
         .format = VK_FORMAT_UNDEFINED,
     };
@@ -406,6 +416,19 @@ int main(int argc, char **argv)
     VkSampler custom_sampler;
     assert(vkCreateSampler(device, &custom_sampler_info, NULL,
                            &custom_sampler) == VK_SUCCESS);
+    VkSamplerBorderColorComponentMappingCreateInfoEXT invalid_border_mapping =
+        border_mapping;
+    invalid_border_mapping.srgb = 2u;
+    VkSamplerCustomBorderColorCreateInfoEXT invalid_custom_border =
+        custom_border_info;
+    invalid_custom_border.pNext = &invalid_border_mapping;
+    VkSamplerCreateInfo invalid_border_sampler_info = custom_sampler_info;
+    invalid_border_sampler_info.pNext = &invalid_custom_border;
+    VkSampler invalid_border_sampler = VK_NULL_HANDLE;
+    assert(vkCreateSampler(device, &invalid_border_sampler_info, NULL,
+                           &invalid_border_sampler) ==
+           VK_ERROR_INITIALIZATION_FAILED);
+    assert(invalid_border_sampler == VK_NULL_HANDLE);
     VkSamplerCreateInfo invalid_anisotropic_sampler_info =
         anisotropic_sampler_info;
     invalid_anisotropic_sampler_info.maxAnisotropy = 0.5f;
