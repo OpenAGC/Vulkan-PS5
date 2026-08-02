@@ -9013,9 +9013,12 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
     for (uint32_t index = 0u; index < in; ++index) {
         const VkImageMemoryBarrier *barrier = &i[index];
         VkPs5Image *image = (VkPs5Image *)barrier->image;
+        AgcResourceUsage before;
         AgcResourceUsage after;
         AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
         AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
+        (void)native_image_usage_from_access(barrier->srcAccessMask,
+                                             barrier->oldLayout, &before);
         (void)native_image_usage_from_access(barrier->dstAccessMask,
                                              barrier->newLayout, &after);
         transition.resource_type = kAgcResourceTypeImage;
@@ -9043,10 +9046,23 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             command->record_error = native_command_result(result);
             return;
         }
-        /* Access masks define synchronization scopes and may restate stale
-         * prior usage. Query the native command stream's exact subresource
-         * state, including ownership, just as buffer barriers do. */
-        const AgcResourceUsage effective_before = state.usage;
+        /* A concrete Vulkan oldLayout/source access contract is authoritative
+         * across separately recorded command buffers.  The queried command
+         * stream state is only a fallback for barriers whose source scope is
+         * inherently ambiguous; otherwise a consumer recorded before its
+         * semaphore-ordered producer would encode a stale native transition. */
+        const AgcResourceUsage effective_before = before ==
+            kAgcResourceUsageUndefined ? state.usage : before;
+        const AgcResourceOwner effective_before_owner = before ==
+            kAgcResourceUsageUndefined ? state.owner :
+            native_owner_for_usage(effective_before);
+        if (before != kAgcResourceUsageUndefined &&
+            (state.usage != effective_before ||
+             state.owner != effective_before_owner)) {
+            transition.struct_size = sizeof(transition);
+            transition.version = AGC_RUNTIME_STRUCTURE_VERSION_2;
+            transition.flags = AGC_RESOURCE_TRANSITION_COMMITTED_STATE_BIT;
+        }
         AgcResourceUsage effective_after = after ==
             kAgcResourceUsageUndefined ? effective_before : after;
         const VkAccessFlags generic_memory = VK_ACCESS_MEMORY_READ_BIT |
@@ -9076,7 +9092,7 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             effective_after = kAgcResourceUsageDepthStencilWrite;
         transition.before = effective_before;
         transition.after = effective_after;
-        transition.before_owner = state.owner;
+        transition.before_owner = effective_before_owner;
         transition.after_owner = native_owner_for_usage(transition.after);
         if (transition.before != transition.after ||
             transition.before_owner != transition.after_owner) {
@@ -11370,7 +11386,6 @@ static VkResult native_blit_image(VkPs5CommandBuffer *command,
         if (result != VK_SUCCESS)
             return result;
     }
-
     if (self_blit) {
         result = native_prepare_self_blit_transitions(command, source,
             region_count, regions, &self_restore, &self_restore_count);
@@ -12713,9 +12728,13 @@ vkCmdEndRenderPass(VkCommandBuffer c) {
             subpasses[command->active_subpass].color_attachments[slot];
         const VkAttachmentDescription *attachment =
             &command->active_render_pass->attachments[attachment_index];
-        AgcResourceUsage native_after;
-        if (!native_usage_from_layout(
-                attachment->finalLayout, &native_after)) {
+        /* GENERAL does not imply shader-read after a color-attachment use.
+         * Preserve the concrete last native role until the application's
+         * explicit barrier names the next access. */
+        AgcResourceUsage native_after = kAgcResourceUsageColorTarget;
+        if (attachment->finalLayout != VK_IMAGE_LAYOUT_GENERAL &&
+            !native_usage_from_layout(attachment->finalLayout,
+                                      &native_after)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
