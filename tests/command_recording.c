@@ -1911,6 +1911,14 @@ int main(int argc, char **argv)
         .renderArea = {{0, 0}, {256, 256}},
     };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    const VkRect2D native_color_target_control_rect = {
+        .offset = {0, 0},
+        .extent = {256u, 256u},
+    };
+    assert(vk_ps5_command_buffer_native_color_target_control(command,
+        graphics_pipeline, 0u, &native_color_target_control_rect) ==
+        VK_ERROR_INITIALIZATION_FAILED);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,

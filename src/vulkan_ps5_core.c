@@ -10057,6 +10057,89 @@ static VkResult native_bind_graphics_attachments(
     return VK_SUCCESS;
 }
 
+VkResult vk_ps5_command_buffer_native_color_target_control(
+    VkCommandBuffer command_buffer, VkPipeline pipeline_handle,
+    uint32_t color_attachment, const VkRect2D *rect)
+{
+    VkPs5CommandBuffer *command =
+        (VkPs5CommandBuffer *)command_buffer;
+    VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS || !pipeline || !rect ||
+        !command->active_render_pass || !command->active_framebuffer ||
+        command->active_dynamic_rendering ||
+        pipeline->bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS ||
+        pipeline->dynamic_rendering || !pipeline->native_graphics_pipeline)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    if (!native_require_complete_stream(command))
+        return command->record_error;
+
+    const VkPs5RenderPass *render_pass = command->active_render_pass;
+    VkPs5Framebuffer *framebuffer = command->active_framebuffer;
+    const uint32_t subpass = command->active_subpass;
+    if (subpass >= render_pass->subpass_count ||
+        color_attachment >= render_pass->subpasses[subpass].
+            color_attachment_count ||
+        rect->offset.x < 0 || rect->offset.y < 0 ||
+        !rect->extent.width || !rect->extent.height ||
+        (uint32_t)rect->offset.x > framebuffer->width ||
+        rect->extent.width > framebuffer->width - (uint32_t)rect->offset.x ||
+        (uint32_t)rect->offset.y > framebuffer->height ||
+        rect->extent.height > framebuffer->height - (uint32_t)rect->offset.y)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    const uint32_t attachment = render_pass->subpasses[subpass].
+        color_attachments[color_attachment];
+    VkPs5ImageView *view = attachment < framebuffer->attachment_count ?
+        framebuffer->attachments[attachment] : NULL;
+    VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+    AgcFormat native_format;
+    if (attachment == VK_ATTACHMENT_UNUSED || !image || !image->native_image ||
+        !native_image_format(view->format, &native_format) ||
+        native_image_recorded_usage(command, image) !=
+            kAgcResourceUsageColorTarget)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    int32_t native_result = agcCmdBindGraphicsPipeline(
+        command->native_graphics_command_buffer,
+        pipeline->native_graphics_pipeline);
+    if (native_result == AGC_OK) {
+        AgcViewport viewport = AGC_VIEWPORT_INIT;
+        viewport.width = (float)framebuffer->width;
+        viewport.height = (float)framebuffer->height;
+        viewport.max_depth = 1.0f;
+        AgcScissor scissor = AGC_SCISSOR_INIT;
+        scissor.x = rect->offset.x;
+        scissor.y = rect->offset.y;
+        scissor.width = rect->extent.width;
+        scissor.height = rect->extent.height;
+        native_result = agcCmdSetViewportScissors(
+            command->native_graphics_command_buffer, 1u, &viewport, &scissor);
+    }
+    if (native_result == AGC_OK) {
+        AgcColorTargetBinding target = AGC_COLOR_TARGET_BINDING_INIT;
+        target.image = image->native_image;
+        target.mip_level = view->base_mip_level;
+        target.array_layer = view->base_array_layer;
+        target.format = native_format;
+        native_result = agcCmdBindColorTargets(
+            command->native_graphics_command_buffer, 1u, &target);
+    }
+    if (native_result == AGC_OK)
+        native_result = agcCmdDraw(command->native_graphics_command_buffer,
+            3u, 1u, 0u, 0u);
+    if (native_result != AGC_OK)
+        return native_command_result(native_result);
+
+    command->native_bound_graphics = pipeline->native_graphics_pipeline;
+    command->native_descriptor_graphics_pipeline = NULL;
+    command->native_vertex_graphics_pipeline = NULL;
+    command->native_attachments_render_pass = NULL;
+    command->native_attachments_framebuffer = NULL;
+    command->native_draw_count++;
+    return VK_SUCCESS;
+}
+
 static VkResult native_bind_graphics_descriptors(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline, bool *ready)
 {

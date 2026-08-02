@@ -1434,6 +1434,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
   endforeach()
 
   if(PROSPERO)
+    target_include_directories(vulkan_ps5_format_attachments_probe PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(vulkan_ps5_storage_image_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_format_storage_probe PRIVATE

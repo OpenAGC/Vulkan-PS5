@@ -10,6 +10,10 @@
 #include "vulkan_ps5_format_attachment_uint_spv.h"
 #include "vulkan_ps5_format_attachment_vert_spv.h"
 
+#if defined(OPENAGC_PROSPERO)
+#include "vulkan_ps5_internal.h"
+#endif
+
 #include "../system_service_exit.h"
 
 #define FORMAT_COUNT 36u
@@ -530,6 +534,57 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     }
     if (graphics_control_passed) {
         puts("format_attachments: GRAPHICS_CONTROL PASS checks=3 "
+             "magenta=ff00ffff; color attachment clear failed");
+    }
+
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier to_native_color_target_control = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &to_native_color_target_control);
+    vkCmdBeginRenderPass(command, &begin_render_pass,
+        VK_SUBPASS_CONTENTS_INLINE);
+    CLEAR_TRY(vk_ps5_command_buffer_native_color_target_control(command,
+        graphics_control_pipeline, 0u, &clear_rect.rect));
+    vkCmdEndRenderPass(command);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    int native_color_target_control_passed = 1;
+    for (uint32_t i = 0u;
+         i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: NATIVE_COLOR_TARGET_CONTROL FAIL "
+                   "sample=%u got=%02x%02x%02x%02x expected=ff00ffff\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            native_color_target_control_passed = 0;
+            break;
+        }
+    }
+    if (native_color_target_control_passed) {
+        puts("format_attachments: NATIVE_COLOR_TARGET_CONTROL PASS checks=3 "
              "magenta=ff00ffff; color attachment clear failed");
     }
 
