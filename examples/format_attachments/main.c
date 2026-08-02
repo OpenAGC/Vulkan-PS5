@@ -359,13 +359,47 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     const VkCommandBufferBeginInfo begin_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
     };
-    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
     const VkImageSubresourceRange image_range = {
         VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
     };
-    const VkImageMemoryBarrier initial_to_attachment = {
+    const VkBufferImageCopy copy = {
+        .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
+        .imageExtent = {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT, 1u},
+    };
+    const VkBufferMemoryBarrier to_host = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = readback,
+        .offset = 0u,
+        .size = readback_size,
+    };
+    const VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &command,
+    };
+    const VkMappedMemoryRange invalidate = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .memory = readback_memory,
+        .size = readback_size,
+    };
+    const uint32_t sample_offsets[] = {
+        0u,
+        ((CLEAR_ATTACHMENT_HEIGHT / 2u) * CLEAR_ATTACHMENT_WIDTH +
+         CLEAR_ATTACHMENT_WIDTH / 2u) * 4u,
+        (CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT - 1u) * 4u,
+    };
+
+    /* Submission A establishes a deterministic baseline independently of the
+     * render-pass clear under test. Touch the new optimal image, publish it to
+     * the transfer reader, and prove that every readback byte is exactly zero. */
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier initial_to_zero = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .newLayout = VK_IMAGE_LAYOUT_GENERAL,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -374,8 +408,67 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         .subresourceRange = image_range,
     };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &initial_to_zero);
+    const VkClearColorValue zero = {
+        .uint32 = {0u, 0u, 0u, 0u},
+    };
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_GENERAL, &zero, 1u,
+        &image_range);
+    const VkImageMemoryBarrier zero_to_transfer_source = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &zero_to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    for (VkDeviceSize byte = 0u; byte < readback_size; ++byte) {
+        const uint8_t value = ((const uint8_t *)mapped)[byte];
+        if (value != 0u) {
+            printf("format_attachments: ZERO_INITIALIZATION FAIL byte=%llu "
+                   "got=%02x expected=00\n",
+                   (unsigned long long)byte, value);
+            goto cleanup;
+        }
+    }
+    puts("format_attachments: ZERO_INITIALIZATION PASS format=b8g8r8a8_unorm "
+         "extent=1280x720 bytes=3686400 zero=00");
+
+    /* Submission B contains the production attachment clear and its readback,
+     * with no baseline clear or diagnostic graphics control in the stream. */
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier zero_to_attachment = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
-        NULL, 1u, &initial_to_attachment);
+        NULL, 1u, &zero_to_attachment);
     const VkRenderPassBeginInfo begin_render_pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
@@ -409,51 +502,21 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
         &to_transfer_source);
-    const VkBufferImageCopy copy = {
-        .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
-        .imageExtent = {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT, 1u},
-    };
     vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         readback, 1u, &copy);
-    const VkBufferMemoryBarrier to_host = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .buffer = readback,
-        .offset = 0u,
-        .size = readback_size,
-    };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
     CLEAR_TRY(vkEndCommandBuffer(command));
-    const VkSubmitInfo submit_info = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .commandBufferCount = 1u,
-        .pCommandBuffers = &command,
-    };
     CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
     CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE, UINT64_C(2000000000)));
-    const VkMappedMemoryRange invalidate = {
-        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-        .memory = readback_memory,
-        .size = readback_size,
-    };
     CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
 
     const uint8_t expected[] = {0xffu, 0x00u, 0xffu, 0xffu};
-    const uint32_t sample_offsets[] = {
-        0u,
-        ((CLEAR_ATTACHMENT_HEIGHT / 2u) * CLEAR_ATTACHMENT_WIDTH +
-         CLEAR_ATTACHMENT_WIDTH / 2u) * 4u,
-        (CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT - 1u) * 4u,
-    };
     int attachment_clear_passed = 1;
     for (uint32_t i = 0u; i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
         const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
         if (memcmp(pixel, expected, sizeof(expected)) != 0) {
-            printf("format_attachments: clear_attachment mismatch sample=%u "
+            printf("format_attachments: PRODUCTION_CLEAR FAIL sample=%u "
                    "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
                    pixel[0], pixel[1], pixel[2], pixel[3]);
             attachment_clear_passed = 0;
@@ -461,8 +524,9 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         }
     }
     if (attachment_clear_passed) {
-        puts("format_attachments: CLEAR_ATTACHMENTS PASS format=b8g8r8a8_unorm "
-             "extent=1280x720 checks=3 magenta=ff00ffff");
+        puts("format_attachments: PRODUCTION_CLEAR CLEAR_ATTACHMENTS PASS "
+             "format=b8g8r8a8_unorm extent=1280x720 checks=3 "
+             "magenta=ff00ffff");
         status = 0;
         goto cleanup;
     }
