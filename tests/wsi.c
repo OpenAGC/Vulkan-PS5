@@ -415,6 +415,98 @@ if (extension_count > 32) return 1;
             VK_FORMAT_B8G8R8A8_SRGB)
             return 1;
     }
+
+    /*
+     * Eden presents through a blit from a normal UNORM image into Zink's
+     * mutable UNORM swapchain.  The scanout image itself is SRGB, so this
+     * specifically verifies that the command recorder selects the native
+     * destination format rather than rejecting or misconfiguring the blit.
+     */
+    const VkImageCreateInfo scanout_blit_source_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .extent = {1280u, 720u, 1u},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage scanout_blit_source = VK_NULL_HANDLE;
+    CHECK(vkCreateImage(device, &scanout_blit_source_info, NULL,
+                        &scanout_blit_source));
+    VkMemoryRequirements scanout_blit_source_requirements;
+    vkGetImageMemoryRequirements(device, scanout_blit_source,
+                                 &scanout_blit_source_requirements);
+    const VkMemoryAllocateInfo scanout_blit_source_memory_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = scanout_blit_source_requirements.size,
+        .memoryTypeIndex = 0u,
+    };
+    VkDeviceMemory scanout_blit_source_memory = VK_NULL_HANDLE;
+    CHECK(vkAllocateMemory(device, &scanout_blit_source_memory_info, NULL,
+                           &scanout_blit_source_memory));
+    CHECK(vkBindImageMemory(device, scanout_blit_source,
+                            scanout_blit_source_memory, 0u));
+
+    const VkCommandBufferAllocateInfo scanout_blit_allocate_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1,
+    };
+    VkCommandBuffer scanout_blit_command = VK_NULL_HANDLE;
+    CHECK(vkAllocateCommandBuffers(device, &scanout_blit_allocate_info,
+                                   &scanout_blit_command));
+    const VkCommandBufferBeginInfo scanout_blit_begin = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    CHECK(vkBeginCommandBuffer(scanout_blit_command, &scanout_blit_begin));
+    const VkImageMemoryBarrier scanout_blit_barriers[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = scanout_blit_source,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = zink_images[0],
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        },
+    };
+    vkCmdPipelineBarrier(scanout_blit_command,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0u, 0u, NULL, 0u, NULL, 2u, scanout_blit_barriers);
+    const VkImageBlit scanout_blit_region = {
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .srcOffsets = {{0, 0, 0}, {1280, 720, 1}},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .dstOffsets = {{0, 0, 0},
+                       {(int32_t)capabilities.currentExtent.width,
+                        (int32_t)capabilities.currentExtent.height, 1}},
+    };
+    vkCmdBlitImage(scanout_blit_command, scanout_blit_source,
+                   VK_IMAGE_LAYOUT_GENERAL, zink_images[0],
+                   VK_IMAGE_LAYOUT_GENERAL, 1u, &scanout_blit_region,
+                   VK_FILTER_LINEAR);
+    CHECK(vkEndCommandBuffer(scanout_blit_command));
+
+    vkDestroyImage(device, scanout_blit_source, NULL);
+    vkFreeMemory(device, scanout_blit_source_memory, NULL);
     vkDestroySwapchainKHR(device, zink_swapchain, NULL);
 
     vkDestroyCommandPool(device, command_pool, NULL);
