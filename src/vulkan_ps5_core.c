@@ -5665,10 +5665,16 @@ vkCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
         }
         VkPs5ImageView *view = (VkPs5ImageView *)pCreateInfo->pAttachments[i];
         VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
+        const uint32_t view_width = image ?
+            (image->extent.width >> view->base_mip_level ?
+                image->extent.width >> view->base_mip_level : 1u) : 0u;
+        const uint32_t view_height = image ?
+            (image->extent.height >> view->base_mip_level ?
+                image->extent.height >> view->base_mip_level : 1u) : 0u;
         if (!view || !image || view->format != render_pass->attachments[i].format ||
             image->samples != render_pass->attachments[i].samples ||
-            image->extent.width < framebuffer->width ||
-            image->extent.height < framebuffer->height) {
+            view_width < framebuffer->width ||
+            view_height < framebuffer->height) {
             vk_ps5_device_free(device, pAllocator, framebuffer);
             return VK_ERROR_INITIALIZATION_FAILED;
         }
@@ -9394,6 +9400,7 @@ static VkResult native_bind_graphics_attachments(
         targets[slot] = (AgcColorTargetBinding)
             AGC_COLOR_TARGET_BINDING_INIT;
         targets[slot].image = image->native_image;
+        targets[slot].mip_level = view->base_mip_level;
         targets[slot].array_layer = view->base_array_layer + view_index;
         targets[slot].format = native_format;
     }
@@ -9478,6 +9485,7 @@ static VkResult native_bind_graphics_attachments(
         AgcDepthStencilTargetBinding target =
             AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
         target.image = image->native_image;
+        target.mip_level = view->base_mip_level;
         target.array_layer = view->base_array_layer + view_index;
         result = agcCmdBindDepthStencilTarget(
             command->native_graphics_command_buffer, &target);
@@ -10985,6 +10993,7 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                         AGC_COLOR_TARGET_BINDING_INIT;
                     AgcFormat native_target_format;
                     target.image = image->native_image;
+                    target.mip_level = view->base_mip_level;
                     target.array_layer = array_layer;
                     if (!native_image_format(view->format,
                             &native_target_format)) {
@@ -11000,6 +11009,7 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                     AgcDepthStencilTargetBinding target =
                         AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
                     target.image = image->native_image;
+                    target.mip_level = view->base_mip_level;
                     target.array_layer = array_layer;
                     native_result = agcCmdBindColorTargets(
                         command->native_graphics_command_buffer, 0u, NULL);

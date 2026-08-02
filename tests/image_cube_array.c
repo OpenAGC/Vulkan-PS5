@@ -185,6 +185,14 @@ int main(void)
            VK_ERROR_FORMAT_NOT_SUPPORTED);
     assert(invalid_slice_image == VK_NULL_HANDLE);
 
+    VkImageCreateInfo depth_one_3d_info = slice_image_info;
+    depth_one_3d_info.extent.depth = 1u;
+    depth_one_3d_info.mipLevels = 1u;
+    VkImage depth_one_3d_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &depth_one_3d_info, NULL,
+                         &depth_one_3d_image) == VK_SUCCESS);
+    vkDestroyImage(device, depth_one_3d_image, NULL);
+
     VkImageCreateInfo unflagged_3d_info = slice_image_info;
     unflagged_3d_info.flags = 0u;
     VkImage unflagged_3d_image = VK_NULL_HANDLE;

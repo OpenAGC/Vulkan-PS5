@@ -493,6 +493,124 @@ int main(int argc, char **argv) {
     vkCmdEndRenderPass(multiview_command);
     assert(vkEndCommandBuffer(multiview_command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_draw_count(multiview_command) == 2u);
+
+    VkGraphicsPipelineCreateInfo slice_pipeline_info =
+        multiview_pipeline_info;
+    const VkViewport slice_viewport = {0, 0, 128, 128, 0, 1};
+    const VkRect2D slice_scissor = {{0, 0}, {128, 128}};
+    const VkPipelineViewportStateCreateInfo slice_viewport_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1u,
+        .pViewports = &slice_viewport,
+        .scissorCount = 1u,
+        .pScissors = &slice_scissor,
+    };
+    slice_pipeline_info.pViewportState = &slice_viewport_state;
+    slice_pipeline_info.renderPass = render_pass;
+    VkPipeline slice_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
+        &slice_pipeline_info, NULL, &slice_pipeline) == VK_SUCCESS);
+    const VkImageCreateInfo slice_image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT,
+        .imageType = VK_IMAGE_TYPE_3D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {256u, 256u, 4u},
+        .mipLevels = 2u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage slice_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &slice_image_info, NULL, &slice_image) ==
+        VK_SUCCESS);
+    VkMemoryRequirements slice_requirements;
+    vkGetImageMemoryRequirements(device, slice_image, &slice_requirements);
+    uint32_t slice_memory_type = 0u;
+    while (slice_memory_type < 32u &&
+           (slice_requirements.memoryTypeBits &
+            (1u << slice_memory_type)) == 0u)
+        ++slice_memory_type;
+    assert(slice_memory_type < 32u);
+    const VkMemoryAllocateInfo slice_allocation_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = slice_requirements.size,
+        .memoryTypeIndex = slice_memory_type,
+    };
+    VkDeviceMemory slice_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &slice_allocation_info, NULL,
+        &slice_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, slice_image, slice_memory, 0u) ==
+        VK_SUCCESS);
+    const VkImageViewCreateInfo slice_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = slice_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 1u,
+            .levelCount = 1u,
+            .baseArrayLayer = 1u,
+            .layerCount = 1u,
+        },
+    };
+    VkImageView slice_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &slice_view_info, NULL, &slice_view) ==
+        VK_SUCCESS);
+    VkFramebufferCreateInfo slice_framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = render_pass,
+        .attachmentCount = 1u,
+        .pAttachments = &slice_view,
+        .width = 129u,
+        .height = 128u,
+        .layers = 1u,
+    };
+    VkFramebuffer rejected_slice_framebuffer = VK_NULL_HANDLE;
+    assert(vkCreateFramebuffer(device, &slice_framebuffer_info, NULL,
+        &rejected_slice_framebuffer) == VK_ERROR_INITIALIZATION_FAILED);
+    assert(rejected_slice_framebuffer == VK_NULL_HANDLE);
+    slice_framebuffer_info.width = 128u;
+    VkFramebuffer slice_framebuffer = VK_NULL_HANDLE;
+    assert(vkCreateFramebuffer(device, &slice_framebuffer_info, NULL,
+        &slice_framebuffer) == VK_SUCCESS);
+    VkCommandBuffer slice_command = VK_NULL_HANDLE;
+    assert(vkAllocateCommandBuffers(device, &multiview_command_info,
+        &slice_command) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(slice_command, &multiview_begin) ==
+        VK_SUCCESS);
+    const VkRenderPassBeginInfo slice_render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = render_pass,
+        .framebuffer = slice_framebuffer,
+        .renderArea = {{0, 0}, {128u, 128u}},
+        .clearValueCount = 1u,
+        .pClearValues = &multiview_clear,
+    };
+    vkCmdBeginRenderPass(slice_command, &slice_render_begin,
+        VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(slice_command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        slice_pipeline);
+    const VkClearAttachment slice_clear = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .colorAttachment = 0u,
+        .clearValue = {.color = {{0.25f, 0.5f, 0.75f, 1.0f}}},
+    };
+    const VkClearRect slice_clear_rect = {
+        .rect = {{0, 0}, {128u, 128u}},
+        .layerCount = 1u,
+    };
+    vkCmdClearAttachments(slice_command, 1u, &slice_clear, 1u,
+        &slice_clear_rect);
+    vkCmdDraw(slice_command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(slice_command);
+    assert(vkEndCommandBuffer(slice_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_record_error(slice_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(slice_command) >= 2u);
     VkPipelineRasterizationStateCreateInfo native_rasterization = rasterization;
     native_rasterization.depthClampEnable = VK_FALSE;
     native_rasterization.depthBiasEnable = VK_FALSE;
@@ -979,6 +1097,11 @@ int main(int argc, char **argv) {
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, slice_pipeline, NULL);
+    vkDestroyFramebuffer(device, slice_framebuffer, NULL);
+    vkDestroyImageView(device, slice_view, NULL);
+    vkDestroyImage(device, slice_image, NULL);
+    vkFreeMemory(device, slice_memory, NULL);
     vkDestroyPipeline(device, multiview_pipeline, NULL);
     vkDestroyCommandPool(device, multiview_pool, NULL);
     vkDestroyFramebuffer(device, multiview_framebuffer, NULL);
