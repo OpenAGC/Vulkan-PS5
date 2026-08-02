@@ -556,6 +556,7 @@ typedef struct VkPs5PipelineLayout {
 } VkPs5PipelineLayout;
 
 typedef struct VkPs5RenderPass {
+    uint64_t meta_cache_id;
     VkRenderPassCreateFlags flags;
     uint32_t attachment_count;
     uint32_t subpass_count;
@@ -577,6 +578,25 @@ typedef struct VkPs5RenderPass {
         uint32_t view_mask;
     } subpasses[VK_PS5_MAX_SUBPASSES];
 } VkPs5RenderPass;
+
+static atomic_uint_fast64_t next_meta_render_pass_id = 1u;
+
+static uint64_t allocate_meta_render_pass_id(void)
+{
+    uint64_t id;
+    do {
+        id = atomic_fetch_add_explicit(&next_meta_render_pass_id, 1u,
+            memory_order_relaxed);
+    } while (!id);
+    return id;
+}
+
+uint64_t vk_ps5_render_pass_meta_cache_id(VkRenderPass render_pass_handle)
+{
+    const VkPs5RenderPass *render_pass =
+        (const VkPs5RenderPass *)render_pass_handle;
+    return render_pass ? render_pass->meta_cache_id : 0u;
+}
 
 typedef struct VkPs5FramebufferAttachmentInfo {
     VkImageCreateFlags flags;
@@ -952,6 +972,7 @@ typedef struct VkPs5CommandBuffer {
     VkPs5Framebuffer *native_attachments_framebuffer;
     uint32_t native_attachments_subpass;
     uint32_t native_attachments_view_index;
+    VkBool32 native_suppress_depth_attachment;
     uint32_t native_dispatch_count;
     uint32_t native_draw_count;
     VkBool32 native_stream_complete;
@@ -4068,17 +4089,66 @@ VkResult vk_ps5_initialize_meta_clear(VkDevice device,
     return result;
 }
 
+/* The compiler represents an unused lower color location as a canonical
+ * sparse export. Retarget the clear shader's sole output to the requested MRT
+ * slot while keeping the complete active subpass attachment signature. */
+static VkBool32 meta_clear_color_fragment_for_attachment(uint32_t *code,
+    size_t word_count, uint32_t color_attachment)
+{
+    if (!code || word_count < 5u || color_attachment >=
+            AGC_GFX1013_MAX_COLOR_TARGETS)
+        return VK_FALSE;
+    bool patched = false;
+    for (size_t word = 5u; word < word_count;) {
+        const uint32_t instruction = code[word];
+        const uint32_t count = instruction >> 16u;
+        const uint32_t opcode = instruction & 0xffffu;
+        if (count == 0u || count > word_count - word)
+            return VK_FALSE;
+        /* OpDecorate <target> Location <literal>. */
+        if (opcode == 71u && count == 4u && code[word + 2u] == 30u &&
+            code[word + 3u] == 0u) {
+            if (patched)
+                return VK_FALSE;
+            code[word + 3u] = color_attachment;
+            patched = true;
+        }
+        word += count;
+    }
+    return patched ? VK_TRUE : VK_FALSE;
+}
+
 VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
-    VkFormat format, VkImageAspectFlags aspects,
+    VkRenderPass render_pass_handle, uint32_t subpass,
+    uint32_t color_attachment, VkFormat format, VkImageAspectFlags aspects,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
 {
     const VkImageAspectFlags depth_stencil = VK_IMAGE_ASPECT_DEPTH_BIT |
         VK_IMAGE_ASPECT_STENCIL_BIT;
-    if (!device || !layout_out || !pipeline_out ||
+    const VkPs5RenderPass *render_pass =
+        (const VkPs5RenderPass *)render_pass_handle;
+    if (!device || !render_pass_handle || !render_pass || !layout_out ||
+        !pipeline_out || subpass >= render_pass->subpass_count ||
         (aspects != VK_IMAGE_ASPECT_COLOR_BIT &&
          !(aspects && (aspects & ~depth_stencil) == 0u)) ||
         (aspects == VK_IMAGE_ASPECT_COLOR_BIT) == native_image_is_depth(format))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    const uint32_t color_attachment_count = render_pass->subpasses[subpass].
+        color_attachment_count;
+    if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+        if (color_attachment >= color_attachment_count ||
+            render_pass->subpasses[subpass].color_attachments[
+                color_attachment] == VK_ATTACHMENT_UNUSED ||
+            render_pass->attachments[render_pass->subpasses[subpass].
+                color_attachments[color_attachment]].format != format)
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    } else if (color_attachment != 0u ||
+               render_pass->subpasses[subpass].depth_stencil_attachment ==
+                   VK_ATTACHMENT_UNUSED ||
+               render_pass->attachments[render_pass->subpasses[subpass].
+                   depth_stencil_attachment].format != format) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
     *layout_out = VK_NULL_HANDLE;
     *pipeline_out = VK_NULL_HANDLE;
 
@@ -4097,10 +4167,26 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
     if (result != VK_SUCCESS)
         return result;
 
+    uint32_t color_fragment_code[
+        sizeof(vulkan_ps5_meta_clear_attachment_color_frag_spv) /
+        sizeof(vulkan_ps5_meta_clear_attachment_color_frag_spv[0])];
     const uint32_t *fragment_code =
         vulkan_ps5_meta_clear_attachment_color_frag_spv;
     size_t fragment_size =
         sizeof(vulkan_ps5_meta_clear_attachment_color_frag_spv);
+    if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+        memcpy(color_fragment_code,
+            vulkan_ps5_meta_clear_attachment_color_frag_spv,
+            sizeof(color_fragment_code));
+        if (!meta_clear_color_fragment_for_attachment(color_fragment_code,
+                sizeof(color_fragment_code) / sizeof(color_fragment_code[0]),
+                color_attachment)) {
+            vkDestroyPipelineLayout(device, *layout_out, NULL);
+            *layout_out = VK_NULL_HANDLE;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        fragment_code = color_fragment_code;
+    }
     if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
         fragment_code = vulkan_ps5_meta_clear_attachment_depth_frag_spv;
         fragment_size =
@@ -4162,18 +4248,18 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
     };
     const VkPipelineMultisampleStateCreateInfo multisample = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .rasterizationSamples = render_pass->subpasses[subpass].samples,
     };
-    const VkPipelineColorBlendAttachmentState color_attachment = {
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
-            VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-            VK_COLOR_COMPONENT_A_BIT,
-    };
+    VkPipelineColorBlendAttachmentState color_attachments[
+        AGC_GFX1013_MAX_COLOR_TARGETS] = {{0}};
+    if (aspects == VK_IMAGE_ASPECT_COLOR_BIT)
+        color_attachments[color_attachment].colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = aspects == VK_IMAGE_ASPECT_COLOR_BIT ? 1u : 0u,
-        .pAttachments = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
-            &color_attachment : NULL,
+        .attachmentCount = color_attachment_count,
+        .pAttachments = color_attachment_count ? color_attachments : NULL,
     };
     const VkStencilOpState stencil = {
         .failOp = VK_STENCIL_OP_REPLACE,
@@ -4194,6 +4280,9 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
         .minDepthBounds = 0.0f,
         .maxDepthBounds = 1.0f,
     };
+    const VkBool32 has_depth_stencil_attachment =
+        render_pass->subpasses[subpass].depth_stencil_attachment !=
+            VK_ATTACHMENT_UNUSED;
     const VkDynamicState dynamic_states[] = {
         VK_DYNAMIC_STATE_VIEWPORT,
         VK_DYNAMIC_STATE_SCISSOR,
@@ -4204,20 +4293,8 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
         .dynamicStateCount = (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) ? 3u : 2u,
         .pDynamicStates = dynamic_states,
     };
-    const VkFormat color_format = format;
-    const VkPipelineRenderingCreateInfo rendering = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = aspects == VK_IMAGE_ASPECT_COLOR_BIT ? 1u : 0u,
-        .pColorAttachmentFormats = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
-            &color_format : NULL,
-        .depthAttachmentFormat = (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) ?
-            format : VK_FORMAT_UNDEFINED,
-        .stencilAttachmentFormat = (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) ?
-            format : VK_FORMAT_UNDEFINED,
-    };
     const VkGraphicsPipelineCreateInfo pipeline_create = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = &rendering,
         .stageCount = 2u,
         .pStages = stages,
         .pVertexInputState = &vertex_input,
@@ -4225,11 +4302,12 @@ VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
         .pViewportState = &viewport,
         .pRasterizationState = &rasterization,
         .pMultisampleState = &multisample,
-        .pDepthStencilState = aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
-            NULL : &depth,
+        .pDepthStencilState = has_depth_stencil_attachment ? &depth : NULL,
         .pColorBlendState = &blend,
         .pDynamicState = &dynamic,
         .layout = *layout_out,
+        .renderPass = render_pass_handle,
+        .subpass = subpass,
     };
     if (result == VK_SUCCESS)
         result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
@@ -6197,6 +6275,7 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                  sizeof(*render_pass),
                                                  _Alignof(VkPs5RenderPass));
     if (!render_pass) return VK_ERROR_OUT_OF_HOST_MEMORY;
+    render_pass->meta_cache_id = allocate_meta_render_pass_id();
     render_pass->flags = pCreateInfo->flags;
     render_pass->attachment_count = pCreateInfo->attachmentCount;
     render_pass->subpass_count = pCreateInfo->subpassCount;
@@ -6315,6 +6394,26 @@ vkCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
             if (render_pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT) {
                 vk_ps5_device_free(device, pAllocator, render_pass);
                 return VK_ERROR_FEATURE_NOT_PRESENT;
+            }
+        }
+    }
+    for (uint32_t i = 0u; i < render_pass->subpass_count; ++i) {
+        for (uint32_t slot = 0u;
+             slot < render_pass->subpasses[i].color_attachment_count;
+             ++slot) {
+            const uint32_t attachment =
+                render_pass->subpasses[i].color_attachments[slot];
+            if (attachment == VK_ATTACHMENT_UNUSED)
+                continue;
+            VkPipeline pipeline = VK_NULL_HANDLE;
+            VkResult result = vk_ps5_device_meta_attachment_pipeline(device,
+                (VkRenderPass)render_pass, i, slot,
+                render_pass->attachments[attachment].format,
+                VK_IMAGE_ASPECT_COLOR_BIT, NULL, &pipeline);
+            if (result != VK_SUCCESS || !pipeline) {
+                vk_ps5_device_free(device, pAllocator, render_pass);
+                return result == VK_SUCCESS ?
+                    VK_ERROR_INITIALIZATION_FAILED : result;
             }
         }
     }
@@ -9914,12 +10013,13 @@ vkCmdBindVertexBuffers2(VkCommandBuffer c, uint32_t f, uint32_t n,
 }
 
 static VkResult native_bind_graphics_attachments(
-    VkPs5CommandBuffer *command, uint32_t view_index)
+    VkPs5CommandBuffer *command, uint32_t view_index,
+    VkBool32 bind_depth_stencil)
 {
     VkPs5RenderPass *render_pass = command->active_render_pass;
     VkPs5Framebuffer *framebuffer = command->active_framebuffer;
     uint32_t subpass = command->active_subpass;
-    if (command->native_attachments_render_pass) {
+    if (bind_depth_stencil && command->native_attachments_render_pass) {
         if (command->native_attachments_render_pass != render_pass ||
             command->native_attachments_framebuffer != framebuffer ||
             command->native_attachments_subpass != subpass)
@@ -9959,7 +10059,8 @@ static VkResult native_bind_graphics_attachments(
         targets[slot].format = native_format;
     }
     int32_t result = agcCmdBindColorTargets(
-        command->native_graphics_command_buffer, color_count, targets);
+        command->native_graphics_command_buffer, color_count,
+        color_count ? targets : NULL);
     if (result != AGC_OK) {
         AgcDebugMessage debug_message = AGC_DEBUG_MESSAGE_INIT;
         int32_t debug_result = agcGetLastDebugMessage(
@@ -9969,11 +10070,14 @@ static VkResult native_bind_graphics_attachments(
             "count=%u binding_size=%u binding_version=%u "
             "binding_flags=%u binding_format=%u binding_reserved=%llu "
             "image_usage=0x%x image_format=%u image_depth=%u%s%s\n",
-            (unsigned int)result, color_count, targets[0].struct_size,
-            targets[0].version, targets[0].flags, targets[0].format,
-            (unsigned long long)(targets[0].reserved[0] |
+            (unsigned int)result, color_count,
+            color_count ? targets[0].struct_size : 0u,
+            color_count ? targets[0].version : 0u,
+            color_count ? targets[0].flags : 0u,
+            color_count ? targets[0].format : 0u,
+            color_count ? (unsigned long long)(targets[0].reserved[0] |
                 targets[0].reserved[1] | targets[0].reserved[2] |
-                targets[0].reserved[3]),
+                targets[0].reserved[3]) : 0ull,
             color_count ? ((VkPs5Image *)
                 ((VkPs5ImageView *)framebuffer->attachments[
                     render_pass->subpasses[subpass].color_attachments[0]])->
@@ -9992,7 +10096,8 @@ static VkResult native_bind_graphics_attachments(
     }
     uint32_t depth_attachment = render_pass->subpasses[subpass].
         depth_stencil_attachment;
-    if (depth_attachment != VK_ATTACHMENT_UNUSED) {
+    if (bind_depth_stencil && !command->native_suppress_depth_attachment &&
+        depth_attachment != VK_ATTACHMENT_UNUSED) {
         const VkPs5Pipeline *pipeline = command->bound_graphics;
         bool depth_read_only = false;
         bool stencil_read_only = false;
@@ -10050,10 +10155,12 @@ static VkResult native_bind_graphics_attachments(
             return native_command_result(result);
         }
     }
-    command->native_attachments_render_pass = render_pass;
-    command->native_attachments_framebuffer = framebuffer;
-    command->native_attachments_subpass = subpass;
-    command->native_attachments_view_index = view_index;
+    if (bind_depth_stencil) {
+        command->native_attachments_render_pass = render_pass;
+        command->native_attachments_framebuffer = framebuffer;
+        command->native_attachments_subpass = subpass;
+        command->native_attachments_view_index = view_index;
+    }
     return VK_SUCCESS;
 }
 
@@ -10138,6 +10245,63 @@ VkResult vk_ps5_command_buffer_native_color_target_control(
     command->native_attachments_framebuffer = NULL;
     command->native_draw_count++;
     return VK_SUCCESS;
+}
+
+VkResult vk_ps5_command_buffer_meta_color_pipeline_control(
+    VkCommandBuffer command_buffer, uint32_t color_attachment,
+    const VkRect2D *rect, const float color[4])
+{
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)command_buffer;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS || !rect || !color ||
+        !command->active_render_pass || !command->active_framebuffer ||
+        command->active_dynamic_rendering)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    VkPs5RenderPass *render_pass = command->active_render_pass;
+    VkPs5Framebuffer *framebuffer = command->active_framebuffer;
+    const uint32_t subpass = command->active_subpass;
+    if (subpass >= render_pass->subpass_count ||
+        color_attachment >=
+            render_pass->subpasses[subpass].color_attachment_count ||
+        rect->offset.x < 0 || rect->offset.y < 0 ||
+        !rect->extent.width || !rect->extent.height ||
+        (uint32_t)rect->offset.x > framebuffer->width ||
+        rect->extent.width >
+            framebuffer->width - (uint32_t)rect->offset.x ||
+        (uint32_t)rect->offset.y > framebuffer->height ||
+        rect->extent.height >
+            framebuffer->height - (uint32_t)rect->offset.y)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    const uint32_t attachment =
+        render_pass->subpasses[subpass].color_attachments[color_attachment];
+    VkPs5ImageView *view = attachment < framebuffer->attachment_count ?
+        framebuffer->attachments[attachment] : NULL;
+    if (attachment == VK_ATTACHMENT_UNUSED || !view)
+        return VK_ERROR_INITIALIZATION_FAILED;
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkResult result = vk_ps5_device_meta_attachment_pipeline(
+        command->device, (VkRenderPass)render_pass, subpass,
+        color_attachment, view->format, VK_IMAGE_ASPECT_COLOR_BIT,
+        &layout, &pipeline);
+    if (result != VK_SUCCESS || !layout || !pipeline)
+        return result == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : result;
+
+    VkViewport viewport = {
+        0.0f, 0.0f, (float)framebuffer->width, (float)framebuffer->height,
+        0.0f, 1.0f,
+    };
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline);
+    vkCmdPushConstants(command_buffer, layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+        0u, 4u * sizeof(float), color);
+    vkCmdSetViewport(command_buffer, 0u, 1u, &viewport);
+    vkCmdSetScissor(command_buffer, 0u, 1u, rect);
+    vkCmdDraw(command_buffer, 3u, 1u, 0u, 0u);
+    return command->record_error;
 }
 
 static VkResult native_bind_graphics_descriptors(
@@ -10688,7 +10852,7 @@ static void record_graphics_draw(
                 command->native_graphics_command_buffer, view_index);
         if (result == AGC_OK) {
             VkResult attachment_result = native_bind_graphics_attachments(
-                command, view_index);
+                command, view_index, VK_TRUE);
             if (attachment_result != VK_SUCCESS) {
                 command->record_error = attachment_result;
                 return;
@@ -10841,7 +11005,7 @@ static void record_graphics_indirect(
                 command->native_graphics_command_buffer, view_index);
         if (native_draw_result == AGC_OK) {
             VkResult attachment_result = native_bind_graphics_attachments(
-                command, view_index);
+                command, view_index, VK_TRUE);
             if (attachment_result != VK_SUCCESS) {
                 command->record_error = attachment_result;
                 return;
@@ -11512,6 +11676,21 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
     if (!native_require_complete_stream(command))
         return command->record_error;
     VkPs5Framebuffer *framebuffer = command->active_framebuffer;
+    VkPs5Pipeline *saved_graphics_pipeline = command->bound_graphics;
+    AgcGfx1013Viewport saved_viewports[VK_PS5_MAX_VIEWPORTS];
+    AgcGfx1013ScissorState saved_scissors[VK_PS5_MAX_VIEWPORTS];
+    uint8_t saved_push_constants[kAgcShaderStageCount][256u];
+    uint64_t saved_push_masks[kAgcShaderStageCount];
+    const uint32_t saved_viewport_mask = command->dynamic_viewport_mask;
+    const uint32_t saved_scissor_mask = command->dynamic_scissor_mask;
+    memcpy(saved_viewports, command->dynamic_viewports,
+        sizeof(saved_viewports));
+    memcpy(saved_scissors, command->dynamic_scissors,
+        sizeof(saved_scissors));
+    memcpy(saved_push_constants, command->push_constant_data,
+        sizeof(saved_push_constants));
+    memcpy(saved_push_masks, command->push_constant_masks,
+        sizeof(saved_push_masks));
 
     /* Preflight all attachment, rectangle, and layer intervals. */
     for (uint32_t attachment_index = 0u;
@@ -11536,7 +11715,11 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
             return VK_ERROR_INITIALIZATION_FAILED;
         VkPipeline pipeline = VK_NULL_HANDLE;
         VkResult result = vk_ps5_device_meta_attachment_pipeline(
-            command->device, view->format, aspects, &pipeline);
+            command->device, (VkRenderPass)command->active_render_pass,
+            command->active_subpass,
+            aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
+                attachments[attachment_index].colorAttachment : 0u,
+            view->format, aspects, NULL, &pipeline);
         if (result != VK_SUCCESS || !pipeline) {
             fprintf(stderr,
                 "vulkan-ps5: clear attachment pipeline unavailable "
@@ -11572,12 +11755,46 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
         VkPs5ImageView *view = native_clear_attachment_view(command,
             attachment, &aspects);
         VkPs5Image *image = (VkPs5Image *)view->image;
+        VkPipelineLayout layout_handle = VK_NULL_HANDLE;
         VkPipeline pipeline_handle = VK_NULL_HANDLE;
         VkResult result = vk_ps5_device_meta_attachment_pipeline(
-            command->device, view->format, aspects, &pipeline_handle);
+            command->device, (VkRenderPass)command->active_render_pass,
+            command->active_subpass,
+            aspects == VK_IMAGE_ASPECT_COLOR_BIT ?
+                attachment->colorAttachment : 0u,
+            view->format, aspects, &layout_handle, &pipeline_handle);
         if (result != VK_SUCCESS)
             return result;
         VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+        if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
+            vkCmdBindPipeline((VkCommandBuffer)command,
+                VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_handle);
+            vkCmdPushConstants((VkCommandBuffer)command, layout_handle,
+                VK_SHADER_STAGE_FRAGMENT_BIT, 0u,
+                sizeof(attachment->clearValue.color.float32),
+                attachment->clearValue.color.float32);
+            for (uint32_t rect_index = 0u;
+                 command->record_error == VK_SUCCESS &&
+                 rect_index < rect_count; ++rect_index) {
+                const VkClearRect *rect = &rects[rect_index];
+                if (rect->baseArrayLayer != 0u || rect->layerCount != 1u)
+                    return VK_ERROR_FEATURE_NOT_PRESENT;
+                const VkViewport viewport = {
+                    0.0f, 0.0f, (float)framebuffer->width,
+                    (float)framebuffer->height, 0.0f, 1.0f,
+                };
+                vkCmdSetViewport((VkCommandBuffer)command, 0u, 1u,
+                    &viewport);
+                vkCmdSetScissor((VkCommandBuffer)command, 0u, 1u,
+                    &rect->rect);
+                command->native_suppress_depth_attachment = VK_TRUE;
+                vkCmdDraw((VkCommandBuffer)command, 3u, 1u, 0u, 0u);
+                command->native_suppress_depth_attachment = VK_FALSE;
+            }
+            if (command->record_error != VK_SUCCESS)
+                return command->record_error;
+            continue;
+        }
         int32_t native_result = agcCmdBindGraphicsPipeline(
             command->native_graphics_command_buffer,
             pipeline->native_graphics_pipeline);
@@ -11636,37 +11853,20 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
                 &viewport, &scissor);
             for (uint32_t layer = 0u;
                  native_result == AGC_OK && layer < rect->layerCount; ++layer) {
-                const uint32_t array_layer = view->base_array_layer +
-                    rect->baseArrayLayer + layer;
-                if (aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
-                    native_step = "color target bind";
-                    AgcColorTargetBinding target =
-                        AGC_COLOR_TARGET_BINDING_INIT;
-                    AgcFormat native_target_format;
-                    target.image = image->native_image;
-                    target.mip_level = view->base_mip_level;
-                    target.array_layer = array_layer;
-                    if (!native_image_format(view->format,
-                            &native_target_format)) {
-                        native_result = AGC_ERROR_NOT_SUPPORTED;
-                    } else {
-                        target.format = native_target_format;
-                        native_result = agcCmdBindColorTargets(
-                            command->native_graphics_command_buffer, 1u,
-                            &target);
-                    }
-                } else {
-                    native_step = "depth/stencil target bind";
-                    AgcDepthStencilTargetBinding target =
-                        AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
-                    target.image = image->native_image;
-                    target.mip_level = view->base_mip_level;
-                    target.array_layer = array_layer;
-                    native_result = agcCmdBindColorTargets(
-                        command->native_graphics_command_buffer, 0u, NULL);
-                    if (native_result == AGC_OK)
-                        native_result = agcCmdBindDepthStencilTarget(
-                            command->native_graphics_command_buffer, &target);
+                native_step = "complete attachment bind";
+                VkPs5Pipeline *saved_pipeline = command->bound_graphics;
+                command->bound_graphics = pipeline;
+                VkResult attachment_result = native_bind_graphics_attachments(
+                    command, rect->baseArrayLayer + layer,
+                    aspects != VK_IMAGE_ASPECT_COLOR_BIT);
+                command->bound_graphics = saved_pipeline;
+                if (attachment_result != VK_SUCCESS) {
+                    fprintf(stderr,
+                        "vulkan-ps5: clear attachment bind failed "
+                        "result=%d format=%u aspects=0x%x rect=%u layer=%u\n",
+                        attachment_result, image->format, aspects,
+                        rect_index, layer);
+                    return attachment_result;
                 }
                 if (native_result == AGC_OK) {
                     native_step = "draw";
@@ -11694,13 +11894,24 @@ static VkResult native_clear_attachments(VkPs5CommandBuffer *command,
         }
     }
 
+    memcpy(command->dynamic_viewports, saved_viewports,
+        sizeof(saved_viewports));
+    memcpy(command->dynamic_scissors, saved_scissors,
+        sizeof(saved_scissors));
+    memcpy(command->push_constant_data, saved_push_constants,
+        sizeof(saved_push_constants));
+    memcpy(command->push_constant_masks, saved_push_masks,
+        sizeof(saved_push_masks));
+    command->dynamic_viewport_mask = saved_viewport_mask;
+    command->dynamic_scissor_mask = saved_scissor_mask;
+    command->bound_graphics = saved_graphics_pipeline;
     command->native_bound_graphics = NULL;
     command->native_attachments_render_pass = NULL;
     command->native_attachments_framebuffer = NULL;
-    if (command->bound_graphics) {
+    if (saved_graphics_pipeline) {
         vkCmdBindPipeline((VkCommandBuffer)command,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
-            (VkPipeline)command->bound_graphics);
+            (VkPipeline)saved_graphics_pipeline);
         if (command->record_error != VK_SUCCESS)
             return command->record_error;
     }
@@ -11986,6 +12197,7 @@ vkCmdBeginRendering(VkCommandBuffer c, const VkRenderingInfo *info)
     VkPs5Framebuffer *framebuffer = &command->dynamic_framebuffer;
     memset(render_pass, 0, sizeof(*render_pass));
     memset(framebuffer, 0, sizeof(*framebuffer));
+    render_pass->meta_cache_id = allocate_meta_render_pass_id();
     uint32_t required_layers = 1u;
     for (uint32_t mask = info->viewMask; mask; mask >>= 1u)
         required_layers++;

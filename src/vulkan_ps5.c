@@ -49,11 +49,14 @@ struct VkPs5Queue {
     AgcFence present_ready_fence;
 };
 
-#define VK_PS5_META_ATTACHMENT_PIPELINE_COUNT 32u
 #define VK_PS5_META_BLIT_PIPELINE_COUNT 16u
 #define VK_PS5_META_RESOLVE_PIPELINE_COUNT 16u
 
 typedef struct VkPs5MetaAttachmentPipeline {
+    uint64_t render_pass_id;
+    uint32_t subpass;
+    /* Color-output location within the active subpass. Zero for depth/stencil. */
+    uint32_t color_attachment;
     VkFormat format;
     VkImageAspectFlags aspects;
     VkPipelineLayout layout;
@@ -89,8 +92,8 @@ struct VkPs5Device {
     VkPipeline meta_clear_pipeline;
     atomic_flag meta_attachment_lock;
     uint32_t meta_attachment_count;
-    VkPs5MetaAttachmentPipeline meta_attachments[
-        VK_PS5_META_ATTACHMENT_PIPELINE_COUNT];
+    uint32_t meta_attachment_capacity;
+    VkPs5MetaAttachmentPipeline *meta_attachments;
     uint32_t meta_blit_count;
     VkPs5MetaBlitPipeline meta_blits[VK_PS5_META_BLIT_PIPELINE_COUNT];
     VkSampler meta_blit_samplers[2];
@@ -303,36 +306,72 @@ VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device_handle) {
 }
 
 VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device_handle,
-    VkFormat format, VkImageAspectFlags aspects, VkPipeline *pipeline_out)
+    VkRenderPass render_pass, uint32_t subpass, uint32_t color_attachment,
+    VkFormat format, VkImageAspectFlags aspects,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
 {
     VkPs5Device *device = (VkPs5Device *)device_handle;
-    if (!device || !pipeline_out)
+    const uint64_t render_pass_id =
+        vk_ps5_render_pass_meta_cache_id(render_pass);
+    if (!device || !render_pass || !render_pass_id || !pipeline_out)
         return VK_ERROR_INITIALIZATION_FAILED;
+    if (layout_out)
+        *layout_out = VK_NULL_HANDLE;
     *pipeline_out = VK_NULL_HANDLE;
     while (atomic_flag_test_and_set_explicit(&device->meta_attachment_lock,
             memory_order_acquire)) {}
     for (uint32_t index = 0u; index < device->meta_attachment_count; ++index) {
         VkPs5MetaAttachmentPipeline *entry = &device->meta_attachments[index];
-        if (entry->format == format && entry->aspects == aspects) {
+        if (entry->render_pass_id == render_pass_id &&
+            entry->subpass == subpass &&
+            entry->color_attachment == color_attachment &&
+            entry->format == format && entry->aspects == aspects) {
+            if (layout_out)
+                *layout_out = entry->layout;
             *pipeline_out = entry->pipeline;
             atomic_flag_clear_explicit(&device->meta_attachment_lock,
                 memory_order_release);
             return VK_SUCCESS;
         }
     }
-    if (device->meta_attachment_count >=
-            VK_PS5_META_ATTACHMENT_PIPELINE_COUNT) {
-        atomic_flag_clear_explicit(&device->meta_attachment_lock,
-            memory_order_release);
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    if (device->meta_attachment_count == device->meta_attachment_capacity) {
+        const uint32_t capacity = device->meta_attachment_capacity ?
+            device->meta_attachment_capacity * 2u : 16u;
+        if (capacity < device->meta_attachment_capacity) {
+            atomic_flag_clear_explicit(&device->meta_attachment_lock,
+                memory_order_release);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        VkPs5MetaAttachmentPipeline *entries = ps5_alloc(
+            device_allocator(device),
+            (size_t)capacity * sizeof(*entries),
+            _Alignof(VkPs5MetaAttachmentPipeline),
+            VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+        if (!entries) {
+            atomic_flag_clear_explicit(&device->meta_attachment_lock,
+                memory_order_release);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        if (device->meta_attachment_count)
+            memcpy(entries, device->meta_attachments,
+                (size_t)device->meta_attachment_count * sizeof(*entries));
+        ps5_free(device_allocator(device), device->meta_attachments);
+        device->meta_attachments = entries;
+        device->meta_attachment_capacity = capacity;
     }
     VkPs5MetaAttachmentPipeline *entry =
         &device->meta_attachments[device->meta_attachment_count];
     VkResult result = vk_ps5_initialize_meta_attachment_clear(device_handle,
-        format, aspects, &entry->layout, &entry->pipeline);
+        render_pass, subpass, color_attachment, format, aspects,
+        &entry->layout, &entry->pipeline);
     if (result == VK_SUCCESS) {
+        entry->render_pass_id = render_pass_id;
+        entry->subpass = subpass;
+        entry->color_attachment = color_attachment;
         entry->format = format;
         entry->aspects = aspects;
+        if (layout_out)
+            *layout_out = entry->layout;
         *pipeline_out = entry->pipeline;
         device->meta_attachment_count++;
     }
@@ -340,6 +379,7 @@ VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device_handle,
         memory_order_release);
     return result;
 }
+
 
 VkResult vk_ps5_device_meta_blit_resources(VkDevice device_handle,
     VkFormat format, VkFilter filter, VkBool32 source_3d,
@@ -2182,6 +2222,7 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
         vkDestroyPipelineLayout(device_handle,
             device->meta_attachments[index].layout, NULL);
     }
+    ps5_free(allocator, device->meta_attachments);
     for (uint32_t index = 0u; index < device->meta_blit_count; ++index) {
         vkDestroyPipeline(device_handle, device->meta_blits[index].pipeline,
             NULL);

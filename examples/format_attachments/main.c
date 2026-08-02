@@ -193,7 +193,7 @@ static VkResult create_shader_module(VkDevice device, const uint32_t *words,
 static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     VkShaderModule vertex, VkShaderModule fragment, VkFormat format,
     VkRenderPass render_pass, uint32_t width, uint32_t height,
-    VkPipeline *pipeline);
+    VkBool32 dynamic_viewport_scissor, VkPipeline *pipeline);
 
 static int run_clear_attachments_regression(VkPhysicalDevice physical,
                                             VkDevice device, VkQueue queue)
@@ -483,7 +483,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     CLEAR_TRY(create_pipeline(device, graphics_control_layout,
         graphics_control_vertex, graphics_control_fragment,
         VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
-        CLEAR_ATTACHMENT_HEIGHT, &graphics_control_pipeline));
+        CLEAR_ATTACHMENT_HEIGHT, VK_FALSE, &graphics_control_pipeline));
 
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
@@ -608,7 +608,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     CLEAR_TRY(create_pipeline(device, push_constant_control_layout,
         graphics_control_vertex, push_constant_control_fragment,
         VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
-        CLEAR_ATTACHMENT_HEIGHT, &push_constant_control_pipeline));
+        CLEAR_ATTACHMENT_HEIGHT, VK_FALSE, &push_constant_control_pipeline));
 
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
@@ -616,7 +616,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     const VkImageMemoryBarrier to_push_constant_control = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         .newLayout = VK_IMAGE_LAYOUT_GENERAL,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -625,9 +625,35 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         .subresourceRange = image_range,
     };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u,
         NULL, 1u, &to_push_constant_control);
+    const VkClearColorValue push_zero_control = {
+        .uint32 = {0u, 0u, 0u, 0u},
+    };
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_GENERAL,
+        &push_zero_control, 1u, &image_range);
+    const VkImageMemoryBarrier push_zero_to_attachment = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &push_zero_to_attachment);
     const float push_constant_control[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    const VkViewport push_control_viewport = {
+        0.0f, 0.0f, (float)CLEAR_ATTACHMENT_WIDTH,
+        (float)CLEAR_ATTACHMENT_HEIGHT, 0.0f, 1.0f,
+    };
+    const VkRect2D push_control_scissor = {
+        {0, 0}, {CLEAR_ATTACHMENT_WIDTH, CLEAR_ATTACHMENT_HEIGHT},
+    };
     vkCmdBeginRenderPass(command, &begin_render_pass,
         VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -635,6 +661,8 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     vkCmdPushConstants(command, push_constant_control_layout,
         VK_SHADER_STAGE_FRAGMENT_BIT, 0u, sizeof(push_constant_control),
         push_constant_control);
+    vkCmdSetViewport(command, 0u, 1u, &push_control_viewport);
+    vkCmdSetScissor(command, 0u, 1u, &push_control_scissor);
     vkCmdDraw(command, 3u, 1u, 0u, 0u);
     vkCmdEndRenderPass(command);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -663,6 +691,76 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     }
     if (push_constant_control_passed) {
         puts("format_attachments: PUSH_CONSTANT_CONTROL PASS checks=3 "
+             "magenta=ff00ffff; color attachment clear failed");
+    }
+
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier to_meta_pipeline_control = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &to_meta_pipeline_control);
+    const VkClearColorValue zero_control = {
+        .uint32 = {0u, 0u, 0u, 0u},
+    };
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_GENERAL,
+        &zero_control, 1u, &image_range);
+    const VkImageMemoryBarrier meta_zero_to_attachment = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &meta_zero_to_attachment);
+    vkCmdBeginRenderPass(command, &begin_render_pass,
+        VK_SUBPASS_CONTENTS_INLINE);
+    CLEAR_TRY(vk_ps5_command_buffer_meta_color_pipeline_control(command,
+        0u, &clear_rect.rect, clear_attachment.clearValue.color.float32));
+    vkCmdEndRenderPass(command);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    int meta_pipeline_control_passed = 1;
+    for (uint32_t i = 0u;
+         i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: META_PIPELINE_CONTROL FAIL sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            meta_pipeline_control_passed = 0;
+            break;
+        }
+    }
+    if (meta_pipeline_control_passed) {
+        puts("format_attachments: META_PIPELINE_CONTROL PASS checks=3 "
              "magenta=ff00ffff; color attachment clear failed");
     }
 
@@ -852,7 +950,7 @@ static VkResult create_shader_module(VkDevice device, const uint32_t *words,
 static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     VkShaderModule vertex, VkShaderModule fragment, VkFormat format,
     VkRenderPass render_pass, uint32_t width, uint32_t height,
-    VkPipeline *pipeline)
+    VkBool32 dynamic_viewport_scissor, VkPipeline *pipeline)
 {
     const VkPipelineShaderStageCreateInfo stages[] = {
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0u,
@@ -898,6 +996,14 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
         .attachmentCount = 1u,
         .pAttachments = &blend_attachment,
     };
+    const VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2u,
+        .pDynamicStates = dynamic_states,
+    };
     const VkPipelineRenderingCreateInfo rendering = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 1u,
@@ -914,6 +1020,7 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
         .pRasterizationState = &rasterization,
         .pMultisampleState = &multisample,
         .pColorBlendState = &blend,
+        .pDynamicState = dynamic_viewport_scissor ? &dynamic : NULL,
         .layout = layout,
         .renderPass = render_pass,
     };
@@ -1021,7 +1128,7 @@ static int run_probe(void)
         result = create_pipeline(device, pipeline_layout, vertex_module,
             fragment_modules[format_cases[i].numeric_class],
             format_cases[i].format, VK_NULL_HANDLE, 1u, 1u,
-            &pipelines[i]);
+            VK_FALSE, &pipelines[i]);
         if (result != VK_SUCCESS) {
             printf("format_attachments: pipeline %s failed (%d)\n",
                 format_cases[i].name, result);

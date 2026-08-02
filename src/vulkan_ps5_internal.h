@@ -54,7 +54,10 @@ uint32_t vk_ps5_deferred_native_count(VkDevice device);
 VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
 VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device);
 VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device,
-    VkFormat format, VkImageAspectFlags aspects, VkPipeline *pipeline_out);
+    VkRenderPass render_pass, uint32_t subpass, uint32_t color_attachment,
+    VkFormat format, VkImageAspectFlags aspects,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
+uint64_t vk_ps5_render_pass_meta_cache_id(VkRenderPass render_pass);
 VkResult vk_ps5_device_meta_blit_resources(VkDevice device, VkFormat format,
     VkFilter filter, VkBool32 source_3d, VkPipeline *pipeline_out,
     VkSampler *sampler_out);
@@ -63,6 +66,7 @@ VkResult vk_ps5_device_meta_resolve_pipeline(VkDevice device, VkFormat format,
 VkResult vk_ps5_initialize_meta_clear(VkDevice device,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_attachment_clear(VkDevice device,
+    VkRenderPass render_pass, uint32_t subpass, uint32_t color_attachment,
     VkFormat format, VkImageAspectFlags aspects,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out);
 VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
@@ -96,6 +100,11 @@ VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer);
 VkResult vk_ps5_command_buffer_native_color_target_control(
     VkCommandBuffer command_buffer, VkPipeline pipeline,
     uint32_t color_attachment, const VkRect2D *rect);
+/* Internal diagnostic only: replay the cached color-clear meta pipeline
+ * through the ordinary Vulkan draw path. */
+VkResult vk_ps5_command_buffer_meta_color_pipeline_control(
+    VkCommandBuffer command_buffer, uint32_t color_attachment,
+    const VkRect2D *rect, const float color[4]);
 VkBool32 vk_ps5_pack_clear_color(VkFormat format,
     const VkClearColorValue *clear, uint32_t pattern[4],
     uint32_t *pattern_word_count);
