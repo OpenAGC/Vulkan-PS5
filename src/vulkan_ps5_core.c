@@ -2780,8 +2780,16 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         level_count > image->mip_levels -
             pCreateInfo->subresourceRange.baseMipLevel ||
         layer_count > layer_limit -
-            pCreateInfo->subresourceRange.baseArrayLayer)
+            pCreateInfo->subresourceRange.baseArrayLayer) {
+#if defined(__PROSPERO__)
+        fprintf(stderr, "vulkan-ps5: image-view reject compatibility: image-type=%u flags=0x%x image-format=%u view-format=%u view-type=%u aspect=0x%x valid-aspects=0x%x levels=%u/%u layers=%u/%u compatible-3d=%u\n",
+            image->type, image->flags, image->format, pCreateInfo->format,
+            pCreateInfo->viewType, pCreateInfo->subresourceRange.aspectMask,
+            valid_aspects, level_count, image->mip_levels, layer_count,
+            layer_limit, compatible_3d_view);
+#endif
         return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
     if (compatible_3d_view && level_count != 1u)
         return VK_ERROR_FEATURE_NOT_PRESENT;
     switch (pCreateInfo->viewType) {
@@ -2793,8 +2801,15 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         break;
     case VK_IMAGE_VIEW_TYPE_2D:
         if ((!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D) ||
-            layer_count != 1u)
+            layer_count != 1u) {
+#if defined(__PROSPERO__)
+            fprintf(stderr, "vulkan-ps5: image-view reject 2D type: image-type=%u flags=0x%x image-format=%u view-format=%u extent=%ux%ux%u layers=%u compatible-3d=%u\n",
+                image->type, image->flags, image->format, pCreateInfo->format,
+                image->extent.width, image->extent.height, image->extent.depth,
+                layer_count, compatible_3d_view);
+#endif
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
         break;
     case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
         if ((!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D) ||
@@ -2830,6 +2845,13 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
     view->layer_count = layer_count;
     VkResult native_result = ensure_native_image_view(view);
     if (native_result != VK_SUCCESS) {
+#if defined(__PROSPERO__)
+        fprintf(stderr, "vulkan-ps5: image-view native creation failed: result=%d image-type=%u flags=0x%x image-format=%u view-format=%u view-type=%u base-mip=%u levels=%u base-layer=%u layers=%u compatible-3d=%u\n",
+            native_result, image->type, image->flags, image->format,
+            pCreateInfo->format, pCreateInfo->viewType, view->base_mip_level,
+            view->mip_level_count, view->base_array_layer, view->layer_count,
+            compatible_3d_view);
+#endif
         vk_ps5_device_free(device, pAllocator, view);
         return native_result;
     }
