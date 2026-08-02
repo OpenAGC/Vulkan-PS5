@@ -442,7 +442,12 @@ static int run_probe(void)
         to_shader[i] = (VkImageMemoryBarrier) {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
-            .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+            /* The first case covers Vulkan's legal broad memory scope.  The
+             * compute descriptor reflection must select ShaderWrite at the
+             * concrete point of consumption instead of the barrier guessing
+             * that GENERAL means storage-image use. */
+            .dstAccessMask = i == 0u ? VK_ACCESS_MEMORY_WRITE_BIT :
+                VK_ACCESS_SHADER_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,

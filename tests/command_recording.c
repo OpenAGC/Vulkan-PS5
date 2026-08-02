@@ -1494,6 +1494,79 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    /* Eden uses a broad memory-write scope while returning a transfer source
+     * to GENERAL.  MEMORY_WRITE is not evidence of storage-image use: this
+     * color/transfer image intentionally has no VK_IMAGE_USAGE_STORAGE_BIT.
+     * Preserve its concrete CopySource state until its next typed use. */
+    const VkImageMemoryBarrier transfer_source_barriers[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = color_image,
+            .subresourceRange = {
+                VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+            },
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = color_image,
+            .subresourceRange = {
+                VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+            },
+        },
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &transfer_source_barriers[0]);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &transfer_source_barriers[1]);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    const VkClearColorValue barrier_clear_color = {
+        .uint32 = {0x11u, 0x22u, 0x33u, 0x44u},
+    };
+    const VkImageSubresourceRange barrier_clear_range = {
+        VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+    };
+    vkCmdClearColorImage(command, color_image, VK_IMAGE_LAYOUT_GENERAL,
+                         &barrier_clear_color, 1u, &barrier_clear_range);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    VkImageMemoryBarrier generic_after_write_barriers[] = {
+        transfer_source_barriers[0], transfer_source_barriers[1],
+    };
+    generic_after_write_barriers[0].dstAccessMask =
+        VK_ACCESS_TRANSFER_WRITE_BIT;
+    generic_after_write_barriers[0].newLayout =
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    generic_after_write_barriers[1].srcAccessMask =
+        VK_ACCESS_TRANSFER_WRITE_BIT;
+    generic_after_write_barriers[1].oldLayout =
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &generic_after_write_barriers[0]);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &generic_after_write_barriers[1]);
+    assert(vk_ps5_command_buffer_record_error(command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     const VkImageCopy image_copy = {
         .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
         .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},

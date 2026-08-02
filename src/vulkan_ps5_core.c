@@ -809,6 +809,8 @@ static void debug_note_command(VkPs5CommandBuffer *command, const char *name)
 }
 
 static void native_commit_resource_states(VkPs5CommandBuffer *command);
+static bool native_image_supports_usage(const VkPs5Image *image,
+                                        AgcResourceUsage usage);
 
 static VkBool32 native_require_complete_stream(VkPs5CommandBuffer *command)
 {
@@ -6566,6 +6568,16 @@ static AgcResourceOwner native_owner_for_usage(AgcResourceUsage usage)
         kAgcResourceOwnerHost : kAgcResourceOwnerGraphics;
 }
 
+static bool native_usage_writes(AgcResourceUsage usage)
+{
+    return usage == kAgcResourceUsageCopyDestination ||
+        usage == kAgcResourceUsageShaderWrite ||
+        usage == kAgcResourceUsageColorTarget ||
+        usage == kAgcResourceUsageDepthStencilWrite ||
+        usage == kAgcResourceUsageHostWrite ||
+        usage == kAgcResourceUsageQueryWrite;
+}
+
 static VkResult native_command_result(int32_t result)
 {
     if (result == AGC_OK)
@@ -6667,6 +6679,47 @@ static bool native_usage_from_access(VkAccessFlags access,
         return true;
     }
     return false;
+}
+
+static bool native_image_usage_from_access(VkAccessFlags access,
+                                           VkImageLayout layout,
+                                           AgcResourceUsage *usage)
+{
+    const VkAccessFlags generic = VK_ACCESS_MEMORY_READ_BIT |
+        VK_ACCESS_MEMORY_WRITE_BIT;
+    const VkAccessFlags concrete = access & ~generic;
+    /* GENERAL does not identify one native image role, and MEMORY_READ/WRITE
+     * are broad synchronization scopes rather than shader-image accesses.
+     * Preserve the exact subresource state until a typed image consumer
+     * supplies CopySource, ColorTarget, ShaderWrite, and so on. */
+    if (layout == VK_IMAGE_LAYOUT_GENERAL &&
+        concrete == 0u) {
+        if (!usage)
+            return false;
+        *usage = kAgcResourceUsageUndefined;
+        return true;
+    }
+    if (concrete != 0u) {
+        const VkAccessFlags transfer = VK_ACCESS_TRANSFER_READ_BIT |
+            VK_ACCESS_TRANSFER_WRITE_BIT;
+        const VkAccessFlags color = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        const VkAccessFlags depth =
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        const VkAccessFlags host = VK_ACCESS_HOST_READ_BIT |
+            VK_ACCESS_HOST_WRITE_BIT;
+        const VkAccessFlags shader = concrete &
+            ~(transfer | color | depth | host);
+        const uint32_t role_count = ((concrete & transfer) != 0u) +
+            ((concrete & color) != 0u) + ((concrete & depth) != 0u) +
+            ((concrete & host) != 0u) + (shader != 0u);
+        if (role_count > 1u)
+            return false;
+    }
+    /* Generic scope bits supplement a concrete access but must not change its
+     * typed role (for example SHADER_READ|MEMORY_WRITE remains ShaderRead). */
+    return native_usage_from_access(concrete, layout, usage);
 }
 
 static AgcResourceUsage native_buffer_recorded_usage(
@@ -6776,6 +6829,7 @@ static bool native_record_image_usage(VkPs5CommandBuffer *command,
          ++index) {
         if (command->native_image_states[index].image == image) {
             command->native_image_states[index].usage = usage;
+            command->native_descriptor_graphics_pipeline = NULL;
             return true;
         }
     }
@@ -6787,6 +6841,7 @@ static bool native_record_image_usage(VkPs5CommandBuffer *command,
     command->native_image_states[command->native_image_state_count].usage =
         usage;
     command->native_image_state_count++;
+    command->native_descriptor_graphics_pipeline = NULL;
     return true;
 }
 
@@ -6915,6 +6970,68 @@ static bool native_whole_image_range(const VkPs5Image *image,
         .layerCount = image->array_layers,
     };
     return native_image_range(image, &source, range);
+}
+
+static VkResult native_prepare_image_range(
+    VkPs5CommandBuffer *command, VkPs5Image *image,
+    const AgcImageSubresourceRange *range, AgcResourceUsage after)
+{
+    AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
+    AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
+    if (!command || !image || !image->native_image || !range ||
+        !native_image_supports_usage(image, after))
+        return VK_ERROR_INITIALIZATION_FAILED;
+    transition.image_range = *range;
+    int32_t result = agcGetCommandBufferImageSubresourceStateInfo(
+        command->native_graphics_command_buffer, image->native_image,
+        &transition.image_range, &state);
+    if (result != AGC_OK)
+        return native_command_result(result);
+    transition.resource_type = kAgcResourceTypeImage;
+    transition.before = state.usage;
+    transition.after = after;
+    transition.before_owner = state.owner;
+    transition.after_owner = native_owner_for_usage(after);
+    transition.image = image->native_image;
+    if (transition.before != transition.after ||
+        transition.before_owner != transition.after_owner) {
+        result = agcCmdTransitionResources(
+            command->native_graphics_command_buffer, 1u, &transition);
+        if (result != AGC_OK)
+            return native_command_result(result);
+    }
+    const AgcResourceUsage tracked = native_image_range_is_whole(
+        image, range) ? after : kAgcResourceUsageUndefined;
+    return native_record_image_usage(command, image, tracked) ?
+        VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
+}
+
+static VkResult native_prepare_image_view(VkPs5CommandBuffer *command,
+                                          VkPs5Image *image,
+                                          const VkPs5ImageView *view,
+                                          AgcResourceUsage after)
+{
+    if (!image || !view || !view->mip_level_count || !view->layer_count)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    AgcImageAspectFlags aspects = AGC_IMAGE_ASPECT_COLOR_BIT;
+    if (image->is_depth_surface) {
+        aspects = image->format == VK_FORMAT_S8_UINT ?
+            AGC_IMAGE_ASPECT_STENCIL_BIT : AGC_IMAGE_ASPECT_DEPTH_BIT;
+        if (image->format == VK_FORMAT_D16_UNORM_S8_UINT ||
+            image->format == VK_FORMAT_D32_SFLOAT_S8_UINT)
+            aspects |= AGC_IMAGE_ASPECT_STENCIL_BIT;
+    }
+    /* OpenAGC tracks 3D images per mip rather than per depth slice.  A
+     * compatible 2D slice view therefore uses that exact native granularity;
+     * regular array images retain the Vulkan view's layer range. */
+    const AgcImageSubresourceRange range = {
+        aspects, view->base_mip_level, view->mip_level_count,
+        image->type == VK_IMAGE_TYPE_3D ? 0u : view->base_array_layer,
+        image->type == VK_IMAGE_TYPE_3D ? image->array_layers :
+            view->layer_count,
+        0u,
+    };
+    return native_prepare_image_range(command, image, &range, after);
 }
 
 static VkResult native_transition_whole_image(
@@ -8378,10 +8495,10 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         if (!image || !image->native_image ||
             !native_queue_family_barrier(barrier->srcQueueFamilyIndex,
                                          barrier->dstQueueFamilyIndex) ||
-            !native_usage_from_access(barrier->srcAccessMask,
-                                      barrier->oldLayout, &before) ||
-            !native_usage_from_access(barrier->dstAccessMask,
-                                      barrier->newLayout, &after) ||
+            !native_image_usage_from_access(barrier->srcAccessMask,
+                                            barrier->oldLayout, &before) ||
+            !native_image_usage_from_access(barrier->dstAccessMask,
+                                            barrier->newLayout, &after) ||
             !native_image_range(image, &barrier->subresourceRange, &range)) {
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
@@ -8499,8 +8616,8 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         AgcResourceUsage after;
         AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
         AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
-        (void)native_usage_from_access(barrier->dstAccessMask,
-                                       barrier->newLayout, &after);
+        (void)native_image_usage_from_access(barrier->dstAccessMask,
+                                             barrier->newLayout, &after);
         transition.resource_type = kAgcResourceTypeImage;
         transition.image = image->native_image;
         (void)native_image_range(image, &barrier->subresourceRange,
@@ -8532,6 +8649,27 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         const AgcResourceUsage effective_before = state.usage;
         AgcResourceUsage effective_after = after ==
             kAgcResourceUsageUndefined ? effective_before : after;
+        const VkAccessFlags generic_memory = VK_ACCESS_MEMORY_READ_BIT |
+            VK_ACCESS_MEMORY_WRITE_BIT;
+        const bool generic_general_scope =
+            barrier->newLayout == VK_IMAGE_LAYOUT_GENERAL &&
+            (barrier->dstAccessMask & generic_memory) != 0u &&
+            (barrier->dstAccessMask & ~generic_memory) == 0u;
+        /* OpenAGC emits cache dependencies through changes in typed resource
+         * usage.  A same-state generic barrier after a write would emit no
+         * packet and silently miss Vulkan's dependency.  Keep the currently
+         * qualified read-state case fail-open to the next typed consumer,
+         * but reject write-state ambiguity until OpenAGC exposes an explicit
+         * equal-state dependency command. */
+        if (generic_general_scope && native_usage_writes(effective_before)) {
+            fprintf(stderr,
+                "vulkan-ps5: image barrier generic GENERAL scope rejected "
+                "after write usage=%u src_access=0x%x dst_access=0x%x\n",
+                (unsigned)effective_before, barrier->srcAccessMask,
+                barrier->dstAccessMask);
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+            return;
+        }
         if (packed_depth_stencil &&
             effective_before == kAgcResourceUsageDepthStencilWrite &&
             effective_after == kAgcResourceUsageDepthStencilRead)
@@ -8970,25 +9108,31 @@ static VkResult prepare_native_compute_descriptors(
                 VkPs5ImageView *view =
                     (VkPs5ImageView *)value->image.imageView;
                 VkPs5Image *image = view ? (VkPs5Image *)view->image : NULL;
-                AgcResourceUsage usage = image ?
-                    native_image_recorded_usage(command, image) :
-                    kAgcResourceUsageUndefined;
                 if (view) {
                     VkResult view_result = ensure_native_image_view(view);
                     if (view_result != VK_SUCCESS)
                         return view_result;
                     if (!view->native_view)
                         return VK_ERROR_INITIALIZATION_FAILED;
-                    if (usage != kAgcResourceUsageShaderRead &&
-                        !(mapping->type ==
-                              OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
-                          usage == kAgcResourceUsageShaderWrite)) {
+                    const uint32_t access =
+                        AGC_SHADER_DESCRIPTOR_ACCESS(mapping->array_size);
+                    const AgcResourceUsage usage = mapping->type ==
+                                OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
+                            ((access &
+                                  AGC_SHADER_DESCRIPTOR_ACCESS_WRITE_BIT) ||
+                             access == 0u) ?
+                        kAgcResourceUsageShaderWrite :
+                        kAgcResourceUsageShaderRead;
+                    VkResult prepare_result = native_prepare_image_view(
+                        command, image, view, usage);
+                    if (prepare_result != VK_SUCCESS) {
                         fprintf(stderr,
-                            "vulkan-ps5: compute descriptor image not ready "
-                            "set=%u binding=%u array=%u type=%u usage=%u\n",
+                            "vulkan-ps5: compute descriptor image prepare "
+                            "failed set=%u binding=%u array=%u type=%u "
+                            "usage=%u result=%d\n",
                             mapping->set, mapping->binding, array,
-                            mapping->type, (unsigned)usage);
-                        return VK_SUCCESS;
+                            mapping->type, (unsigned)usage, prepare_result);
+                        return prepare_result;
                     }
                     write->image_view = view->native_view;
                 } else if (!vk_ps5_device_null_descriptor(command->device)) {
@@ -9843,9 +9987,6 @@ static VkResult native_bind_graphics_descriptors(
                         (VkPs5ImageView *)value->image.imageView;
                     VkPs5Image *image =
                         view ? (VkPs5Image *)view->image : NULL;
-                    AgcResourceUsage usage = image ?
-                        native_image_recorded_usage(command, image) :
-                        kAgcResourceUsageUndefined;
                     if (view) {
                         VkResult view_result = ensure_native_image_view(view);
                         if (view_result != VK_SUCCESS) {
@@ -9865,11 +10006,28 @@ static VkResult native_bind_graphics_descriptors(
                                 view->format);
                             return VK_ERROR_INITIALIZATION_FAILED;
                         }
-                        if (usage != kAgcResourceUsageShaderRead &&
-                            !(mapping->type ==
-                                  OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
-                              usage == kAgcResourceUsageShaderWrite))
-                            return VK_SUCCESS;
+                        const uint32_t access =
+                            AGC_SHADER_DESCRIPTOR_ACCESS(
+                                mapping->array_size);
+                        const AgcResourceUsage usage = mapping->type ==
+                                    OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
+                                ((access &
+                                      AGC_SHADER_DESCRIPTOR_ACCESS_WRITE_BIT) ||
+                                 access == 0u) ?
+                            kAgcResourceUsageShaderWrite :
+                            kAgcResourceUsageShaderRead;
+                        VkResult prepare_result = native_prepare_image_view(
+                            command, image, view, usage);
+                        if (prepare_result != VK_SUCCESS) {
+                            fprintf(stderr,
+                                "vulkan-ps5: draw descriptor image prepare "
+                                "failed set=%u binding=%u array=%u type=%u "
+                                "usage=%u result=%d\n",
+                                mapping->set, mapping->binding, array,
+                                mapping->type, (unsigned)usage,
+                                prepare_result);
+                            return prepare_result;
+                        }
                         write->image_view = view->native_view;
                     } else if (!vk_ps5_device_null_descriptor(
                                    command->device)) {
