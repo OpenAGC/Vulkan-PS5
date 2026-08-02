@@ -117,6 +117,46 @@ static VkResult create_image(VkPhysicalDevice physical, VkDevice device,
     return VK_SUCCESS;
 }
 
+/* Eden's intermediate image is explicitly Onion-backed (type 0), unlike the
+ * garlic source exercised by the earlier matrix cases.  Keep this allocator
+ * narrow so case F verifies that exact placement rather than accidentally
+ * falling back to a host-visible or garlic-compatible type. */
+static VkResult create_eden_onion_source(VkDevice device, Image *out)
+{
+    const VkImageCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+            VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .extent = {SOURCE_WIDTH, SOURCE_HEIGHT, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkResult result = vkCreateImage(device, &info, NULL, &out->image);
+    if (result != VK_SUCCESS)
+        return result;
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, out->image, &requirements);
+    if ((requirements.memoryTypeBits & UINT32_C(1)) == 0u)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = 0u,
+    };
+    result = vkAllocateMemory(device, &allocation, NULL, &out->memory);
+    if (result == VK_SUCCESS)
+        result = vkBindImageMemory(device, out->image, out->memory, 0u);
+    return result;
+}
+
 static VkResult create_readback(VkPhysicalDevice physical, VkDevice device,
                                 VkBuffer *buffer, VkDeviceMemory *memory,
                                 uint8_t **mapped)
@@ -329,6 +369,7 @@ static int run_matrix(void)
     VkDeviceMemory readback_memory = VK_NULL_HANDLE;
     uint8_t *readback_pixels = NULL;
     Image garlic_bgra = {0};
+    Image eden_onion_bgra = {0};
     Image ordinary_bgra = {0};
     Image garlic_rgba = {0};
     VkImage swapchain_images[IMAGE_COUNT] = {VK_NULL_HANDLE};
@@ -346,6 +387,8 @@ static int run_matrix(void)
     VkShaderModule intermediate_vertex = VK_NULL_HANDLE;
     VkShaderModule intermediate_fragment = VK_NULL_HANDLE;
     VkPipeline intermediate_pipeline = VK_NULL_HANDLE;
+    VkImageView eden_onion_view = VK_NULL_HANDLE;
+    VkFramebuffer eden_onion_framebuffer = VK_NULL_HANDLE;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
     uint32_t image_index = 0u;
@@ -459,6 +502,7 @@ static int run_matrix(void)
                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, true, false,
                      &garlic_bgra));
+    TRY(create_eden_onion_source(device, &eden_onion_bgra));
     TRY(create_image(physical, device, VK_FORMAT_B8G8R8A8_UNORM,
                      SCANOUT_WIDTH, SCANOUT_HEIGHT,
                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -561,6 +605,30 @@ static int run_matrix(void)
     };
     TRY(vkCreateFramebuffer(device, &intermediate_framebuffer_info, NULL,
                             &intermediate_framebuffer));
+    const VkImageViewCreateInfo eden_onion_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = eden_onion_bgra.image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_B8G8R8A8_UNORM,
+        .components = {VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY,
+                       VK_COMPONENT_SWIZZLE_IDENTITY},
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u},
+    };
+    TRY(vkCreateImageView(device, &eden_onion_view_info, NULL,
+                          &eden_onion_view));
+    const VkFramebufferCreateInfo eden_onion_framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = intermediate_render_pass,
+        .attachmentCount = 1u,
+        .pAttachments = &eden_onion_view,
+        .width = SOURCE_WIDTH,
+        .height = SOURCE_HEIGHT,
+        .layers = 1u,
+    };
+    TRY(vkCreateFramebuffer(device, &eden_onion_framebuffer_info, NULL,
+                            &eden_onion_framebuffer));
     TRY(vkBeginCommandBuffer(command, &begin));
     const VkRenderPassBeginInfo intermediate_begin = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -866,8 +934,77 @@ static int run_matrix(void)
                       SCANOUT_WIDTH, SCANOUT_HEIGHT))
         goto cleanup;
     TRY(vkQueuePresentKHR(queue, &present));
+
+    /* F: Eden's exact producer contract.  The BGRA8 UNORM source is an
+     * optimal, MUTABLE|EXTENDED_USAGE, TRANSFER_SRC|COLOR_ATTACHMENT image
+     * backed specifically by Onion type 0.  Its first use is the MAY_ALIAS
+     * GENERAL render pass, followed by the production-style later-submit
+     * linear blit into the mutable UNORM/native-SRGB scanout image. */
+    TRY(vkResetFences(device, 1u, &fence));
+    TRY(vkResetCommandBuffer(command, 0u));
+    TRY(vkBeginCommandBuffer(command, &begin));
+    const VkRenderPassBeginInfo eden_onion_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = intermediate_render_pass,
+        .framebuffer = eden_onion_framebuffer,
+        .renderArea = {{0, 0}, {SOURCE_WIDTH, SOURCE_HEIGHT}},
+    };
+    vkCmdBeginRenderPass(command, &eden_onion_begin, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      intermediate_pipeline);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(command);
+    TRY(vkEndCommandBuffer(command));
+    const VkSubmitInfo eden_onion_submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &command,
+    };
+    TRY(vkQueueSubmit(queue, 1u, &eden_onion_submit, fence));
+    TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE, UINT64_C(2000000000)));
+
+    TRY(vkResetFences(device, 1u, &fence));
+    TRY(vkResetCommandBuffer(command, 0u));
+    TRY(vkAcquireNextImageKHR(device, swapchain, UINT64_C(2000000000), acquired,
+                              VK_NULL_HANDLE, &image_index));
+    TRY(vkBeginCommandBuffer(command, &begin));
+    image_barrier(command, eden_onion_bgra.image,
+                  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                  VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+    image_barrier(command, swapchain_images[image_index], 0u,
+                  VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    vkCmdBlitImage(command, eden_onion_bgra.image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   swapchain_images[image_index],
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1u, &scale, VK_FILTER_LINEAR);
+    image_barrier(command, swapchain_images[image_index],
+                  VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    copy_to_readback(command, swapchain_images[image_index], readback);
+    image_barrier(command, swapchain_images[image_index],
+                  VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    TRY(vkEndCommandBuffer(command));
+    TRY(vkQueueSubmit(queue, 1u, &submit, fence));
+    TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE, UINT64_C(2000000000)));
+    TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    if (!check_pixels("F eden-onion-rendered-bgra-to-scanout-linear-blit",
+                      readback_pixels, SCANOUT_WIDTH * sizeof(uint32_t),
+                      SCANOUT_WIDTH, SCANOUT_HEIGHT))
+        goto cleanup;
+    TRY(vkQueuePresentKHR(queue, &present));
     TRY(vkDeviceWaitIdle(device));
-    puts("scanout_matrix: PASS cases=A,B,C,D,E exact-readback");
+    puts("scanout_matrix: PASS cases=A,B,C,D,E,F exact-readback");
     status = 0;
 
 cleanup:
@@ -881,6 +1018,10 @@ cleanup:
         vkDestroyShaderModule(device, intermediate_vertex, NULL);
     if (intermediate_pipeline_layout != VK_NULL_HANDLE)
         vkDestroyPipelineLayout(device, intermediate_pipeline_layout, NULL);
+    if (eden_onion_framebuffer != VK_NULL_HANDLE)
+        vkDestroyFramebuffer(device, eden_onion_framebuffer, NULL);
+    if (eden_onion_view != VK_NULL_HANDLE)
+        vkDestroyImageView(device, eden_onion_view, NULL);
     if (intermediate_framebuffer != VK_NULL_HANDLE)
         vkDestroyFramebuffer(device, intermediate_framebuffer, NULL);
     if (intermediate_render_pass != VK_NULL_HANDLE)
@@ -908,6 +1049,8 @@ cleanup:
     if (ordinary_bgra.memory) vkFreeMemory(device, ordinary_bgra.memory, NULL);
     if (garlic_bgra.image) vkDestroyImage(device, garlic_bgra.image, NULL);
     if (garlic_bgra.memory) vkFreeMemory(device, garlic_bgra.memory, NULL);
+    if (eden_onion_bgra.image) vkDestroyImage(device, eden_onion_bgra.image, NULL);
+    if (eden_onion_bgra.memory) vkFreeMemory(device, eden_onion_bgra.memory, NULL);
     if (swapchain != VK_NULL_HANDLE) vkDestroySwapchainKHR(device, swapchain, NULL);
     if (device != VK_NULL_HANDLE) vkDestroyDevice(device, NULL);
     if (surface != VK_NULL_HANDLE) vkDestroySurfaceKHR(instance, surface, NULL);
