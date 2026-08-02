@@ -658,6 +658,84 @@ static VkBool32 render_passes_compatible(const VkPs5RenderPass *a,
     return VK_TRUE;
 }
 
+#if defined(__PROSPERO__)
+#define VK_PS5_RENDER_PASS_DIAGNOSTIC_LIMIT 4u
+
+static atomic_uint render_pass_compatibility_diagnostic_count =
+    ATOMIC_VAR_INIT(0u);
+
+static void dump_render_pass(const char *label, const VkPs5RenderPass *pass)
+{
+    if (!pass) {
+        fprintf(stderr, "vulkan-ps5: render-pass dump %s=null\n", label);
+        return;
+    }
+    fprintf(stderr,
+        "vulkan-ps5: render-pass dump %s flags=0x%x attachments=%u "
+        "subpasses=%u dependencies=%u correlation-masks=%u\n",
+        label, pass->flags, pass->attachment_count, pass->subpass_count,
+        pass->dependency_count, pass->correlation_mask_count);
+    for (uint32_t i = 0u; i < pass->attachment_count; ++i) {
+        fprintf(stderr,
+            "vulkan-ps5: render-pass dump %s attachment[%u] "
+            "flags=0x%x format=%u samples=0x%x\n",
+            label, i, pass->attachments[i].flags,
+            pass->attachments[i].format, pass->attachments[i].samples);
+    }
+    for (uint32_t i = 0u; i < pass->subpass_count; ++i) {
+        fprintf(stderr,
+            "vulkan-ps5: render-pass dump %s subpass[%u] flags=0x%x "
+            "view-mask=0x%x colors=%u depth=%u samples=0x%x\n",
+            label, i, pass->subpasses[i].flags,
+            pass->subpasses[i].view_mask,
+            pass->subpasses[i].color_attachment_count,
+            pass->subpasses[i].depth_stencil_attachment,
+            pass->subpasses[i].samples);
+        for (uint32_t slot = 0u;
+             slot < pass->subpasses[i].color_attachment_count; ++slot) {
+            fprintf(stderr,
+                "vulkan-ps5: render-pass dump %s subpass[%u] "
+                "color[%u]=%u\n",
+                label, i, slot,
+                pass->subpasses[i].color_attachments[slot]);
+        }
+    }
+    for (uint32_t i = 0u; i < pass->dependency_count; ++i) {
+        const VkSubpassDependency *dependency = &pass->dependencies[i];
+        fprintf(stderr,
+            "vulkan-ps5: render-pass dump %s dependency[%u] "
+            "src=%u dst=%u stages=0x%x/0x%x access=0x%x/0x%x flags=0x%x\n",
+            label, i, dependency->srcSubpass, dependency->dstSubpass,
+            dependency->srcStageMask, dependency->dstStageMask,
+            dependency->srcAccessMask, dependency->dstAccessMask,
+            dependency->dependencyFlags);
+    }
+    for (uint32_t i = 0u; i < pass->correlation_mask_count; ++i) {
+        fprintf(stderr,
+            "vulkan-ps5: render-pass dump %s correlation-mask[%u]=0x%x\n",
+            label, i, pass->correlation_masks[i]);
+    }
+}
+
+static void diagnose_incompatible_render_passes(
+    const VkPs5RenderPass *base, const VkPs5RenderPass *begin)
+{
+    unsigned int diagnostic =
+        atomic_load(&render_pass_compatibility_diagnostic_count);
+    while (diagnostic < VK_PS5_RENDER_PASS_DIAGNOSTIC_LIMIT &&
+           !atomic_compare_exchange_weak(
+               &render_pass_compatibility_diagnostic_count,
+               &diagnostic, diagnostic + 1u)) {}
+    if (diagnostic >= VK_PS5_RENDER_PASS_DIAGNOSTIC_LIMIT)
+        return;
+    fprintf(stderr,
+        "vulkan-ps5: incompatible render-pass dump diagnostic=%u/%u\n",
+        diagnostic + 1u, VK_PS5_RENDER_PASS_DIAGNOSTIC_LIMIT);
+    dump_render_pass("base", base);
+    dump_render_pass("begin", begin);
+}
+#endif
+
 typedef struct VkPs5RuntimeShader {
     AgcShader native_shader;
 } VkPs5RuntimeShader;
@@ -12014,6 +12092,11 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         required_layers--;
     const VkBool32 framebuffer_compatible = render_passes_compatible(
         framebuffer->render_pass, render_pass);
+#if defined(__PROSPERO__)
+    if (!framebuffer_compatible)
+        diagnose_incompatible_render_passes(
+            framebuffer->render_pass, render_pass);
+#endif
     if (!framebuffer_compatible || !render_pass->subpass_count ||
         color_count > AGC_GFX1013_MAX_COLOR_TARGETS ||
         b->renderArea.offset.x < 0 || b->renderArea.offset.y < 0 ||
