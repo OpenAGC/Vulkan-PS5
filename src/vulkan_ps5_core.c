@@ -2527,6 +2527,15 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
         pBeginInfo->sType != VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO ||
         command->state == VK_PS5_COMMAND_RECORDING || command->state == VK_PS5_COMMAND_PENDING)
         return VK_ERROR_INITIALIZATION_FAILED;
+    /* Vulkan permits vkBeginCommandBuffer to implicitly reset an executable
+     * command buffer.  Mirror that lifecycle into both native streams before
+     * beginning the new recording. */
+    if (command->state == VK_PS5_COMMAND_EXECUTABLE &&
+        (agcResetCommandBuffer(command->native_graphics_command_buffer) !=
+             AGC_OK ||
+         agcResetCommandBuffer(command->native_compute_command_buffer) !=
+             AGC_OK))
+        return VK_ERROR_DEVICE_LOST;
     int32_t native_result = agcBeginCommandBuffer(
         command->native_graphics_command_buffer);
     if (native_result != AGC_OK)
@@ -3516,6 +3525,7 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
             .descriptor_bindings = layout->bindings,
             .descriptor_binding_count = layout->binding_count,
             .push_constant_size = layout->push_constant_size,
+            .wave32 = true,
         };
         VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
                                                 _Alignof(VkPs5Pipeline));
@@ -3556,6 +3566,30 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
             vk_ps5_native_device(device), &native_desc,
             &pipeline->native_compute_pipeline);
         if (native_result != AGC_OK) {
+            const AgcShaderReflection *reflection =
+                &pipeline->stages[0].metadata;
+            fprintf(stderr,
+                "vulkan-ps5: native compute reflection mappings=%u "
+                "push_ranges=%u push_size=%u inline=0x%llx "
+                "user_sgprs=%u local=%ux%ux%u wave=%u scratch=%u lds=%u\n",
+                reflection->descriptor_mapping_count,
+                reflection->push_constant_range_count,
+                reflection->push_constant_size,
+                (unsigned long long)reflection->inline_push_constant_mask,
+                reflection->user_sgpr_count, reflection->local_size_x,
+                reflection->local_size_y, reflection->local_size_z,
+                reflection->wave_size, reflection->scratch_bytes_per_wave,
+                reflection->lds_size);
+            for (uint32_t sgpr_index = 0u;
+                 sgpr_index < reflection->user_sgpr_count; ++sgpr_index) {
+                const AgcShaderUserSgpr *sgpr =
+                    &reflection->user_sgprs[sgpr_index];
+                fprintf(stderr,
+                    "vulkan-ps5: native compute sgpr[%u] kind=%u index=%u "
+                    "reg=0x%x dwords=%u\n", sgpr_index, sgpr->kind,
+                    sgpr->index, sgpr->register_offset,
+                    sgpr->dword_count);
+            }
             fprintf(stderr,
                 "vulkan-ps5: native compute pipeline creation failed: 0x%08x\n",
                 (unsigned)native_result);
@@ -8436,7 +8470,6 @@ static VkResult prepare_native_compute_descriptors(
             if (mapping->type == OPENAGC_PSBC_DESCRIPTOR_UNIFORM_BUFFER ||
                 mapping->type == OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER) {
                 VkPs5Buffer *buffer = (VkPs5Buffer *)value->buffer.buffer;
-                AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
                 AgcResourceUsage usage;
                 uint64_t range;
                 if (!buffer) {
@@ -8452,22 +8485,33 @@ static VkResult prepare_native_compute_descriptors(
                     buffer->size - value->buffer.offset : value->buffer.range;
                 if (!range || range > buffer->size - value->buffer.offset)
                     return VK_ERROR_INITIALIZATION_FAILED;
-                int32_t state_result = agcGetCommandBufferRangeStateInfo(
-                    command->native_graphics_command_buffer,
-                    buffer->native_buffer, value->buffer.offset, range,
-                    &state);
-                if (state_result != AGC_OK)
-                    return native_command_result(state_result);
-                /* A descriptor may cover only part of a Vulkan buffer.  The
-                 * whole-buffer mirror deliberately becomes Undefined after
-                 * a partial transition, so validate the exact bound range
-                 * against OpenAGC's command-stream state instead. */
-                usage = state.usage;
+                const uint32_t access =
+                    AGC_SHADER_DESCRIPTOR_ACCESS(mapping->array_size);
+                usage = mapping->type ==
+                            OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
+                        ((access &
+                              AGC_SHADER_DESCRIPTOR_ACCESS_WRITE_BIT) ||
+                         access == 0u) ?
+                    kAgcResourceUsageShaderWrite :
+                    kAgcResourceUsageShaderRead;
+                /* Vulkan buffer descriptors do not carry layouts.  Select
+                 * the exact native usage from shader reflection at the point
+                 * of consumption, including after host read/write reuse. */
+                VkResult prepare_result = native_prepare_buffer_range(
+                    command, buffer, value->buffer.offset, range, usage);
+                if (prepare_result != VK_SUCCESS)
+                    return prepare_result;
                 if (usage != kAgcResourceUsageShaderRead &&
                     !(mapping->type ==
                         OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
-                      usage == kAgcResourceUsageShaderWrite))
+                      usage == kAgcResourceUsageShaderWrite)) {
+                    fprintf(stderr,
+                        "vulkan-ps5: compute descriptor buffer not ready "
+                        "set=%u binding=%u array=%u type=%u usage=%u\n",
+                        mapping->set, mapping->binding, array,
+                        mapping->type, (unsigned)usage);
                     return VK_SUCCESS;
+                }
                 write->buffer = buffer->native_buffer;
                 write->buffer_offset = value->buffer.offset;
                 write->buffer_range = range;
@@ -8507,8 +8551,14 @@ static VkResult prepare_native_compute_descriptors(
                     if (usage != kAgcResourceUsageShaderRead &&
                         !(mapping->type ==
                               OPENAGC_PSBC_DESCRIPTOR_STORAGE_IMAGE &&
-                          usage == kAgcResourceUsageShaderWrite))
+                          usage == kAgcResourceUsageShaderWrite)) {
+                        fprintf(stderr,
+                            "vulkan-ps5: compute descriptor image not ready "
+                            "set=%u binding=%u array=%u type=%u usage=%u\n",
+                            mapping->set, mapping->binding, array,
+                            mapping->type, (unsigned)usage);
                         return VK_SUCCESS;
+                    }
                     write->image_view = view->native_view;
                 } else if (!vk_ps5_device_null_descriptor(command->device)) {
                     return VK_ERROR_INITIALIZATION_FAILED;

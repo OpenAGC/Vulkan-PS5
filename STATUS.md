@@ -49,9 +49,12 @@ Migration status:
   Vulkan pipeline independently forbids writes to read-only aspects. The
   normal and ASAN/UBSAN suites pass 59/59, the Prospero build is clean, and the
   official mandatory-feature log no longer lists separate depth/stencil
-  layouts. Four unique gaps remain: border-color swizzle, multiview, subgroup
-  dynamic broadcast ID, and subgroup extended types. Hardware execution is
-  pending the guarded FW 5.50 regression gate.
+  layouts. The subgroup slice then closes both extended scalar types and
+  dynamic broadcast IDs through an actual Wave32 storage-buffer oracle. Normal
+  and ASAN/UBSAN suites pass 60/60, the Prospero build is clean, and the exact
+  probe ELF passed twice from cleanup through teardown on FW 5.500.008. Two
+  unique mandatory gaps remain: border-color swizzle and multiview. See
+  `analysis/fw550_subgroup_broadcast_20260802.md`.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised

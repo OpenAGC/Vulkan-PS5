@@ -106,6 +106,8 @@ int main(void) {
     assert(divisor_properties.maxVertexAttribDivisor == UINT32_MAX);
     assert(divisor_properties.supportsNonZeroFirstInstance == VK_FALSE);
     assert(subgroup.subgroupSize == 32);
+    assert((subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BASIC_BIT) != 0u);
+    assert((subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0u);
     VkPhysicalDeviceTimelineSemaphoreProperties timeline_properties = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES,
@@ -381,6 +383,16 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &separate_layout_features2);
     assert(separate_layout_features.separateDepthStencilLayouts == VK_TRUE);
+    VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures subgroup_types = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 subgroup_types_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &subgroup_types,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &subgroup_types_features2);
+    assert(subgroup_types.shaderSubgroupExtendedTypes == VK_TRUE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -396,6 +408,8 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     assert(features12.imagelessFramebuffer == VK_TRUE);
     assert(features12.uniformBufferStandardLayout == VK_TRUE);
     assert(features12.separateDepthStencilLayouts == VK_TRUE);
+    assert(features12.shaderSubgroupExtendedTypes == VK_TRUE);
+    assert(features12.subgroupBroadcastDynamicId == VK_TRUE);
     assert(features12.drawIndirectCount == VK_FALSE);
     assert(features12.bufferDeviceAddress == VK_FALSE);
 VkPhysicalDeviceLineRasterizationFeatures line_features = {
@@ -842,6 +856,18 @@ enabled_timeline.pNext = &enabled_depth_clip;
                           &separate_layout_device) == VK_SUCCESS);
     assert(separate_layout_device != VK_NULL_HANDLE);
     vkDestroyDevice(separate_layout_device, NULL);
+    VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures enabled_subgroup_types = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES,
+        .shaderSubgroupExtendedTypes = VK_TRUE,
+    };
+    VkDeviceCreateInfo subgroup_types_device_info = device_info;
+    subgroup_types_device_info.pNext = &enabled_subgroup_types;
+    VkDevice subgroup_types_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &subgroup_types_device_info, NULL,
+                          &subgroup_types_device) == VK_SUCCESS);
+    assert(subgroup_types_device != VK_NULL_HANDLE);
+    vkDestroyDevice(subgroup_types_device, NULL);
     VkPhysicalDeviceVariablePointersFeatures enabled_variable_pointers = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
         .variablePointers = VK_TRUE,

@@ -33,6 +33,13 @@
 #define SAMPLE_LABEL "scalar_block_layout"
 #define VALUE_COUNT 16u
 #define GROUP_COUNT 1u
+#elif defined(VULKAN_PS5_SUBGROUP_BROADCAST_PROBE)
+#include "vulkan_ps5_subgroup_broadcast_spv.h"
+#define vulkan_ps5_compute_spv vulkan_ps5_subgroup_broadcast_spv
+#include "../system_service_exit.h"
+#define SAMPLE_LABEL "subgroup_broadcast_dynamic_id"
+#define VALUE_COUNT 64u
+#define GROUP_COUNT 1u
 #else
 #include "vulkan_ps5_compute_spv.h"
 #define SAMPLE_LABEL "compute"
@@ -133,6 +140,30 @@ int main(void)
     }
     scalar_features.scalarBlockLayout = VK_TRUE;
     const void *device_features = &scalar_features;
+#elif defined(VULKAN_PS5_SUBGROUP_BROADCAST_PROBE)
+    VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures subgroup_types = {
+        .sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES,
+    };
+    VkPhysicalDeviceVulkan12Features subgroup_features12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &subgroup_types,
+    };
+    VkPhysicalDeviceFeatures2 features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &subgroup_features12,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &features2);
+    if (!subgroup_features12.subgroupBroadcastDynamicId ||
+        !subgroup_features12.shaderSubgroupExtendedTypes ||
+        !subgroup_types.shaderSubgroupExtendedTypes) {
+        printf(SAMPLE_LABEL ": required features are unavailable\n");
+        return 1;
+    }
+    subgroup_features12.pNext = NULL;
+    subgroup_features12.subgroupBroadcastDynamicId = VK_TRUE;
+    subgroup_features12.shaderSubgroupExtendedTypes = VK_TRUE;
+    const void *device_features = &subgroup_features12;
 #elif defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
       defined(VULKAN_PS5_ROBUST_BUFFER_PROBE)
     VkPhysicalDeviceFeatures supported_features;
@@ -257,6 +288,9 @@ int main(void)
     initial_values[4] = 0x3e800000u;
     initial_values[6] = 0xcdcdcdcdu;
     initial_values[8] = 0xababababu;
+#elif defined(VULKAN_PS5_SUBGROUP_BROADCAST_PROBE)
+    uint32_t *initial_values = mapped;
+    initial_values[32] = 7u;
 #endif
     const VkMappedMemoryRange mapped_range = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -566,6 +600,25 @@ int main(void)
             values[6]);
     }
 #endif
+#elif defined(VULKAN_PS5_SUBGROUP_BROADCAST_PROBE)
+    const uint32_t expected = 7u ^ 0x5a5a5a5au;
+#if !defined(OPENAGC_PROSPERO)
+    (void)values;
+    (void)expected;
+    int status = 0;
+    printf(SAMPLE_LABEL ": PASS command recording\n");
+#else
+    int status = values[32] != 7u;
+    for (uint32_t i = 0u; i < 32u && !status; ++i)
+        status = values[i] != expected;
+    if (status) {
+        printf(SAMPLE_LABEL ": mismatch lane0=%08x lane31=%08x source=%08x expected=%08x\n",
+            values[0], values[31], values[32], expected);
+    } else {
+        printf(SAMPLE_LABEL ": PASS lanes=32 source=7 result=%08x\n",
+            expected);
+    }
+#endif
 #else
     int status = 0;
     for (uint32_t i = 0; i < VALUE_COUNT; ++i) {
@@ -601,7 +654,8 @@ int main(void)
 #if (defined(VULKAN_PS5_VARIABLE_POINTERS_PROBE) || \
      defined(VULKAN_PS5_STORAGE_IMAGE_PROBE) || \
      defined(VULKAN_PS5_ROBUST_BUFFER_PROBE) || \
-     defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE)) && \
+     defined(VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE) || \
+     defined(VULKAN_PS5_SUBGROUP_BROADCAST_PROBE)) && \
     defined(OPENAGC_PROSPERO)
     fflush(stdout);
     vulkan_ps5_system_service_exit(SAMPLE_LABEL);

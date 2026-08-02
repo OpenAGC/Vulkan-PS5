@@ -441,11 +441,13 @@ backed: the pipeline test reflects a `std430` UBO through `openagc-psbc` and
 the native descriptor/pipeline path. Separate depth/stencil layouts now retain
 RenderPass2 stencil metadata, accept distinct dynamic-rendering layouts,
 validate writes per aspect, and conservatively map packed depth/stencil cache
-state through public OpenAGC transitions. The normal and sanitizer suites pass
-59/59 and the Prospero build is clean. The official mandatory-feature probe no
-longer reports that feature; border-color swizzle, multiview, dynamic subgroup
-broadcast ID, and subgroup extended types remain before the information group
-can pass.
+state through public OpenAGC transitions. The subgroup follow-up advertises
+and executes extended scalar types plus a runtime-selected
+`subgroupBroadcast` source in an explicit Wave32 compute pipeline. Its exact
+ELF passed twice on FW 5.500.008; the normal and sanitizer suites now pass
+60/60 and the Prospero build is clean. Border-color swizzle and multiview are
+the two remaining mandatory feature gaps before the information group can
+pass. See `analysis/fw550_subgroup_broadcast_20260802.md`.
 
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its

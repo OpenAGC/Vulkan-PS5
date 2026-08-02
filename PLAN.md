@@ -229,8 +229,10 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    host-closed through an actual `std430` UBO pipeline. Separate depth/stencil
    layouts are also host-closed across RenderPass2, dynamic rendering, barriers,
    pipeline write validation, and packed-surface native-state convergence.
-   Add the FW 5.50 value/rendering oracles, then close subgroup
-   extended/dynamic broadcast, multiview, and border-color swizzle. Keep the
+   The Wave32 dynamic-ID subgroup-broadcast oracle closes subgroup extended
+   types and dynamic broadcast on FW 5.50 with two identical-byte passes.
+   Add the remaining FW 5.50 value/rendering oracles, then close multiview and
+   border-color swizzle. Keep the
    conformance version non-conformant until the required suite supports a
    stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a

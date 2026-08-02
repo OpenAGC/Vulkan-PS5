@@ -1417,7 +1417,8 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                 (VkPhysicalDeviceSubgroupProperties *)next;
             subgroup->subgroupSize = capabilities.subgroup_size;
             subgroup->supportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
-            subgroup->supportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
+            subgroup->supportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT |
+                VK_SUBGROUP_FEATURE_BALLOT_BIT;
             subgroup->quadOperationsInAllStages = VK_FALSE;
             break;
         }
@@ -1493,7 +1494,8 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             v11->deviceLUIDValid = VK_FALSE;
             v11->subgroupSize = capabilities.subgroup_size;
             v11->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
-            v11->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
+            v11->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT |
+                VK_SUBGROUP_FEATURE_BALLOT_BIT;
             v11->subgroupQuadOperationsInAllStages = VK_FALSE;
             v11->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
             v11->maxMultiviewViewCount = 0;
@@ -1625,6 +1627,10 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             ((VkPhysicalDeviceUniformBufferStandardLayoutFeatures *)next)
                 ->uniformBufferStandardLayout = VK_TRUE;
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
+            ((VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures *)next)
+                ->shaderSubgroupExtendedTypes = VK_TRUE;
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
             ((VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures *)next)
                 ->separateDepthStencilLayouts = VK_TRUE;
@@ -1698,6 +1704,8 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             f->imagelessFramebuffer = VK_TRUE;
             f->uniformBufferStandardLayout = VK_TRUE;
             f->separateDepthStencilLayouts = VK_TRUE;
+            f->shaderSubgroupExtendedTypes = VK_TRUE;
+            f->subgroupBroadcastDynamicId = VK_TRUE;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES: {
@@ -1887,6 +1895,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
@@ -1941,6 +1951,8 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             supported.imagelessFramebuffer = VK_TRUE;
             supported.uniformBufferStandardLayout = VK_TRUE;
             supported.separateDepthStencilLayouts = VK_TRUE;
+            supported.shaderSubgroupExtendedTypes = VK_TRUE;
+            supported.subgroupBroadcastDynamicId = VK_TRUE;
             const VkBool32 *request_bits =
                 &requested->samplerMirrorClampToEdge;
             const VkBool32 *supported_bits =

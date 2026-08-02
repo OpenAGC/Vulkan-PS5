@@ -586,6 +586,20 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/compute/main.c "${VULKAN_PS5_SCALAR_BLOCK_LAYOUT_HEADER}")
   target_compile_definitions(vulkan_ps5_scalar_block_layout_probe PRIVATE
     VULKAN_PS5_SCALAR_BLOCK_LAYOUT_PROBE=1)
+  set(VULKAN_PS5_SUBGROUP_BROADCAST_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_subgroup_broadcast_spv.h")
+  add_custom_command(OUTPUT "${VULKAN_PS5_SUBGROUP_BROADCAST_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.2
+      --vn vulkan_ps5_subgroup_broadcast_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/subgroup_broadcast.comp"
+      -o "${VULKAN_PS5_SUBGROUP_BROADCAST_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/compute/subgroup_broadcast.comp"
+    VERBATIM)
+  add_executable(vulkan_ps5_subgroup_broadcast_probe
+    examples/compute/main.c "${VULKAN_PS5_SUBGROUP_BROADCAST_HEADER}")
+  target_compile_definitions(vulkan_ps5_subgroup_broadcast_probe PRIVATE
+    VULKAN_PS5_SUBGROUP_BROADCAST_PROBE=1)
   if(VULKAN_PS5_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME vulkan_ps5.storage_image_command_recording
       COMMAND vulkan_ps5_storage_image_probe)
@@ -599,6 +613,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       COMMAND vulkan_ps5_robust_buffer_probe)
     add_test(NAME vulkan_ps5.scalar_block_layout_command_recording
       COMMAND vulkan_ps5_scalar_block_layout_probe)
+    add_test(NAME vulkan_ps5.subgroup_broadcast_command_recording
+      COMMAND vulkan_ps5_subgroup_broadcast_probe)
     add_test(NAME vulkan_ps5.robust_vertex_command_recording
       COMMAND vulkan_ps5_robust_vertex_probe)
   endif()
@@ -1273,6 +1289,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_format_attachments_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
+      vulkan_ps5_subgroup_broadcast_probe
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example vulkan_ps5_geometry_example
@@ -1319,6 +1336,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
       vulkan_ps5_format_attachments_probe
       vulkan_ps5_robust_buffer_probe
       vulkan_ps5_scalar_block_layout_probe
+      vulkan_ps5_subgroup_broadcast_probe
       vulkan_ps5_variable_pointers_probe
       vulkan_ps5_robust_vertex_probe
       vulkan_ps5_triangle_example
@@ -1376,6 +1394,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     target_link_libraries(vulkan_ps5_robust_buffer_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_scalar_block_layout_probe PRIVATE
+      SceSystemService)
+    target_link_libraries(vulkan_ps5_subgroup_broadcast_probe PRIVATE
       SceSystemService)
     target_link_libraries(vulkan_ps5_variable_pointers_probe PRIVATE
       SceSystemService)

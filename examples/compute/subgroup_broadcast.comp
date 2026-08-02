@@ -1,0 +1,17 @@
+#version 450
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0) buffer SubgroupProbe {
+    uint values[];
+} probe;
+
+void main()
+{
+    uint lane = gl_LocalInvocationID.x;
+    uint source_lane = probe.values[32];
+    uint lane_value = lane ^ 0x5a5a5a5au;
+    probe.values[lane] = subgroupBroadcast(lane_value, source_lane);
+}
