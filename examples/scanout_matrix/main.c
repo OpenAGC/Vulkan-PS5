@@ -19,6 +19,9 @@ enum {
     SCANOUT_WIDTH = 1920u,
     SCANOUT_HEIGHT = 1080u,
     IMAGE_COUNT = 3u,
+    QUALIFICATION_SAMPLE_COUNT = 16u,
+    QUALIFICATION_READBACK_BYTES =
+        2u * QUALIFICATION_SAMPLE_COUNT * sizeof(uint32_t),
 };
 
 static const uint8_t kMagenta[] = {0xffu, 0x00u, 0xffu, 0xffu};
@@ -248,11 +251,10 @@ static VkResult recreate_shared_eden_onion_source(VkDevice device,
 }
 
 static VkResult create_readback(VkPhysicalDevice physical, VkDevice device,
+                                VkDeviceSize size,
                                 VkBuffer *buffer, VkDeviceMemory *memory,
                                 uint8_t **mapped)
 {
-    const VkDeviceSize size =
-        (VkDeviceSize)SCANOUT_WIDTH * SCANOUT_HEIGHT * sizeof(uint32_t);
     const VkBufferCreateInfo info = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = size,
@@ -277,9 +279,64 @@ static VkResult create_readback(VkPhysicalDevice physical, VkDevice device,
     if (result == VK_SUCCESS)
         result = vkBindBufferMemory(device, *buffer, *memory, 0u);
     if (result == VK_SUCCESS)
-        result = vkMapMemory(device, *memory, 0u, size, 0u,
+        result = vkMapMemory(device, *memory, 0u, VK_WHOLE_SIZE, 0u,
                              (void **)mapped);
     return result;
+}
+
+/* Match Eden's qualification path: sixteen evenly distributed 1x1 reads
+ * written into one half of a 128-byte readback buffer. */
+static void copy_qualification_samples(VkCommandBuffer command, VkImage image,
+                                       uint32_t width, uint32_t height,
+                                       VkBuffer buffer, VkDeviceSize base_offset)
+{
+    VkBufferImageCopy samples[QUALIFICATION_SAMPLE_COUNT] = {{0}};
+    for (uint32_t i = 0u; i < QUALIFICATION_SAMPLE_COUNT; ++i) {
+        samples[i].bufferOffset = base_offset + i * sizeof(uint32_t);
+        samples[i].imageSubresource =
+            (VkImageSubresourceLayers){VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u};
+        samples[i].imageOffset =
+            (VkOffset3D){(int32_t)((i % 4u) * (width - 1u) / 3u),
+                         (int32_t)((i / 4u) * (height - 1u) / 3u), 0};
+        samples[i].imageExtent = (VkExtent3D){1u, 1u, 1u};
+    }
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           buffer, QUALIFICATION_SAMPLE_COUNT, samples);
+}
+
+static void qualification_readback_to_host(VkCommandBuffer command,
+                                           VkBuffer buffer)
+{
+    const VkBufferMemoryBarrier to_host = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = buffer,
+        .offset = 0u,
+        .size = QUALIFICATION_READBACK_BYTES,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u,
+                         &to_host, 0u, NULL);
+}
+
+static bool check_qualification_samples(const char *label,
+                                        const uint8_t *samples)
+{
+    for (uint32_t i = 0u; i < QUALIFICATION_SAMPLE_COUNT; ++i) {
+        const uint8_t *pixel = samples + i * sizeof(kMagenta);
+        if (memcmp(pixel, kMagenta, sizeof(kMagenta)) != 0) {
+            printf("scanout_matrix: %s FAIL sample=%u got=%02x%02x%02x%02x "
+                   "expected=ff00ffff\n", label, i, pixel[0], pixel[1],
+                   pixel[2], pixel[3]);
+            return false;
+        }
+    }
+    printf("scanout_matrix: %s PASS samples=%u exact=ff00ffff\n", label,
+           QUALIFICATION_SAMPLE_COUNT);
+    return true;
 }
 
 static bool check_pixels(const char *label, const uint8_t *pixels,
@@ -460,6 +517,9 @@ static int run_matrix(void)
     VkBuffer readback = VK_NULL_HANDLE;
     VkDeviceMemory readback_memory = VK_NULL_HANDLE;
     uint8_t *readback_pixels = NULL;
+    VkBuffer qualification_readback = VK_NULL_HANDLE;
+    VkDeviceMemory qualification_readback_memory = VK_NULL_HANDLE;
+    uint8_t *qualification_readback_pixels = NULL;
     Image garlic_bgra = {0};
     Image eden_onion_bgra = {0};
     Image eden_shared_onion[IMAGE_COUNT] = {{0}};
@@ -504,6 +564,11 @@ static int run_matrix(void)
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
     };
     VkMappedMemoryRange invalidate = {
+        .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+        .offset = 0u,
+        .size = VK_WHOLE_SIZE,
+    };
+    VkMappedMemoryRange qualification_invalidate = {
         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
         .offset = 0u,
         .size = VK_WHOLE_SIZE,
@@ -612,9 +677,17 @@ static int run_matrix(void)
                      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, true, false,
                      &garlic_rgba));
-    TRY(create_readback(physical, device, &readback, &readback_memory,
+    TRY(create_readback(physical, device,
+                        (VkDeviceSize)SCANOUT_WIDTH * SCANOUT_HEIGHT *
+                            sizeof(uint32_t),
+                        &readback, &readback_memory,
                         &readback_pixels));
     invalidate.memory = readback_memory;
+    TRY(create_readback(physical, device, QUALIFICATION_READBACK_BYTES,
+                        &qualification_readback,
+                        &qualification_readback_memory,
+                        &qualification_readback_pixels));
+    qualification_invalidate.memory = qualification_readback_memory;
     const VkCommandPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -856,6 +929,105 @@ static int run_matrix(void)
                           &eden_shared_onion_views[0]));
     VkFramebufferCreateInfo h_reset_framebuffer_info =
         eden_onion_framebuffer_info;
+    h_reset_framebuffer_info.pAttachments = &eden_shared_onion_views[0];
+    TRY(vkCreateFramebuffer(device, &h_reset_framebuffer_info, NULL,
+                            &eden_shared_onion_framebuffers[0]));
+
+    /* I: H proves that recording the consumer before its producer is sound.
+     * Keep that ordering, but add Eden's exact qualification traffic: sparse
+     * reads of the source before the blit and the destination afterwards,
+     * sharing the two halves of one 128-byte host-visible buffer. */
+    TRY(vkAcquireNextImageKHR(device, swapchain, UINT64_C(2000000000), acquired,
+                              VK_NULL_HANDLE, &image_index));
+    TRY(vkResetCommandBuffer(command, 0u));
+    TRY(vkBeginCommandBuffer(command, &begin));
+    image_barrier(command, eden_shared_onion[0].image,
+                  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                  VK_ACCESS_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_GENERAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+    image_barrier(command, swapchain_images[image_index], 0u,
+                  VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+    copy_qualification_samples(command, eden_shared_onion[0].image,
+                               SOURCE_WIDTH, SOURCE_HEIGHT,
+                               qualification_readback, 0u);
+    vkCmdBlitImage(command, eden_shared_onion[0].image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   swapchain_images[image_index],
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1u, &scale, VK_FILTER_LINEAR);
+    image_barrier(command, swapchain_images[image_index],
+                  VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT);
+    copy_qualification_samples(command, swapchain_images[image_index],
+                               SCANOUT_WIDTH, SCANOUT_HEIGHT,
+                               qualification_readback,
+                               QUALIFICATION_READBACK_BYTES / 2u);
+    qualification_readback_to_host(command, qualification_readback);
+    image_barrier(command, swapchain_images[image_index],
+                  VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                  VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    TRY(vkEndCommandBuffer(command));
+
+    TRY(vkResetCommandBuffer(producer_command, 0u));
+    TRY(vkBeginCommandBuffer(producer_command, &begin));
+    const VkRenderPassBeginInfo i_producer_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = intermediate_render_pass,
+        .framebuffer = eden_shared_onion_framebuffers[0],
+        .renderArea = {{0, 0}, {SOURCE_WIDTH, SOURCE_HEIGHT}},
+    };
+    vkCmdBeginRenderPass(producer_command, &i_producer_begin,
+                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(producer_command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      intermediate_pipeline);
+    vkCmdDraw(producer_command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(producer_command);
+    TRY(vkEndCommandBuffer(producer_command));
+    const VkSubmitInfo i_producer_submit = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1u,
+        .pCommandBuffers = &producer_command,
+        .signalSemaphoreCount = 1u,
+        .pSignalSemaphores = &render_ready,
+    };
+    TRY(vkQueueSubmit(queue, 1u, &i_producer_submit, VK_NULL_HANDLE));
+    TRY(vkResetFences(device, 1u, &fence));
+    TRY(vkQueueSubmit(queue, 1u, &h_consumer_submit, fence));
+    TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE, UINT64_C(2000000000)));
+    TRY(vkInvalidateMappedMemoryRanges(device, 1u, &qualification_invalidate));
+    if (!check_qualification_samples("I eden-source-sparse-read-before-blit",
+                                     qualification_readback_pixels) ||
+        !check_qualification_samples("I eden-swapchain-sparse-read-after-blit",
+                                     qualification_readback_pixels +
+                                         QUALIFICATION_READBACK_BYTES / 2u))
+        goto cleanup;
+    TRY(vkQueuePresentKHR(queue, &h_present));
+    puts("scanout_matrix: I eden-sparse-readback-before-blit PASS source_samples=16 destination_samples=16 exact=ff00ffff");
+
+    /* I consumes shared source zero too; restore it for G's independently
+     * pristine three-image VMA-style allocation test. */
+    vkDestroyFramebuffer(device, eden_shared_onion_framebuffers[0], NULL);
+    eden_shared_onion_framebuffers[0] = VK_NULL_HANDLE;
+    vkDestroyImageView(device, eden_shared_onion_views[0], NULL);
+    eden_shared_onion_views[0] = VK_NULL_HANDLE;
+    vkDestroyImage(device, eden_shared_onion[0].image, NULL);
+    eden_shared_onion[0].image = VK_NULL_HANDLE;
+    TRY(recreate_shared_eden_onion_source(device, eden_shared_onion_memory,
+                                           0u, &eden_shared_onion[0]));
+    h_reset_view_info.image = eden_shared_onion[0].image;
+    TRY(vkCreateImageView(device, &h_reset_view_info, NULL,
+                          &eden_shared_onion_views[0]));
     h_reset_framebuffer_info.pAttachments = &eden_shared_onion_views[0];
     TRY(vkCreateFramebuffer(device, &h_reset_framebuffer_info, NULL,
                             &eden_shared_onion_framebuffers[0]));
@@ -1328,7 +1500,7 @@ static int run_matrix(void)
     puts("scanout_matrix: G eden-shared-onion-semaphore-to-scanout-linear-blit PASS images=3 pixels=6220800 exact=ff00ffff");
 
     TRY(vkDeviceWaitIdle(device));
-    puts("scanout_matrix: PASS cases=A,B,C,D,E,F,G,H exact-readback");
+    puts("scanout_matrix: PASS cases=A,B,C,D,E,F,G,H,I exact-readback");
     status = 0;
 
 cleanup:
@@ -1372,6 +1544,12 @@ cleanup:
         vkDestroySemaphore(device, render_ready, NULL);
     if (fence != VK_NULL_HANDLE) vkDestroyFence(device, fence, NULL);
     if (command_pool != VK_NULL_HANDLE) vkDestroyCommandPool(device, command_pool, NULL);
+    if (qualification_readback_pixels)
+        vkUnmapMemory(device, qualification_readback_memory);
+    if (qualification_readback != VK_NULL_HANDLE)
+        vkDestroyBuffer(device, qualification_readback, NULL);
+    if (qualification_readback_memory != VK_NULL_HANDLE)
+        vkFreeMemory(device, qualification_readback_memory, NULL);
     if (readback_pixels) vkUnmapMemory(device, readback_memory);
     if (readback != VK_NULL_HANDLE) vkDestroyBuffer(device, readback, NULL);
     if (readback_memory != VK_NULL_HANDLE) vkFreeMemory(device, readback_memory, NULL);
