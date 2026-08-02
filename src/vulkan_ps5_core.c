@@ -5138,6 +5138,19 @@ static bool valid_border_component_mapping(const VkComponentMapping *mapping)
     return true;
 }
 
+static bool valid_unnormalized_sampler(const VkSamplerCreateInfo *info)
+{
+    if (!info || !info->unnormalizedCoordinates) return true;
+    return info->minFilter == info->magFilter &&
+        info->mipmapMode == VK_SAMPLER_MIPMAP_MODE_NEAREST &&
+        info->minLod == 0.0f && info->maxLod == 0.0f &&
+        (info->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE ||
+         info->addressModeU == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER) &&
+        (info->addressModeV == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE ||
+         info->addressModeV == VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER) &&
+        !info->anisotropyEnable && !info->compareEnable;
+}
+
 static VkResult create_native_sampler(VkDevice device,
     const VkSamplerCreateInfo *info, VkPs5Sampler *sampler)
 {
@@ -5160,6 +5173,8 @@ static VkResult create_native_sampler(VkDevice device,
     desc.min_lod = info->minLod;
     desc.max_lod = info->maxLod;
     desc.lod_bias = info->mipLodBias;
+    if (info->unnormalizedCoordinates)
+        desc.flags |= AGC_SAMPLER_UNNORMALIZED_COORDINATES_BIT;
     switch (info->borderColor) {
     case VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK:
     case VK_BORDER_COLOR_INT_OPAQUE_BLACK:
@@ -5216,8 +5231,9 @@ vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
           border_mapping->srgb != VK_TRUE)))
         return VK_ERROR_INITIALIZATION_FAILED;
     if (pCreateInfo->flags ||
-        pCreateInfo->unnormalizedCoordinates ||
         pCreateInfo->minLod < 0.0f || pCreateInfo->maxLod < pCreateInfo->minLod)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    if (!valid_unnormalized_sampler(pCreateInfo))
         return VK_ERROR_FEATURE_NOT_PRESENT;
     if (pCreateInfo->anisotropyEnable &&
         (!(pCreateInfo->maxAnisotropy >= 1.0f) ||

@@ -391,6 +391,61 @@ int main(int argc, char **argv)
     VkSampler anisotropic_sampler;
     assert(vkCreateSampler(device, &anisotropic_sampler_info, NULL,
                            &anisotropic_sampler) == VK_SUCCESS);
+    VkSamplerCreateInfo unnormalized_sampler_info = sampler_info;
+    unnormalized_sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    unnormalized_sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    unnormalized_sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    unnormalized_sampler_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    unnormalized_sampler_info.unnormalizedCoordinates = VK_TRUE;
+    VkSampler unnormalized_sampler;
+    assert(vkCreateSampler(device, &unnormalized_sampler_info, NULL,
+                           &unnormalized_sampler) == VK_SUCCESS);
+    VkSamplerCreateInfo nearest_unnormalized_sampler_info =
+        unnormalized_sampler_info;
+    nearest_unnormalized_sampler_info.minFilter = VK_FILTER_NEAREST;
+    nearest_unnormalized_sampler_info.magFilter = VK_FILTER_NEAREST;
+    VkSampler nearest_unnormalized_sampler;
+    assert(vkCreateSampler(device, &nearest_unnormalized_sampler_info, NULL,
+                           &nearest_unnormalized_sampler) == VK_SUCCESS);
+    VkSamplerCreateInfo invalid_unnormalized_sampler_info =
+        unnormalized_sampler_info;
+    VkSampler invalid_unnormalized_sampler = VK_NULL_HANDLE;
+    invalid_unnormalized_sampler_info.magFilter = VK_FILTER_NEAREST;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
+    invalid_unnormalized_sampler_info = unnormalized_sampler_info;
+    invalid_unnormalized_sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
+    invalid_unnormalized_sampler_info = unnormalized_sampler_info;
+    invalid_unnormalized_sampler_info.maxLod = 1.0f;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
+    invalid_unnormalized_sampler_info = unnormalized_sampler_info;
+    invalid_unnormalized_sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
+    invalid_unnormalized_sampler_info = unnormalized_sampler_info;
+    invalid_unnormalized_sampler_info.anisotropyEnable = VK_TRUE;
+    invalid_unnormalized_sampler_info.maxAnisotropy = 2.0f;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
+    invalid_unnormalized_sampler_info = unnormalized_sampler_info;
+    invalid_unnormalized_sampler_info.compareEnable = VK_TRUE;
+    assert(vkCreateSampler(device, &invalid_unnormalized_sampler_info, NULL,
+                           &invalid_unnormalized_sampler) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(invalid_unnormalized_sampler == VK_NULL_HANDLE);
     const VkSamplerBorderColorComponentMappingCreateInfoEXT border_mapping = {
         .sType =
             VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT,
@@ -2300,6 +2355,8 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyDescriptorSetLayout(device, hull_output_set_layout, NULL);
     vkDestroyDescriptorSetLayout(device, texture_set_layout, NULL);
     vkDestroySampler(device, anisotropic_sampler, NULL);
+    vkDestroySampler(device, nearest_unnormalized_sampler, NULL);
+    vkDestroySampler(device, unnormalized_sampler, NULL);
     vkDestroySampler(device, custom_sampler, NULL);
     vkDestroySampler(device, sampler, NULL);
     vkDestroyImageView(device, texture_view, NULL);

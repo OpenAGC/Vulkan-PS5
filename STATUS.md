@@ -14,6 +14,21 @@ qualification concern.
 
 Migration status:
 
+- **Eden unnormalized samplers:** `vkCreateSampler` now accepts the Vulkan-valid
+  unnormalized-coordinate subset, rejects filter, mip, LOD, address,
+  anisotropy, and comparison combinations that the Vulkan contract forbids,
+  and translates the request through OpenAGC's public
+  `AGC_SAMPLER_UNNORMALIZED_COORDINATES_BIT`. Host coverage creates both exact
+  linear and nearest samplers used by Eden's `BlitImageHelper` and keeps six
+  invalid variants fail-closed. All 61 generic tests pass and the complete
+  Prospero build is clean. Exact Eden ELF
+  `1d7bdec9a08caf24a23b39fbbac8ec1aefb4ea1a4bd18798e88078d55b18a21f`
+  passed both sampler creations on FW 5.500.008 and advanced beyond the former
+  `VK_ERROR_FEATURE_NOT_PRESENT` in
+  `20260802T061452Z-swapchain-run1`. The next independent gate is a production
+  compute pipeline whose 36,864-byte scratch requirement remains fail-closed.
+  See `analysis/fw550_unnormalized_sampler_20260802.md`.
+
 - **Bounded idle and teardown:** `vkQueueWaitIdle` and `vkDeviceWaitIdle` now
   serialize against native submission/presentation and wait the current
   OpenAGC fence for at most two seconds. Swapchain and device destruction
