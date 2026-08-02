@@ -414,6 +414,8 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_attachment_vert_spv.h")
   set(VULKAN_PS5_FORMAT_ATTACHMENT_FLOAT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_attachment_float_spv.h")
+  set(VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER
+    "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_attachment_fixed_magenta_spv.h")
   set(VULKAN_PS5_FORMAT_ATTACHMENT_UINT_HEADER
     "${CMAKE_CURRENT_BINARY_DIR}/vulkan_ps5_format_attachment_uint_spv.h")
   set(VULKAN_PS5_FORMAT_ATTACHMENT_SINT_HEADER
@@ -550,6 +552,14 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     DEPENDS
       "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_attachments/export_float.frag"
     VERBATIM)
+  add_custom_command(OUTPUT "${VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER}"
+    COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
+      --vn vulkan_ps5_format_attachment_fixed_magenta_spv
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_attachments/export_fixed_magenta.frag"
+      -o "${VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER}"
+    DEPENDS
+      "${CMAKE_CURRENT_SOURCE_DIR}/examples/format_attachments/export_fixed_magenta.frag"
+    VERBATIM)
   add_custom_command(OUTPUT "${VULKAN_PS5_FORMAT_ATTACHMENT_UINT_HEADER}"
     COMMAND "${VULKAN_PS5_GLSLANG_VALIDATOR}" -V --target-env vulkan1.1
       --vn vulkan_ps5_format_attachment_uint_spv
@@ -570,6 +580,7 @@ if(VULKAN_PS5_BUILD_EXAMPLES)
     examples/format_attachments/main.c
     "${VULKAN_PS5_FORMAT_ATTACHMENT_VERT_HEADER}"
     "${VULKAN_PS5_FORMAT_ATTACHMENT_FLOAT_HEADER}"
+    "${VULKAN_PS5_FORMAT_ATTACHMENT_FIXED_MAGENTA_HEADER}"
     "${VULKAN_PS5_FORMAT_ATTACHMENT_UINT_HEADER}"
     "${VULKAN_PS5_FORMAT_ATTACHMENT_SINT_HEADER}")
   add_custom_command(OUTPUT "${VULKAN_PS5_MULTIVIEW_VERT_HEADER}"

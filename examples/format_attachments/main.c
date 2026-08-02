@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "vulkan_ps5_format_attachment_float_spv.h"
+#include "vulkan_ps5_format_attachment_fixed_magenta_spv.h"
 #include "vulkan_ps5_format_attachment_sint_spv.h"
 #include "vulkan_ps5_format_attachment_uint_spv.h"
 #include "vulkan_ps5_format_attachment_vert_spv.h"
@@ -183,6 +184,13 @@ static uint32_t find_device_local_memory_type(
     return UINT32_MAX;
 }
 
+static VkResult create_shader_module(VkDevice device, const uint32_t *words,
+    size_t size, VkShaderModule *module);
+static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
+    VkShaderModule vertex, VkShaderModule fragment, VkFormat format,
+    VkRenderPass render_pass, uint32_t width, uint32_t height,
+    VkPipeline *pipeline);
+
 static int run_clear_attachments_regression(VkPhysicalDevice physical,
                                             VkDevice device, VkQueue queue)
 {
@@ -198,6 +206,10 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     VkCommandPool command_pool = VK_NULL_HANDLE;
     VkCommandBuffer command = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
+    VkPipelineLayout graphics_control_layout = VK_NULL_HANDLE;
+    VkShaderModule graphics_control_vertex = VK_NULL_HANDLE;
+    VkShaderModule graphics_control_fragment = VK_NULL_HANDLE;
+    VkPipeline graphics_control_pipeline = VK_NULL_HANDLE;
     void *mapped = NULL;
     const VkDeviceSize readback_size =
         (VkDeviceSize)CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT * 4u;
@@ -265,7 +277,7 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
         .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
     };
     const VkAttachmentReference color_reference = {
@@ -344,6 +356,19 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     const VkImageSubresourceRange image_range = {
         VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
     };
+    const VkImageMemoryBarrier initial_to_attachment = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &initial_to_attachment);
     const VkRenderPassBeginInfo begin_render_pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = render_pass,
@@ -435,6 +460,76 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
         goto cleanup;
     }
 
+    const VkPipelineLayoutCreateInfo graphics_control_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    };
+    CLEAR_TRY(vkCreatePipelineLayout(device, &graphics_control_layout_info,
+        NULL, &graphics_control_layout));
+    CLEAR_TRY(create_shader_module(device,
+        vulkan_ps5_format_attachment_vert_spv,
+        sizeof(vulkan_ps5_format_attachment_vert_spv),
+        &graphics_control_vertex));
+    CLEAR_TRY(create_shader_module(device,
+        vulkan_ps5_format_attachment_fixed_magenta_spv,
+        sizeof(vulkan_ps5_format_attachment_fixed_magenta_spv),
+        &graphics_control_fragment));
+    CLEAR_TRY(create_pipeline(device, graphics_control_layout,
+        graphics_control_vertex, graphics_control_fragment,
+        VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
+        CLEAR_ATTACHMENT_HEIGHT, &graphics_control_pipeline));
+
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier to_graphics_control = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &to_graphics_control);
+    vkCmdBeginRenderPass(command, &begin_render_pass,
+        VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        graphics_control_pipeline);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(command);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    int graphics_control_passed = 1;
+    for (uint32_t i = 0u;
+         i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: GRAPHICS_CONTROL FAIL sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            graphics_control_passed = 0;
+            break;
+        }
+    }
+    if (graphics_control_passed) {
+        puts("format_attachments: GRAPHICS_CONTROL PASS checks=3 "
+             "magenta=ff00ffff; color attachment clear failed");
+    }
+
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
     CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
@@ -495,6 +590,14 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
 cleanup:
     if (mapped != NULL)
         vkUnmapMemory(device, readback_memory);
+    if (graphics_control_pipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(device, graphics_control_pipeline, NULL);
+    if (graphics_control_vertex != VK_NULL_HANDLE)
+        vkDestroyShaderModule(device, graphics_control_vertex, NULL);
+    if (graphics_control_fragment != VK_NULL_HANDLE)
+        vkDestroyShaderModule(device, graphics_control_fragment, NULL);
+    if (graphics_control_layout != VK_NULL_HANDLE)
+        vkDestroyPipelineLayout(device, graphics_control_layout, NULL);
     if (fence != VK_NULL_HANDLE)
         vkDestroyFence(device, fence, NULL);
     if (command_pool != VK_NULL_HANDLE)
@@ -606,6 +709,7 @@ static VkResult create_shader_module(VkDevice device, const uint32_t *words,
 
 static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     VkShaderModule vertex, VkShaderModule fragment, VkFormat format,
+    VkRenderPass render_pass, uint32_t width, uint32_t height,
     VkPipeline *pipeline)
 {
     const VkPipelineShaderStageCreateInfo stages[] = {
@@ -621,8 +725,9 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
     };
-    const VkViewport viewport = {0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
-    const VkRect2D scissor = {{0, 0}, {1u, 1u}};
+    const VkViewport viewport = {
+        0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f};
+    const VkRect2D scissor = {{0, 0}, {width, height}};
     const VkPipelineViewportStateCreateInfo viewport_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1u,
@@ -658,7 +763,7 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     };
     const VkGraphicsPipelineCreateInfo info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = &rendering,
+        .pNext = render_pass ? NULL : &rendering,
         .stageCount = 2u,
         .pStages = stages,
         .pVertexInputState = &vertex_input,
@@ -668,6 +773,7 @@ static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
         .pMultisampleState = &multisample,
         .pColorBlendState = &blend,
         .layout = layout,
+        .renderPass = render_pass,
     };
     return vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u, &info,
         NULL, pipeline);
@@ -772,7 +878,8 @@ static int run_probe(void)
     for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         result = create_pipeline(device, pipeline_layout, vertex_module,
             fragment_modules[format_cases[i].numeric_class],
-            format_cases[i].format, &pipelines[i]);
+            format_cases[i].format, VK_NULL_HANDLE, 1u, 1u,
+            &pipelines[i]);
         if (result != VK_SUCCESS) {
             printf("format_attachments: pipeline %s failed (%d)\n",
                 format_cases[i].name, result);
