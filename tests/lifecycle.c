@@ -108,6 +108,16 @@ int main(void) {
     assert(subgroup.subgroupSize == 32);
     assert((subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BASIC_BIT) != 0u);
     assert((subgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT) != 0u);
+    VkPhysicalDeviceMultiviewProperties multiview_properties = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES,
+    };
+    VkPhysicalDeviceProperties2 multiview_properties2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+        .pNext = &multiview_properties,
+    };
+    vkGetPhysicalDeviceProperties2(physical, &multiview_properties2);
+    assert(multiview_properties.maxMultiviewViewCount >= 6u);
+    assert(multiview_properties.maxMultiviewInstanceIndex >= 0x07ffffffu);
     VkPhysicalDeviceTimelineSemaphoreProperties timeline_properties = {
         .sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES,
@@ -241,6 +251,9 @@ assert(line_properties.lineSubPixelPrecisionBits == 8);
     assert(features11.shaderDrawParameters == VK_TRUE);
     assert(features11.variablePointers == VK_TRUE);
     assert(features11.variablePointersStorageBuffer == VK_TRUE);
+    assert(features11.multiview == VK_TRUE);
+    assert(features11.multiviewGeometryShader == VK_FALSE);
+    assert(features11.multiviewTessellationShader == VK_FALSE);
     assert(features2.features.depthBiasClamp == VK_TRUE);
     assert(features2.features.depthClamp == VK_TRUE);
     assert(features2.features.drawIndirectFirstInstance == VK_TRUE);
@@ -393,6 +406,17 @@ assert(dynamic_rendering_features.dynamicRendering == VK_TRUE);
     };
     vkGetPhysicalDeviceFeatures2(physical, &subgroup_types_features2);
     assert(subgroup_types.shaderSubgroupExtendedTypes == VK_TRUE);
+    VkPhysicalDeviceMultiviewFeatures multiview_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
+    };
+    VkPhysicalDeviceFeatures2 multiview_features2 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &multiview_features,
+    };
+    vkGetPhysicalDeviceFeatures2(physical, &multiview_features2);
+    assert(multiview_features.multiview == VK_TRUE);
+    assert(multiview_features.multiviewGeometryShader == VK_FALSE);
+    assert(multiview_features.multiviewTessellationShader == VK_FALSE);
     VkPhysicalDeviceVulkan12Features features12 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
     };
@@ -797,6 +821,7 @@ enabled_timeline.pNext = &enabled_depth_clip;
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
         .pNext = &enabled_divisor,
         .shaderDrawParameters = VK_TRUE,
+        .multiview = VK_TRUE,
         .variablePointers = VK_TRUE,
         .variablePointersStorageBuffer = VK_TRUE,
     };
@@ -868,6 +893,17 @@ enabled_timeline.pNext = &enabled_depth_clip;
                           &subgroup_types_device) == VK_SUCCESS);
     assert(subgroup_types_device != VK_NULL_HANDLE);
     vkDestroyDevice(subgroup_types_device, NULL);
+    VkPhysicalDeviceMultiviewFeatures enabled_multiview = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
+        .multiview = VK_TRUE,
+    };
+    VkDeviceCreateInfo multiview_device_info = device_info;
+    multiview_device_info.pNext = &enabled_multiview;
+    VkDevice multiview_device = VK_NULL_HANDLE;
+    assert(vkCreateDevice(physical, &multiview_device_info, NULL,
+                          &multiview_device) == VK_SUCCESS);
+    assert(multiview_device != VK_NULL_HANDLE);
+    vkDestroyDevice(multiview_device, NULL);
     VkPhysicalDeviceVariablePointersFeatures enabled_variable_pointers = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES,
         .variablePointers = VK_TRUE,

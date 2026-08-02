@@ -52,9 +52,18 @@ Migration status:
   layouts. The subgroup slice then closes both extended scalar types and
   dynamic broadcast IDs through an actual Wave32 storage-buffer oracle. Normal
   and ASAN/UBSAN suites pass 60/60, the Prospero build is clean, and the exact
-  probe ELF passed twice from cleanup through teardown on FW 5.500.008. Two
-  unique mandatory gaps remain: border-color swizzle and multiview. See
+  probe ELF passed twice from cleanup through teardown on FW 5.500.008. See
   `analysis/fw550_subgroup_broadcast_20260802.md`.
+  Basic multiview is now closed as well. Dedicated and Vulkan 1.1 queries
+  advertise six views with geometry/tessellation multiview disabled; legacy
+  RenderPass, RenderPass2, dynamic rendering, pipeline creation, attachment
+  layer selection, and per-view draw replay are host-covered. Normal and
+  ASAN/UBSAN suites pass 61/61. The exact `0x21` pixel probe passed twice from
+  cleanup through readback, self-exit, and immediate relaunch on FW 5.500.008
+  with ELF SHA-256
+  `00b5361b49d00fdb133ce2e2882618be82cba918df7b83732e268b8a96b01e22`.
+  The mandatory-feature log is now down to `borderColorSwizzle` alone. See
+  `analysis/fw550_multiview_20260802.md`.
 - **Native ownership boundary:** host-complete. The checked TSV has zero rows.
   `vulkan_ps5.native_migration_audit` fails if a direct low-level call returns
   or an inventory entry becomes stale. The advertised
@@ -871,8 +880,9 @@ Implemented:
 
 Deliberately unavailable before later milestones:
 
-- Sparse and protected resources, external handles, multiview, YCbCr conversion,
-  timeline semaphores, and descriptor indexing.
+- Sparse and protected resources, external handles, YCbCr conversion, timeline
+  semaphores, and descriptor indexing. Basic six-view multiview is available;
+  multiview geometry and tessellation remain deliberately unadvertised.
 
 ## Milestone 3: OpenAGC command emission (qualified)
 

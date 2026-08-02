@@ -1429,8 +1429,8 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES: {
             VkPhysicalDeviceMultiviewProperties *multiview =
                 (VkPhysicalDeviceMultiviewProperties *)next;
-            multiview->maxMultiviewViewCount = 0;
-            multiview->maxMultiviewInstanceIndex = 0;
+            multiview->maxMultiviewViewCount = 6;
+            multiview->maxMultiviewInstanceIndex = UINT32_MAX;
             break;
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_PROPERTIES:
@@ -1498,8 +1498,8 @@ vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                 VK_SUBGROUP_FEATURE_BALLOT_BIT;
             v11->subgroupQuadOperationsInAllStages = VK_FALSE;
             v11->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
-            v11->maxMultiviewViewCount = 0;
-            v11->maxMultiviewInstanceIndex = 0;
+            v11->maxMultiviewViewCount = 6;
+            v11->maxMultiviewInstanceIndex = UINT32_MAX;
             v11->protectedNoFault = VK_FALSE;
             v11->maxPerSetDescriptors = 1024;
             v11->maxMemoryAllocationSize = capabilities.memory_heaps[1].size;
@@ -1584,7 +1584,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
         }
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES: {
             VkPhysicalDeviceMultiviewFeatures *f = (VkPhysicalDeviceMultiviewFeatures *)next;
-            f->multiview = VK_FALSE;
+            f->multiview = VK_TRUE;
             f->multiviewGeometryShader = VK_FALSE;
             f->multiviewTessellationShader = VK_FALSE;
             break;
@@ -1714,7 +1714,7 @@ vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             f->uniformAndStorageBuffer16BitAccess = VK_FALSE;
             f->storagePushConstant16 = VK_FALSE;
             f->storageInputOutput16 = VK_FALSE;
-            f->multiview = VK_FALSE;
+            f->multiview = VK_TRUE;
             f->multiviewGeometryShader = VK_FALSE;
             f->multiviewTessellationShader = VK_FALSE;
             f->variablePointersStorageBuffer = VK_TRUE;
@@ -1869,7 +1869,7 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES: {
             const VkPhysicalDeviceMultiviewFeatures *f =
                 (const VkPhysicalDeviceMultiviewFeatures *)next;
-            if (f->multiview || f->multiviewGeometryShader ||
+            if (f->multiviewGeometryShader ||
                 f->multiviewTessellationShader) return VK_TRUE;
             break;
         }
@@ -1969,7 +1969,7 @@ static VkBool32 unsupported_device_features_requested(const void *pNext) {
             const VkPhysicalDeviceVulkan11Features *f =
                 (const VkPhysicalDeviceVulkan11Features *)next;
             if (f->storageBuffer16BitAccess || f->uniformAndStorageBuffer16BitAccess ||
-                f->storagePushConstant16 || f->storageInputOutput16 || f->multiview ||
+                f->storagePushConstant16 || f->storageInputOutput16 ||
                 f->multiviewGeometryShader || f->multiviewTessellationShader ||
                 f->protectedMemory || f->samplerYcbcrConversion)
                 return VK_TRUE;

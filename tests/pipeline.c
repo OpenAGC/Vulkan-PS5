@@ -33,7 +33,7 @@ static VkShaderModule shader_module(VkDevice device, const char *path) {
 }
 
 int main(int argc, char **argv) {
-    assert(argc == 11);
+    assert(argc == 12);
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
@@ -60,10 +60,15 @@ int main(int argc, char **argv) {
             .pNext = &depth_clip_features,
             .uniformBufferStandardLayout = VK_TRUE,
         };
-    const VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
+    VkPhysicalDeviceScalarBlockLayoutFeatures scalar_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES,
         .pNext = &uniform_layout_features,
         .scalarBlockLayout = VK_TRUE,
+    };
+    VkPhysicalDeviceMultiviewFeatures multiview_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
+        .pNext = &scalar_features,
+        .multiview = VK_TRUE,
     };
     const char *device_extensions[] = {
         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
@@ -71,7 +76,7 @@ int main(int argc, char **argv) {
     };
     const VkDeviceCreateInfo device_info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &scalar_features,
+        .pNext = &multiview_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue,
         .enabledExtensionCount = 2,
@@ -159,6 +164,7 @@ int main(int argc, char **argv) {
     VkShaderModule cube_array_fragment = shader_module(device, argv[8]);
     VkShaderModule scalar_compute = shader_module(device, argv[9]);
     VkShaderModule depth_only_fragment = shader_module(device, argv[10]);
+    VkShaderModule multiview_vertex = shader_module(device, argv[11]);
 
     VkDescriptorSetLayout empty_set = VK_NULL_HANDLE, resource_set = VK_NULL_HANDLE;
     const VkDescriptorSetLayoutCreateInfo empty_info = {
@@ -353,6 +359,140 @@ int main(int argc, char **argv) {
                                      NULL, &graphics_pipeline) == VK_SUCCESS);
     assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
+
+    const uint32_t multiview_mask = 0x21u;
+    const VkRenderPassMultiviewCreateInfo multiview_info = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO,
+        .subpassCount = 1u,
+        .pViewMasks = &multiview_mask,
+        .correlationMaskCount = 1u,
+        .pCorrelationMasks = &multiview_mask,
+    };
+    VkAttachmentDescription multiview_attachment = attachment;
+    multiview_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    VkRenderPassCreateInfo multiview_render_pass_info = render_pass_info;
+    multiview_render_pass_info.pNext = &multiview_info;
+    multiview_render_pass_info.pAttachments = &multiview_attachment;
+    VkRenderPass multiview_render_pass = VK_NULL_HANDLE;
+    assert(vkCreateRenderPass(device, &multiview_render_pass_info, NULL,
+        &multiview_render_pass) == VK_SUCCESS);
+    VkPipelineShaderStageCreateInfo multiview_stages[] = {
+        stages[0], stages[1],
+    };
+    multiview_stages[0].module = multiview_vertex;
+    multiview_stages[0].pSpecializationInfo = NULL;
+    const VkPipelineVertexInputStateCreateInfo empty_vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    };
+    VkGraphicsPipelineCreateInfo multiview_pipeline_info = graphics_info;
+    multiview_pipeline_info.pStages = multiview_stages;
+    multiview_pipeline_info.pVertexInputState = &empty_vertex_input;
+    multiview_pipeline_info.renderPass = multiview_render_pass;
+    VkPipeline multiview_pipeline = VK_NULL_HANDLE;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
+        &multiview_pipeline_info, NULL, &multiview_pipeline) == VK_SUCCESS);
+    assert(vk_ps5_pipeline_has_native_graphics_pipeline(multiview_pipeline));
+    const VkImageCreateInfo multiview_image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {256u, 256u, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 6u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    VkImage multiview_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &multiview_image_info, NULL,
+        &multiview_image) == VK_SUCCESS);
+    VkMemoryRequirements multiview_requirements;
+    vkGetImageMemoryRequirements(device, multiview_image,
+        &multiview_requirements);
+    uint32_t multiview_memory_type = 0u;
+    while (multiview_memory_type < 32u &&
+           (multiview_requirements.memoryTypeBits &
+            (1u << multiview_memory_type)) == 0u)
+        ++multiview_memory_type;
+    assert(multiview_memory_type < 32u);
+    const VkMemoryAllocateInfo multiview_allocation_info = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = multiview_requirements.size,
+        .memoryTypeIndex = multiview_memory_type,
+    };
+    VkDeviceMemory multiview_memory = VK_NULL_HANDLE;
+    assert(vkAllocateMemory(device, &multiview_allocation_info, NULL,
+        &multiview_memory) == VK_SUCCESS);
+    assert(vkBindImageMemory(device, multiview_image, multiview_memory, 0u) ==
+        VK_SUCCESS);
+    const VkImageViewCreateInfo multiview_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = multiview_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1u,
+            .layerCount = 6u,
+        },
+    };
+    VkImageView multiview_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &multiview_view_info, NULL,
+        &multiview_view) == VK_SUCCESS);
+    const VkFramebufferCreateInfo multiview_framebuffer_info = {
+        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .renderPass = multiview_render_pass,
+        .attachmentCount = 1u,
+        .pAttachments = &multiview_view,
+        .width = 256u,
+        .height = 256u,
+        .layers = 1u,
+    };
+    VkFramebuffer multiview_framebuffer = VK_NULL_HANDLE;
+    assert(vkCreateFramebuffer(device, &multiview_framebuffer_info, NULL,
+        &multiview_framebuffer) == VK_SUCCESS);
+    const VkCommandPoolCreateInfo multiview_pool_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .queueFamilyIndex = 0u,
+    };
+    VkCommandPool multiview_pool = VK_NULL_HANDLE;
+    assert(vkCreateCommandPool(device, &multiview_pool_info, NULL,
+        &multiview_pool) == VK_SUCCESS);
+    const VkCommandBufferAllocateInfo multiview_command_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = multiview_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1u,
+    };
+    VkCommandBuffer multiview_command = VK_NULL_HANDLE;
+    assert(vkAllocateCommandBuffers(device, &multiview_command_info,
+        &multiview_command) == VK_SUCCESS);
+    const VkCommandBufferBeginInfo multiview_begin = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+    };
+    assert(vkBeginCommandBuffer(multiview_command, &multiview_begin) ==
+        VK_SUCCESS);
+    const VkClearValue multiview_clear = {
+        .color = {{0.0f, 0.0f, 0.0f, 1.0f}},
+    };
+    const VkRenderPassBeginInfo multiview_render_begin = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = multiview_render_pass,
+        .framebuffer = multiview_framebuffer,
+        .renderArea = {{0, 0}, {256u, 256u}},
+        .clearValueCount = 1u,
+        .pClearValues = &multiview_clear,
+    };
+    vkCmdBeginRenderPass(multiview_command, &multiview_render_begin,
+        VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(multiview_command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        multiview_pipeline);
+    vkCmdDraw(multiview_command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(multiview_command);
+    assert(vkEndCommandBuffer(multiview_command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_draw_count(multiview_command) == 2u);
     VkPipelineRasterizationStateCreateInfo native_rasterization = rasterization;
     native_rasterization.depthClampEnable = VK_FALSE;
     native_rasterization.depthBiasEnable = VK_FALSE;
@@ -836,6 +976,12 @@ int main(int argc, char **argv) {
                                      NULL, &tessellation_pipeline) == VK_SUCCESS);
 
     vkDestroyPipeline(device, tessellation_pipeline, NULL);
+    vkDestroyPipeline(device, multiview_pipeline, NULL);
+    vkDestroyCommandPool(device, multiview_pool, NULL);
+    vkDestroyFramebuffer(device, multiview_framebuffer, NULL);
+    vkDestroyImageView(device, multiview_view, NULL);
+    vkDestroyImage(device, multiview_image, NULL);
+    vkFreeMemory(device, multiview_memory, NULL);
     vkDestroyPipeline(device, dynamic_viewport_pipeline, NULL);
     vkDestroyPipeline(device, multi_viewport_pipeline, NULL);
     vkDestroyPipeline(device, cube_array_pipeline, NULL);
@@ -864,6 +1010,7 @@ vkDestroyPipeline(device, clipped_clamp_graphics_pipeline, NULL);
     vkDestroyPipeline(device, compute_pipeline, NULL);
     vkDestroyPipeline(device, scalar_compute_pipeline, NULL);
     vkDestroyRenderPass(device, render_pass, NULL);
+    vkDestroyRenderPass(device, multiview_render_pass, NULL);
     vkDestroyRenderPass(device, msaa_render_pass, NULL);
     vkDestroyPipelineLayout(device, graphics_layout, NULL);
     vkDestroyPipelineLayout(device, compute_layout, NULL);
@@ -880,6 +1027,7 @@ vkDestroyPipeline(device, clipped_clamp_graphics_pipeline, NULL);
     vkDestroyShaderModule(device, geometry, NULL);
     vkDestroyShaderModule(device, fragment, NULL);
     vkDestroyShaderModule(device, vertex, NULL);
+    vkDestroyShaderModule(device, multiview_vertex, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
     return 0;

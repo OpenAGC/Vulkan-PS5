@@ -445,9 +445,13 @@ state through public OpenAGC transitions. The subgroup follow-up advertises
 and executes extended scalar types plus a runtime-selected
 `subgroupBroadcast` source in an explicit Wave32 compute pipeline. Its exact
 ELF passed twice on FW 5.500.008; the normal and sanitizer suites now pass
-60/60 and the Prospero build is clean. Border-color swizzle and multiview are
-the two remaining mandatory feature gaps before the information group can
-pass. See `analysis/fw550_subgroup_broadcast_20260802.md`.
+60/60 and the Prospero build is clean. Basic six-view multiview then passed a
+view-mask `0x21` pixel oracle twice on FW 5.500.008: view 0 rendered red and
+view 5 blue through typed OpenAGC `ViewIndex` state and array-layer binding.
+The normal and sanitizer suites now pass 61/61. `borderColorSwizzle` is the
+only remaining mandatory feature gap before the information group can pass.
+See `analysis/fw550_subgroup_broadcast_20260802.md` and
+`analysis/fw550_multiview_20260802.md`.
 
 An in-tree `add_subdirectory` consumer may already provide its own
 `Vulkan::Headers` alias. Vulkan-PS5 carries the selected header checkout in its
@@ -1011,9 +1015,10 @@ sampled-image/sampler descriptors for linear RGBA8/BGRA8 images are encoded
 through OpenAGC and bound to compiler-selected graphics SGPRs. Linear image
 allocation and subresource layouts use the gfx1013-required 256-byte row pitch;
 the sampled-image path is repeatedly hardware-qualified. Dynamic buffer
-offsets and optional sparse, protected, external-handle, multiview, and YCbCr
-features remain unavailable. Timeline semaphores are available with finite
-host waits and completion-ordered queue values.
+offsets and optional sparse, protected, external-handle, and YCbCr features
+remain unavailable. Basic multiview supports six views; its geometry and
+tessellation feature bits remain false. Timeline semaphores are available with
+finite host waits and completion-ordered queue values.
 
 On Prospero, `vkCreateDevice` reaches OpenAGC initialization, which now keeps
 the FW-specific GPU process-authorization preparation inside its `/dev/gc`

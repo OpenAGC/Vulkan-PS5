@@ -231,8 +231,10 @@ resize/lifecycle, timeout, and teardown gates pass repeatedly on FW 5.50 and FW
    pipeline write validation, and packed-surface native-state convergence.
    The Wave32 dynamic-ID subgroup-broadcast oracle closes subgroup extended
    types and dynamic broadcast on FW 5.50 with two identical-byte passes.
-   Add the remaining FW 5.50 value/rendering oracles, then close multiview and
-   border-color swizzle. Keep the
+   Basic six-view multiview is now host-closed and passes the `0x21` red/blue
+   pixel oracle twice on FW 5.50 with exact cleanup, teardown, and immediate
+   relaunch. Close the remaining `borderColorSwizzle` mandatory feature, then
+   add the remaining FW 5.50 value/rendering oracles. Keep the
    conformance version non-conformant until the required suite supports a
    stronger claim.
 3. Run the installed-package consumer, focused standard Vulkan samples, and a
