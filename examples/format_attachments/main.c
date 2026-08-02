@@ -210,6 +210,9 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
     VkShaderModule graphics_control_vertex = VK_NULL_HANDLE;
     VkShaderModule graphics_control_fragment = VK_NULL_HANDLE;
     VkPipeline graphics_control_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout push_constant_control_layout = VK_NULL_HANDLE;
+    VkShaderModule push_constant_control_fragment = VK_NULL_HANDLE;
+    VkPipeline push_constant_control_pipeline = VK_NULL_HANDLE;
     void *mapped = NULL;
     const VkDeviceSize readback_size =
         (VkDeviceSize)CLEAR_ATTACHMENT_WIDTH * CLEAR_ATTACHMENT_HEIGHT * 4u;
@@ -530,6 +533,84 @@ static int run_clear_attachments_regression(VkPhysicalDevice physical,
              "magenta=ff00ffff; color attachment clear failed");
     }
 
+    const VkPushConstantRange push_constant_control_range = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0u,
+        .size = 16u,
+    };
+    const VkPipelineLayoutCreateInfo push_constant_control_layout_info = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &push_constant_control_range,
+    };
+    CLEAR_TRY(vkCreatePipelineLayout(device,
+        &push_constant_control_layout_info, NULL,
+        &push_constant_control_layout));
+    CLEAR_TRY(create_shader_module(device,
+        vulkan_ps5_format_attachment_float_spv,
+        sizeof(vulkan_ps5_format_attachment_float_spv),
+        &push_constant_control_fragment));
+    CLEAR_TRY(create_pipeline(device, push_constant_control_layout,
+        graphics_control_vertex, push_constant_control_fragment,
+        VK_FORMAT_B8G8R8A8_UNORM, render_pass, CLEAR_ATTACHMENT_WIDTH,
+        CLEAR_ATTACHMENT_HEIGHT, &push_constant_control_pipeline));
+
+    CLEAR_TRY(vkResetFences(device, 1u, &fence));
+    CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
+    CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
+    const VkImageMemoryBarrier to_push_constant_control = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = image_range,
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0u, 0u, NULL, 0u,
+        NULL, 1u, &to_push_constant_control);
+    const float push_constant_control[] = {1.0f, 0.0f, 1.0f, 1.0f};
+    vkCmdBeginRenderPass(command, &begin_render_pass,
+        VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        push_constant_control_pipeline);
+    vkCmdPushConstants(command, push_constant_control_layout,
+        VK_SHADER_STAGE_FRAGMENT_BIT, 0u, sizeof(push_constant_control),
+        push_constant_control);
+    vkCmdDraw(command, 3u, 1u, 0u, 0u);
+    vkCmdEndRenderPass(command);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL, 1u,
+        &to_transfer_source);
+    vkCmdCopyImageToBuffer(command, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        readback, 1u, &copy);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 1u, &to_host, 0u, NULL);
+    CLEAR_TRY(vkEndCommandBuffer(command));
+    CLEAR_TRY(vkQueueSubmit(queue, 1u, &submit_info, fence));
+    CLEAR_TRY(vkWaitForFences(device, 1u, &fence, VK_TRUE,
+        UINT64_C(2000000000)));
+    CLEAR_TRY(vkInvalidateMappedMemoryRanges(device, 1u, &invalidate));
+    int push_constant_control_passed = 1;
+    for (uint32_t i = 0u;
+         i < sizeof(sample_offsets) / sizeof(sample_offsets[0]); ++i) {
+        const uint8_t *pixel = (const uint8_t *)mapped + sample_offsets[i];
+        if (memcmp(pixel, expected, sizeof(expected)) != 0) {
+            printf("format_attachments: PUSH_CONSTANT_CONTROL FAIL sample=%u "
+                   "got=%02x%02x%02x%02x expected=ff00ffff\n", i,
+                   pixel[0], pixel[1], pixel[2], pixel[3]);
+            push_constant_control_passed = 0;
+            break;
+        }
+    }
+    if (push_constant_control_passed) {
+        puts("format_attachments: PUSH_CONSTANT_CONTROL PASS checks=3 "
+             "magenta=ff00ffff; color attachment clear failed");
+    }
+
     CLEAR_TRY(vkResetFences(device, 1u, &fence));
     CLEAR_TRY(vkResetCommandPool(device, command_pool, 0u));
     CLEAR_TRY(vkBeginCommandBuffer(command, &begin_info));
@@ -598,6 +679,12 @@ cleanup:
         vkDestroyShaderModule(device, graphics_control_fragment, NULL);
     if (graphics_control_layout != VK_NULL_HANDLE)
         vkDestroyPipelineLayout(device, graphics_control_layout, NULL);
+    if (push_constant_control_pipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(device, push_constant_control_pipeline, NULL);
+    if (push_constant_control_fragment != VK_NULL_HANDLE)
+        vkDestroyShaderModule(device, push_constant_control_fragment, NULL);
+    if (push_constant_control_layout != VK_NULL_HANDLE)
+        vkDestroyPipelineLayout(device, push_constant_control_layout, NULL);
     if (fence != VK_NULL_HANDLE)
         vkDestroyFence(device, fence, NULL);
     if (command_pool != VK_NULL_HANDLE)
