@@ -100,6 +100,9 @@ VkBool32 vk_ps5_pack_depth_stencil_clear(VkFormat format,
 VkBool32 vk_ps5_command_buffer_push_constant_word(
     VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
     uint32_t *value);
+uint64_t vk_ps5_native_push_constant_required_mask(
+    const AgcShaderReflection *reflection,
+    const AgcShaderPushConstantRange *range);
 VkBool32 vk_ps5_descriptor_set_buffer_info(
     VkDescriptorSet descriptor_set, uint32_t binding, uint32_t array_element,
     VkDescriptorBufferInfo *info);

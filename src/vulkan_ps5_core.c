@@ -8610,6 +8610,22 @@ static uint64_t native_push_constant_mask(uint32_t offset, uint32_t size)
         ((UINT64_C(1) << dword_count) - 1u) << (offset / 4u);
 }
 
+uint64_t vk_ps5_native_push_constant_required_mask(
+    const AgcShaderReflection *reflection,
+    const AgcShaderPushConstantRange *range)
+{
+    if (!reflection || !range)
+        return 0u;
+    const uint64_t range_mask = native_push_constant_mask(
+        range->offset, range->size);
+    for (uint32_t index = 0u; index < reflection->user_sgpr_count; ++index) {
+        if (reflection->user_sgprs[index].kind ==
+            AGC_SHADER_USER_SGPR_PUSH_CONSTANT_POINTER)
+            return range_mask;
+    }
+    return reflection->inline_push_constant_mask & range_mask;
+}
+
 static VkResult native_replay_push_constants(
     VkPs5CommandBuffer *command, const VkPs5Pipeline *pipeline)
 {
@@ -8622,11 +8638,13 @@ static VkResult native_replay_push_constants(
              ++range_index) {
             const AgcShaderPushConstantRange *range =
                 &reflection->push_constant_ranges[range_index];
-            uint64_t required = native_push_constant_mask(
-                range->offset, range->size);
+            uint64_t required =
+                vk_ps5_native_push_constant_required_mask(
+                    reflection, range);
             const uint32_t stage = reflection->stage;
             const uint32_t stage_bit = 1u << stage;
-            if ((range->stage_mask & stage_bit) != 0u &&
+            if (required != 0u &&
+                (range->stage_mask & stage_bit) != 0u &&
                 (command->push_constant_masks[stage] & required) ==
                     required) {
                 int32_t result = agcCmdPushConstants(

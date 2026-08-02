@@ -79,9 +79,46 @@ static bool has_register_value(const uint32_t *commands, uint32_t used,
     return false;
 }
 
+static void test_sparse_inline_push_constant_readiness(void)
+{
+    AgcShaderReflection reflection = AGC_SHADER_REFLECTION_INIT;
+    const AgcShaderPushConstantRange full_range = {
+        0u, 128u, 4u, 1u << kAgcShaderStageVs,
+    };
+    const AgcShaderPushConstantRange high_range = {
+        48u, 80u, 4u, 1u << kAgcShaderStageVs,
+    };
+
+    reflection.stage = kAgcShaderStageVs;
+    reflection.inline_push_constant_mask = UINT64_C(0xfffff0ff);
+    reflection.user_sgpr_count = 2u;
+    reflection.user_sgprs[0] = (AgcShaderUserSgpr){
+        AGC_SHADER_USER_SGPR_BASE_VERTEX, 0u,
+        AGC_REG_SPI_SHADER_USER_DATA_GS_0, 1u,
+    };
+    reflection.user_sgprs[1] = (AgcShaderUserSgpr){
+        AGC_SHADER_USER_SGPR_INLINE_PUSH_CONSTANT, 0u,
+        AGC_REG_SPI_SHADER_USER_DATA_GS_0 + 1u, 1u,
+    };
+    assert(vk_ps5_native_push_constant_required_mask(
+        &reflection, &full_range) == UINT64_C(0xfffff0ff));
+    assert(vk_ps5_native_push_constant_required_mask(
+        &reflection, &high_range) == UINT64_C(0xfffff000));
+
+    reflection.user_sgprs[1] = (AgcShaderUserSgpr){
+        AGC_SHADER_USER_SGPR_PUSH_CONSTANT_POINTER, 0u,
+        AGC_REG_SPI_SHADER_USER_DATA_GS_0 + 1u, 1u,
+    };
+    assert(vk_ps5_native_push_constant_required_mask(
+        &reflection, &full_range) == UINT64_C(0xffffffff));
+    assert(vk_ps5_native_push_constant_required_mask(
+        &reflection, &high_range) == UINT64_C(0xfffff000));
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 7);
+    test_sparse_inline_push_constant_readiness();
     const VkInstanceCreateInfo instance_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
     };
