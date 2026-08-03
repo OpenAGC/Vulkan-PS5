@@ -14,6 +14,8 @@ continuous_klog=${VULKAN_PS5_CONTINUOUS_KLOG:-0}
 live_klog_timeout=${VULKAN_PS5_LIVE_KLOG_TIMEOUT:-180}
 live_klog_start_delay=${VULKAN_PS5_LIVE_KLOG_START_DELAY:-1}
 cleanup_settle_delay=${VULKAN_PS5_CLEANUP_SETTLE_DELAY:-2}
+absence_check_count=${VULKAN_PS5_ABSENCE_CHECK_COUNT:-1}
+absence_check_delay=${VULKAN_PS5_ABSENCE_CHECK_DELAY:-1}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf=${VULKAN_PS5_QUALIFICATION_ELF:-$build_dir/vulkan_ps5_swapchain_example.elf}
 cleanup_elf=${VULKAN_PS5_CLEANUP_ELF:-$build_dir/vulkan_ps5_process_cleanup.elf}
@@ -146,6 +148,19 @@ case "$cleanup_settle_delay" in
         exit 2
         ;;
 esac
+case "$absence_check_count" in
+    1|2|3) ;;
+    *)
+        echo "VULKAN_PS5_ABSENCE_CHECK_COUNT must be 1, 2, or 3" >&2
+        exit 2
+        ;;
+esac
+case "$absence_check_delay" in
+    ''|*[!0-9]*)
+        echo "VULKAN_PS5_ABSENCE_CHECK_DELAY must be a non-negative integer" >&2
+        exit 2
+        ;;
+esac
 if ! command -v nc >/dev/null 2>&1 || \
    ! command -v shasum >/dev/null 2>&1; then
     echo "nc and shasum are required for the bounded qualification gate" >&2
@@ -232,6 +247,29 @@ assert_no_scoped_eboot_process() {
         --pid "$1" "$PS5_HOST" eboot.bin
 }
 
+assert_no_eboot_process_repeated() {
+    check=1
+    while [ "$check" -le "$absence_check_count" ]; do
+        assert_no_eboot_process || return 1
+        if [ "$check" -lt "$absence_check_count" ]; then
+            sleep "$absence_check_delay"
+        fi
+        check=$((check + 1))
+    done
+}
+
+assert_no_scoped_eboot_process_repeated() {
+    scoped_pid=$1
+    check=1
+    while [ "$check" -le "$absence_check_count" ]; do
+        assert_no_scoped_eboot_process "$scoped_pid" || return 1
+        if [ "$check" -lt "$absence_check_count" ]; then
+            sleep "$absence_check_delay"
+        fi
+        check=$((check + 1))
+    done
+}
+
 kill_stale_process() {
     target_pid_to_kill=$1
     uv run --project "$pyps4debug_dir" python \
@@ -271,18 +309,19 @@ finalize_process_state() {
         fi
     fi
 
-    if [ -n "$target_pid" ] && ! assert_no_scoped_eboot_process "$target_pid"; then
+    if [ -n "$target_pid" ] &&
+       ! assert_no_scoped_eboot_process_repeated "$target_pid"; then
         kill_stale_process "$target_pid" || true
-        if ! assert_no_scoped_eboot_process "$target_pid"; then
+        if ! assert_no_scoped_eboot_process_repeated "$target_pid"; then
             echo "qualification PID $target_pid remained at exit" >&2
             cleanup_failed=1
         fi
     fi
 
-    if ! assert_no_eboot_process; then
+    if ! assert_no_eboot_process_repeated; then
         echo "an exact eboot.bin process remained at exit; attempting cleanup" >&2
         kill_named_eboot_process || true
-        if ! assert_no_eboot_process; then
+        if ! assert_no_eboot_process_repeated; then
             echo "an exact eboot.bin process remained after exit cleanup" >&2
             cleanup_failed=1
         fi
@@ -320,7 +359,7 @@ verify_remote_sha256 \
     "$expected_cleanup_sha256" 'cleanup prerequisite'
 trap 'finalize_runner "$?"' 0
 launch_pinned_cleanup
-if ! assert_no_eboot_process; then
+if ! assert_no_eboot_process_repeated; then
     echo "cleanup prerequisite did not retire every exact eboot.bin process" >&2
     exit 1
 fi
@@ -528,9 +567,7 @@ if [ "$((0x$kill_app))" -ne "$((0x$requester_app))" ] || \
     echo "swapchain kernel app-exit lifecycle is inconsistent; klog: $target_klog" >&2
     exit 1
 fi
-if ! uv run --project "$pyps4debug_dir" python \
-    "$script_dir/ps5debug_kill_process.py" --assert-absent \
-    --pid "$target_pid" "$PS5_HOST" eboot.bin; then
+if ! assert_no_scoped_eboot_process_repeated "$target_pid"; then
     kill_stale_process "$target_pid" || true
     echo "swapchain process remained after PASS; klog: $target_klog" >&2
     exit 1

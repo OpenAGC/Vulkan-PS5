@@ -143,6 +143,8 @@ run_runner() {
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
     VULKAN_PS5_KLOG_SETTLE_DELAY="${FAKE_KLOG_SETTLE_DELAY:-0}" \
     VULKAN_PS5_CLEANUP_SETTLE_DELAY=0 \
+    VULKAN_PS5_ABSENCE_CHECK_COUNT="${FAKE_ABSENCE_CHECK_COUNT:-1}" \
+    VULKAN_PS5_ABSENCE_CHECK_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_CURL_REMOTE="$test_root/remote" \
     FAKE_KLOG_MODE="$mode" \
@@ -158,7 +160,8 @@ run_runner() {
         sh "$runner" >"$output" 2>&1
 }
 
-if ! run_runner clean "$test_root/clean.out" "$test_root/clean-logs"; then
+if ! FAKE_ABSENCE_CHECK_COUNT=2 \
+    run_runner clean "$test_root/clean.out" "$test_root/clean-logs"; then
     cat "$test_root/clean.out" >&2
     exit 1
 fi
@@ -169,6 +172,14 @@ grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
 grep -F -- '--assert-absent 127.0.0.1 eboot.bin' "$test_root/uv.log" >/dev/null
 grep -F -- '--assert-absent --pid 321 127.0.0.1 eboot.bin' \
     "$test_root/uv.log" >/dev/null
+global_absence_count=$(grep -Fc -- \
+    '--assert-absent 127.0.0.1 eboot.bin' "$test_root/uv.log")
+scoped_absence_count=$(grep -Fc -- \
+    '--assert-absent --pid 321 127.0.0.1 eboot.bin' "$test_root/uv.log")
+if [ "$global_absence_count" -lt 4 ] || [ "$scoped_absence_count" -lt 4 ]; then
+    echo "runner did not repeat preflight/postflight absence checks" >&2
+    exit 1
+fi
 
 : >"$test_root/events.log"
 (
