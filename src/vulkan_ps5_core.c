@@ -4808,6 +4808,40 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             (!vk_ps5_device_depth_clip_enable(device) ||
              depth_clip_state->flags != 0u))
             return VK_ERROR_FEATURE_NOT_PRESENT;
+#ifdef __PROSPERO__
+        fprintf(stderr,
+            "vulkan-ps5: graphics pipeline request stages=%u topology=%u "
+            "dynamic=%u polygon=%u cull=0x%x depth_clamp=%u discard=%u "
+            "depth_bias=%u line=%g samples=%u sample_shading=%u min_sample=%g "
+            "alpha_coverage=%u alpha_one=%u blend_attachments=%u "
+            "depth_test=%u depth_write=%u depth_bounds=%u stencil=%u\n",
+            create->stageCount, create->pInputAssemblyState->topology,
+            create->pDynamicState ?
+                create->pDynamicState->dynamicStateCount : 0u,
+            raster->polygonMode, raster->cullMode, raster->depthClampEnable,
+            raster->rasterizerDiscardEnable, raster->depthBiasEnable,
+            raster->lineWidth, multisample->rasterizationSamples,
+            multisample->sampleShadingEnable, multisample->minSampleShading,
+            multisample->alphaToCoverageEnable, multisample->alphaToOneEnable,
+            blend->attachmentCount,
+            create->pDepthStencilState ?
+                create->pDepthStencilState->depthTestEnable : 0u,
+            create->pDepthStencilState ?
+                create->pDepthStencilState->depthWriteEnable : 0u,
+            create->pDepthStencilState ?
+                create->pDepthStencilState->depthBoundsTestEnable : 0u,
+            create->pDepthStencilState ?
+                create->pDepthStencilState->stencilTestEnable : 0u);
+        if (create->pDynamicState) {
+            for (uint32_t dynamic_index = 0u;
+                 dynamic_index < create->pDynamicState->dynamicStateCount;
+                 ++dynamic_index)
+                fprintf(stderr,
+                    "vulkan-ps5: graphics pipeline dynamic[%u]=%u\n",
+                    dynamic_index,
+                    create->pDynamicState->pDynamicStates[dynamic_index]);
+        }
+#endif
         AgcGfx1013PolygonMode translated_polygon_mode;
         if (!polygon_mode(raster->polygonMode, &translated_polygon_mode) ||
             (raster->cullMode & ~(VK_CULL_MODE_FRONT_BIT |
