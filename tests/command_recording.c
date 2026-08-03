@@ -2343,10 +2343,11 @@ vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
         {128, 0, 128, 256, 0.25f, 0.75f},
     };
     const VkRect2D dynamic_scissors[] = {
-        {{0, 0}, {128, 256}},
+        /* Preserve the visible portion of a signed rectangle. */
+        {{-64, 0}, {192, 256}},
         /* The right edge extends past the 256-wide framebuffer. Vulkan clips
-         * this legal scissor to the attachment rather than rejecting it. */
-        {{128, 0}, {256, 256}},
+         * this effectively unbounded guest scissor to the attachment. */
+        {{128, 0}, {INT32_MAX, 256}},
     };
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       dynamic_viewport_pipeline);
@@ -2354,6 +2355,13 @@ vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
                             graphics_layout, 1, 1, &hull_output_set, 0, NULL);
     vkCmdSetViewport(command, 0, 2, dynamic_viewports);
     vkCmdSetScissor(command, 0, 2, dynamic_scissors);
+    vkCmdDraw(command, 3, 1, 0, 0);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    const VkRect2D empty_dynamic_scissors[] = {
+        {{-10, 0}, {5, 16}},
+        {{300, 0}, {16, 16}},
+    };
+    vkCmdSetScissor(command, 0, 2, empty_dynamic_scissors);
     vkCmdDraw(command, 3, 1, 0, 0);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -2806,7 +2814,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
            VK_ERROR_FEATURE_NOT_PRESENT);
 
     assert(vk_ps5_command_buffer_native_stream_complete(command));
-    assert(vk_ps5_command_buffer_native_draw_count(command) == 11u);
+    assert(vk_ps5_command_buffer_native_draw_count(command) == 12u);
 
 
     VkQueue queue;

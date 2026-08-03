@@ -2160,17 +2160,21 @@ static bool translate_viewport(
 static bool translate_scissor(
     const VkRect2D *source, AgcGfx1013ScissorState *destination)
 {
-    if (!source || !destination || source->offset.x < 0 ||
-        source->offset.y < 0 || !source->extent.width ||
-        !source->extent.height || (uint32_t)source->offset.x > 0x7fffu ||
-        source->extent.width > 0x7fffu - (uint32_t)source->offset.x ||
-        (uint32_t)source->offset.y > 0x7fffu ||
-        source->extent.height > 0x7fffu - (uint32_t)source->offset.y)
+    if (!source || !destination || !source->extent.width ||
+        !source->extent.height)
         return false;
-    destination->left = (uint32_t)source->offset.x;
-    destination->top = (uint32_t)source->offset.y;
-    destination->right = destination->left + source->extent.width;
-    destination->bottom = destination->top + source->extent.height;
+    const int64_t source_left = source->offset.x;
+    const int64_t source_top = source->offset.y;
+    const int64_t source_right = source_left + source->extent.width;
+    const int64_t source_bottom = source_top + source->extent.height;
+    destination->left = source_left <= 0 ? 0u :
+        source_left >= 0x7fff ? 0x7fffu : (uint32_t)source_left;
+    destination->top = source_top <= 0 ? 0u :
+        source_top >= 0x7fff ? 0x7fffu : (uint32_t)source_top;
+    destination->right = source_right <= 0 ? 0u :
+        source_right >= 0x7fff ? 0x7fffu : (uint32_t)source_right;
+    destination->bottom = source_bottom <= 0 ? 0u :
+        source_bottom >= 0x7fff ? 0x7fffu : (uint32_t)source_bottom;
     return true;
 }
 
@@ -2202,8 +2206,10 @@ static VkResult resolve_viewport_state(
         const uint32_t height = command->active_framebuffer->height;
         /* Vulkan scissors are clipped by the framebuffer bounds; their
          * declared right/bottom edges need not fit the attachment. */
-        if (scissor->left >= width || scissor->top >= height)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (scissor->left > width)
+            scissor->left = width;
+        if (scissor->top > height)
+            scissor->top = height;
         if (scissor->right > width)
             scissor->right = width;
         if (scissor->bottom > height)
@@ -10324,6 +10330,10 @@ vkCmdSetScissor(VkCommandBuffer c, uint32_t f, uint32_t n, const VkRect2D *r) {
     AgcGfx1013ScissorState translated[VK_PS5_MAX_VIEWPORTS];
     for (uint32_t i = 0u; i < n; ++i) {
         if (!translate_scissor(&r[i], &translated[i])) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdSetScissor rejected index=%u offset=%d,%d "
+                "extent=%u,%u\n", f + i, r[i].offset.x, r[i].offset.y,
+                r[i].extent.width, r[i].extent.height);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
