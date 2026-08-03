@@ -11790,15 +11790,27 @@ static VkResult native_bind_graphics_vertex_buffers(
                 binding, pipeline->vertex_binding_mask);
             return VK_ERROR_INITIALIZATION_FAILED;
         }
+        const VkDeviceSize offset = command->vertex_offsets[binding];
+        if (offset >= buffer->size) {
+            fprintf(stderr,
+                "vulkan-ps5: draw vertex binding=%u offset=%llu "
+                "outside size=%llu\n", binding,
+                (unsigned long long)offset,
+                (unsigned long long)buffer->size);
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
         if (native_buffer_recorded_usage(command, buffer) !=
                 kAgcResourceUsageShaderRead) {
             VkResult prepare = native_prepare_buffer_range(command, buffer,
-                0u, buffer->size, kAgcResourceUsageShaderRead);
+                offset, buffer->size - offset,
+                kAgcResourceUsageShaderRead);
             if (prepare != VK_SUCCESS) {
                 fprintf(stderr,
                     "vulkan-ps5: draw vertex binding=%u transition failed "
-                    "result=%d required_mask=0x%x\n",
-                    binding, prepare, pipeline->vertex_binding_mask);
+                    "result=%d offset=%llu size=%llu required_mask=0x%x\n",
+                    binding, prepare, (unsigned long long)offset,
+                    (unsigned long long)(buffer->size - offset),
+                    pipeline->vertex_binding_mask);
                 return prepare;
             }
         }
@@ -11806,7 +11818,7 @@ static VkResult native_bind_graphics_vertex_buffers(
             AGC_VERTEX_BUFFER_BINDING_INIT;
         bindings[binding_count].binding = binding;
         bindings[binding_count].buffer = buffer->native_buffer;
-        bindings[binding_count].offset = command->vertex_offsets[binding];
+        bindings[binding_count].offset = offset;
         bindings[binding_count].stride = pipeline->vertex_strides[binding];
         binding_count++;
     }

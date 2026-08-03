@@ -2355,9 +2355,22 @@ const VkSubpassBeginInfo subpass_begin = {
 const VkSubpassEndInfo subpass_end = {
 .sType = VK_STRUCTURE_TYPE_SUBPASS_END_INFO,
 };
-vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
+    const VkBufferMemoryBarrier vertex_tail_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = vertex_buffer,
+        .offset = 2u * sizeof(float),
+        .size = 6u * sizeof(float),
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0u, 0u, NULL, 1u,
+        &vertex_tail_barrier, 0u, NULL);
+    vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
-    const VkDeviceSize vertex_offset = 0;
+    const VkDeviceSize vertex_offset = 2u * sizeof(float);
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     const VkViewport dynamic_viewports[] = {
         {0, 0, 128, 256, 0, 1},
