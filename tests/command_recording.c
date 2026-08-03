@@ -2747,6 +2747,9 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkCmdBlitImage(invalid_copy_command, self_blit_image,
         VK_IMAGE_LAYOUT_GENERAL, self_blit_image, VK_IMAGE_LAYOUT_GENERAL,
         1u, &feedback_blit, VK_FILTER_NEAREST);
+    assert(strcmp(vk_ps5_command_buffer_debug_last_command(
+                      invalid_copy_command),
+                  "vkCmdBlitImage") == 0);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
@@ -2754,12 +2757,18 @@ vkCmdEndRenderPass2(command, &subpass_end);
            VK_SUCCESS);
     vkCmdClearDepthStencilImage(invalid_copy_command, depth_image,
         VK_IMAGE_LAYOUT_GENERAL, NULL, 0u, NULL);
+    assert(strcmp(vk_ps5_command_buffer_debug_last_command(
+                      invalid_copy_command),
+                  "vkCmdClearDepthStencilImage") == 0);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
            VK_SUCCESS);
     vkCmdClearAttachments(invalid_copy_command, 0u, NULL, 0u, NULL);
+    assert(strcmp(vk_ps5_command_buffer_debug_last_command(
+                      invalid_copy_command),
+                  "vkCmdClearAttachments") == 0);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_INITIALIZATION_FAILED);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
@@ -2768,6 +2777,9 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkCmdResolveImage(invalid_copy_command, color_image,
         VK_IMAGE_LAYOUT_GENERAL, color_image_1, VK_IMAGE_LAYOUT_GENERAL,
         0u, NULL);
+    assert(strcmp(vk_ps5_command_buffer_debug_last_command(
+                      invalid_copy_command),
+                  "vkCmdResolveImage") == 0);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
 

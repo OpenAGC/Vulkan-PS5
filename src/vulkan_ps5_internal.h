@@ -107,6 +107,8 @@ uint32_t vk_ps5_command_buffer_native_draw_count(
 VkBool32 vk_ps5_command_buffer_native_stream_complete(
     VkCommandBuffer command_buffer);
 VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer);
+const char *vk_ps5_command_buffer_debug_last_command(
+    VkCommandBuffer command_buffer);
 /* Internal diagnostic only: directly replay a legacy graphics pipeline against
  * one active color attachment. This deliberately bypasses normal descriptor,
  * vertex, and attachment replay so probes can isolate that native sequence. */

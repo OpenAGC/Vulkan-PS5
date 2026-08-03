@@ -1180,6 +1180,14 @@ VkResult vk_ps5_command_buffer_record_error(VkCommandBuffer command_buffer)
     return command ? command->record_error : VK_ERROR_INITIALIZATION_FAILED;
 }
 
+const char *vk_ps5_command_buffer_debug_last_command(
+    VkCommandBuffer command_buffer)
+{
+    const VkPs5CommandBuffer *command =
+        (const VkPs5CommandBuffer *)command_buffer;
+    return command ? command->debug_last_command : NULL;
+}
+
 VkBool32 vk_ps5_command_buffer_push_constant_word(
     VkCommandBuffer command_buffer, uint32_t stage, uint32_t offset,
     uint32_t *value)
@@ -8723,6 +8731,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyBuffer(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n,
                 const VkBufferCopy *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdCopyBuffer");
     VkPs5Buffer *source = (VkPs5Buffer *)s;
     VkPs5Buffer *destination = (VkPs5Buffer *)d;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -8795,6 +8804,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                VkImageLayout dl, uint32_t n, const VkImageCopy *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdCopyImage");
     VkPs5Image *source = (VkPs5Image *)s;
     VkPs5Image *destination = (VkPs5Image *)d;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -8875,6 +8885,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout dl,
                        uint32_t n, const VkBufferImageCopy *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdCopyBufferToImage");
     VkPs5Buffer *source = (VkPs5Buffer *)s;
     VkPs5Image *destination = (VkPs5Image *)d;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -10004,6 +10015,7 @@ static VkResult native_ensure_compute_pipeline(
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdDispatch");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -10053,6 +10065,7 @@ vkCmdDispatch(VkCommandBuffer c, uint32_t x, uint32_t y, uint32_t z) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDispatchIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdDispatchIndirect");
     VkPs5Buffer *arguments = (VkPs5Buffer *)b;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
@@ -10391,15 +10404,25 @@ vkCmdSetStencilReference(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t r) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindIndexBuffer(VkCommandBuffer c, VkBuffer b, VkDeviceSize o, VkIndexType t) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindIndexBuffer");
     VkPs5Buffer *buffer = (VkPs5Buffer *)b;
     uint32_t element_size = t == VK_INDEX_TYPE_UINT16 ? 2u :
         t == VK_INDEX_TYPE_UINT32 ? 4u : 0u;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING || !buffer ||
         !buffer->memory || !(buffer->usage & VK_BUFFER_USAGE_INDEX_BUFFER_BIT) ||
         !element_size || o >= buffer->size || (o & (element_size - 1u))) {
-        if (command && command->state == VK_PS5_COMMAND_RECORDING)
+        if (command && command->state == VK_PS5_COMMAND_RECORDING) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdBindIndexBuffer rejected buffer=%u "
+                "memory=%u usage=0x%x offset=%llu size=%llu type=%u "
+                "element_size=%u\n",
+                buffer != NULL, buffer && buffer->memory != NULL,
+                buffer ? buffer->usage : 0u, (unsigned long long)o,
+                (unsigned long long)(buffer ? buffer->size : 0u), t,
+                element_size);
             command->record_error = t == VK_INDEX_TYPE_UINT8_EXT ?
                 VK_ERROR_FEATURE_NOT_PRESENT : VK_ERROR_INITIALIZATION_FAILED;
+        }
         return;
     }
     command->index_buffer = buffer;
@@ -10411,6 +10434,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBindIndexBuffer2(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
                       VkDeviceSize size, VkIndexType t) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBindIndexBuffer2");
     VkPs5Buffer *buffer = (VkPs5Buffer *)b;
     uint32_t element_size = t == VK_INDEX_TYPE_UINT16 ? 2u :
         t == VK_INDEX_TYPE_UINT32 ? 4u : 0u;
@@ -12142,6 +12166,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBlitImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                VkImageLayout dl, uint32_t n, const VkImageBlit *r, VkFilter f) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBlitImage");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -12160,6 +12185,7 @@ vkCmdClearDepthStencilImage(VkCommandBuffer c, VkImage i, VkImageLayout l,
                             const VkClearDepthStencilValue *v, uint32_t n,
                             const VkImageSubresourceRange *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdClearDepthStencilImage");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -12477,6 +12503,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdClearAttachments(VkCommandBuffer c, uint32_t n, const VkClearAttachment *a,
                       uint32_t rn, const VkClearRect *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdClearAttachments");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -12491,6 +12518,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
                   VkImageLayout dl, uint32_t n, const VkImageResolve *r) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdResolveImage");
     VkPs5Image *source = (VkPs5Image *)s;
     VkPs5Image *destination = (VkPs5Image *)d;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
@@ -12516,6 +12544,28 @@ vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
         !(source->native_desc.usage & AGC_IMAGE_USAGE_SAMPLED_BIT) ||
         !(destination->native_desc.usage &
             AGC_IMAGE_USAGE_COLOR_TARGET_BIT)) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdResolveImage rejected source=%u destination=%u "
+            "same=%u active_render_pass=%u regions=%u source_type=%u "
+            "destination_type=%u samples=%u/%u formats=%u/%u depth=%u/%u "
+            "native=%u/%u usage=0x%x/0x%x layouts=%u/%u "
+            "native_usage=0x%x/0x%x\n",
+            source != NULL, destination != NULL, source == destination,
+            command->active_render_pass != NULL, n,
+            source ? source->type : 0u,
+            destination ? destination->type : 0u,
+            source ? source->samples : 0u,
+            destination ? destination->samples : 0u,
+            source ? source->format : 0u,
+            destination ? destination->format : 0u,
+            source ? source->is_depth_surface : 0u,
+            destination ? destination->is_depth_surface : 0u,
+            source && source->native_image != NULL,
+            destination && destination->native_image != NULL,
+            source ? source->usage : 0u,
+            destination ? destination->usage : 0u, sl, dl,
+            source ? source->native_desc.usage : 0u,
+            destination ? destination->native_desc.usage : 0u);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
@@ -12540,6 +12590,23 @@ vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
             region->dstOffset.y < 0 || region->dstOffset.z != 0 ||
             !region->extent.width || !region->extent.height ||
             region->extent.depth != 1u) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdResolveImage region rejected index=%u "
+                "aspects=0x%x/0x%x mip=%u/%u layers=%u@%u/%u@%u "
+                "offsets=%d,%d,%d/%d,%d,%d extent=%ux%ux%u\n",
+                index, region->srcSubresource.aspectMask,
+                region->dstSubresource.aspectMask,
+                region->srcSubresource.mipLevel,
+                region->dstSubresource.mipLevel,
+                region->srcSubresource.layerCount,
+                region->srcSubresource.baseArrayLayer,
+                region->dstSubresource.layerCount,
+                region->dstSubresource.baseArrayLayer,
+                region->srcOffset.x, region->srcOffset.y,
+                region->srcOffset.z, region->dstOffset.x,
+                region->dstOffset.y, region->dstOffset.z,
+                region->extent.width, region->extent.height,
+                region->extent.depth);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -12563,6 +12630,15 @@ vkCmdResolveImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
             (uint32_t)region->dstOffset.y > destination_height ||
             region->extent.height > destination_height -
                 (uint32_t)region->dstOffset.y) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdResolveImage bounds rejected index=%u "
+                "source=%ux%u offset=%d,%d destination=%ux%u offset=%d,%d "
+                "extent=%ux%u\n",
+                index, source_width, source_height,
+                region->srcOffset.x, region->srcOffset.y,
+                destination_width, destination_height,
+                region->dstOffset.x, region->dstOffset.y,
+                region->extent.width, region->extent.height);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
