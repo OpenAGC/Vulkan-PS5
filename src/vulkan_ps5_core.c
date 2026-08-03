@@ -8913,13 +8913,20 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
     }
     if (!native_require_complete_stream(command))
         return;
+    const char *prepare_step = "source buffer";
     VkResult prepare = native_prepare_buffer_range(command, source, 0u,
         source->size, kAgcResourceUsageCopySource);
-    if (prepare == VK_SUCCESS)
+    if (prepare == VK_SUCCESS) {
+        prepare_step = "destination image";
         prepare = native_transition_whole_image(command, destination,
             native_image_recorded_usage(command, destination),
             kAgcResourceUsageCopyDestination);
+    }
     if (prepare != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdCopyBufferToImage prepare failed step=%s "
+            "result=%d format=%u regions=%u\n",
+            prepare_step, prepare, destination->format, n);
         command->record_error = prepare;
         return;
     }
@@ -8938,6 +8945,22 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
             command->native_graphics_command_buffer, source->native_buffer,
             destination->native_image, 1u, &copy);
         if (result != AGC_OK) {
+            AgcDebugMessage message = AGC_DEBUG_MESSAGE_INIT;
+            const int32_t debug_result = agcGetLastDebugMessage(
+                vk_ps5_native_device(command->device), &message);
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdCopyBufferToImage native failure "
+                "region=%u result=0x%x format=%u buffer_offset=%llu "
+                "row_length=%u image_height=%u offset=%d,%d,%d "
+                "extent=%u,%u,%u%s%s\n",
+                region, (unsigned)result, destination->format,
+                (unsigned long long)r[region].bufferOffset,
+                r[region].bufferRowLength, r[region].bufferImageHeight,
+                r[region].imageOffset.x, r[region].imageOffset.y,
+                r[region].imageOffset.z, r[region].imageExtent.width,
+                r[region].imageExtent.height, r[region].imageExtent.depth,
+                debug_result == AGC_OK ? ": " : "",
+                debug_result == AGC_OK ? message.message : "");
             command->record_error = native_command_result(result);
             return;
         }
