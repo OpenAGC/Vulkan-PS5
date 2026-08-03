@@ -330,6 +330,12 @@ query-reduction shader over the opaque begin/end counters. Command regressions
 cover the required zero-count no-op, Eden's WAIT|64-bit copy plus its following
 transfer barrier, and rejection of an undersized stride. Host command,
 lifecycle, and validation tests pass, and the Prospero static library builds.
+The PID 176 Eden replay proved that the query-copy validation itself no longer
+rejects, but an unlabelled command immediately after its transfer barrier still
+latched `VK_ERROR_FEATURE_NOT_PRESENT`. Fill and occlusion reset/begin/end now
+record command labels and print exact native emission failures; successful
+query-copy recording is also logged. This diagnostic slice changes no accepted
+feature surface.
 
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own

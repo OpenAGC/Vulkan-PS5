@@ -9058,6 +9058,7 @@ vkCmdFillBuffer(VkCommandBuffer c, VkBuffer d, VkDeviceSize o, VkDeviceSize n,
                 uint32_t v) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
     VkPs5Buffer *destination = (VkPs5Buffer *)d;
+    debug_note_command(command, "vkCmdFillBuffer");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -9078,14 +9079,24 @@ vkCmdFillBuffer(VkCommandBuffer c, VkBuffer d, VkDeviceSize o, VkDeviceSize n,
     VkResult prepare = native_prepare_buffer_range(command, destination,
         o, size, kAgcResourceUsageCopyDestination);
     if (prepare != VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdFillBuffer preparation failed result=%d "
+            "offset=%llu size=%llu buffer_size=%llu\n", prepare,
+            (unsigned long long)o, (unsigned long long)size,
+            (unsigned long long)destination->size);
         command->record_error = prepare;
         return;
     }
     int32_t result = agcCmdFillBuffer(
         command->native_graphics_command_buffer,
         destination->native_buffer, o, size, v);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdFillBuffer native emission failed "
+            "result=0x%08x offset=%llu size=%llu\n", (unsigned)result,
+            (unsigned long long)o, (unsigned long long)size);
         command->record_error = native_command_result(result);
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageFlags d,
@@ -9388,6 +9399,7 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlags f) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBeginQuery");
     VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
         pool->type != VK_QUERY_TYPE_OCCLUSION || q >= pool->count ||
@@ -9404,6 +9416,10 @@ vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlag
         (uint64_t)q * pool->record_size,
         (f & VK_QUERY_CONTROL_PRECISE_BIT) != 0u);
     if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdBeginQuery native emission failed "
+            "result=0x%08x query=%u flags=0x%x\n",
+            (unsigned)result, q, f);
         command->record_error = native_command_result(result);
         return;
     }
@@ -9413,6 +9429,7 @@ vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlag
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdEndQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdEndQuery");
     VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
         command->active_query_pool != pool || command->active_query != q) {
@@ -9427,13 +9444,18 @@ vkCmdEndQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q) {
     int32_t result = agcCmdEndOcclusionQuery(
         command->native_graphics_command_buffer, pool->native_buffer,
         (uint64_t)q * pool->record_size);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdEndQuery native emission failed "
+            "result=0x%08x query=%u\n", (unsigned)result, q);
         command->record_error = native_command_result(result);
+    }
     command->active_query_pool = NULL;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdResetQueryPool(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdResetQueryPool");
     VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
     if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
         command->active_render_pass || f > pool->count || n > pool->count - f) {
@@ -9448,8 +9470,13 @@ vkCmdResetQueryPool(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n) {
     int32_t result = agcCmdResetOcclusionQueries(
         command->native_graphics_command_buffer, pool->native_buffer,
         (uint64_t)f * pool->record_size, n);
-    if (result != AGC_OK)
+    if (result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdResetQueryPool native emission failed "
+            "result=0x%08x first=%u count=%u\n",
+            (unsigned)result, f, n);
         command->record_error = native_command_result(result);
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdWriteTimestamp(VkCommandBuffer c, VkPipelineStageFlagBits s, VkQueryPool p,
@@ -9518,6 +9545,10 @@ vkCmdCopyQueryPoolResults(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t
         .stride = s,
         .flags = flags,
     };
+    fprintf(stderr,
+        "vulkan-ps5: query result copy recorded first=%u count=%u "
+        "offset=%llu stride=%llu flags=0x%x\n", f, n,
+        (unsigned long long)o, (unsigned long long)s, flags);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdExecuteCommands(VkCommandBuffer c, uint32_t n, const VkCommandBuffer *p) {
