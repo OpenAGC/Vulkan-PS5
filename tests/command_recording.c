@@ -1685,6 +1685,22 @@ int main(int argc, char **argv)
         .offset = 0u,
         .size = VK_WHOLE_SIZE,
     };
+    VkBufferMemoryBarrier fragmented_copy_barriers[2] = {
+        copy_barriers[0], copy_barriers[1]
+    };
+    fragmented_copy_barriers[0].size = 8u;
+    fragmented_copy_barriers[1].size = 8u;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         2u, fragmented_copy_barriers, 0u, NULL);
+    /* The 16-byte copy crosses the prepared 8-byte prefix and the original
+       committed tail on both buffers. Exact span walking must converge it. */
+    vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 1u,
+                    &buffer_copies[0]);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,

@@ -9074,14 +9074,22 @@ vkCmdCopyBuffer(VkCommandBuffer c, VkBuffer s, VkBuffer d, uint32_t n,
     if (!native_require_complete_stream(command))
         return;
     for (uint32_t region = 0u; region < n; ++region) {
-        VkResult prepare = native_prepare_buffer_range(command, source,
-            r[region].srcOffset, r[region].size,
+        VkResult prepare = native_prepare_fragmented_buffer_range(
+            command, source, r[region].srcOffset, r[region].size,
             kAgcResourceUsageCopySource);
         if (prepare == VK_SUCCESS)
-            prepare = native_prepare_buffer_range(command, destination,
-                r[region].dstOffset, r[region].size,
+            prepare = native_prepare_fragmented_buffer_range(
+                command, destination, r[region].dstOffset, r[region].size,
                 kAgcResourceUsageCopyDestination);
         if (prepare != VK_SUCCESS) {
+            fprintf(stderr,
+                "vulkan-ps5: copy buffer region=%u preparation failed "
+                "result=%d source_offset=%llu destination_offset=%llu "
+                "size=%llu\n",
+                region, prepare,
+                (unsigned long long)r[region].srcOffset,
+                (unsigned long long)r[region].dstOffset,
+                (unsigned long long)r[region].size);
             command->record_error = prepare;
             return;
         }
