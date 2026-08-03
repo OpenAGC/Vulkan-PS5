@@ -9499,8 +9499,13 @@ vkCmdWriteTimestamp(VkCommandBuffer c, VkPipelineStageFlagBits s, VkQueryPool p,
                     uint32_t q) {
     IGNORE(s); IGNORE(p); IGNORE(q);
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
-    if (command && command->state == VK_PS5_COMMAND_RECORDING)
+    debug_note_command(command, "vkCmdWriteTimestamp");
+    if (command && command->state == VK_PS5_COMMAND_RECORDING) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdWriteTimestamp unsupported stage=0x%x "
+            "query=%u\n", s, q);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyQueryPoolResults(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n,
@@ -11414,6 +11419,7 @@ vkCmdDraw(VkCommandBuffer c, uint32_t v, uint32_t i, uint32_t fv, uint32_t fi) {
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndexed(VkCommandBuffer c, uint32_t i, uint32_t n, uint32_t f,
                  int32_t v, uint32_t fi) {
+    debug_note_command((VkPs5CommandBuffer *)c, "vkCmdDrawIndexed");
     record_graphics_draw((VkPs5CommandBuffer *)c, i, n, f, v, fi, true);
 }
 
@@ -11565,11 +11571,17 @@ vkCmdDrawIndexedIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
     record_graphics_indirect((VkPs5CommandBuffer *)c, (VkPs5Buffer *)b,
         o, n, s, true);
 }
-static void reject_indirect_count(VkCommandBuffer c) {
+static void reject_indirect_count(VkCommandBuffer c, const char *name,
+                                  uint32_t max_count, uint32_t stride) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, name);
     if (command && command->state == VK_PS5_COMMAND_RECORDING &&
-        command->record_error == VK_SUCCESS)
+        command->record_error == VK_SUCCESS) {
+        fprintf(stderr,
+            "vulkan-ps5: %s unsupported max_count=%u stride=%u\n",
+            name, max_count, stride);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+    }
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndirectCount(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
@@ -11577,7 +11589,7 @@ vkCmdDrawIndirectCount(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
                        uint32_t max_count, uint32_t stride) {
     (void)b; (void)o; (void)count; (void)count_offset;
     (void)max_count; (void)stride;
-    reject_indirect_count(c);
+    reject_indirect_count(c, "vkCmdDrawIndirectCount", max_count, stride);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndexedIndirectCount(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
@@ -11585,7 +11597,8 @@ vkCmdDrawIndexedIndirectCount(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
                               uint32_t max_count, uint32_t stride) {
     (void)b; (void)o; (void)count; (void)count_offset;
     (void)max_count; (void)stride;
-    reject_indirect_count(c);
+    reject_indirect_count(c, "vkCmdDrawIndexedIndirectCount", max_count,
+                          stride);
 }
 
 static uint32_t native_mip_dimension(uint32_t dimension, uint32_t mip)

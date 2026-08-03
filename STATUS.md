@@ -341,6 +341,10 @@ query-copy or fill/query label appeared, while the final last-entry label was
 still `vkCmdPipelineBarrier`. The remaining silent barrier branches now print
 exact OpenAGC buffer-range or image-subresource state-query failures, including
 native result and resource range.
+PID 182 produced none of those diagnostics, proving the error is latched by an
+unlabelled command after the barrier. Timestamp, direct/indexed indirect-count,
+and indexed-draw entrypoints now update the last-command label; the unsupported
+timestamp and indirect-count paths also print their exact arguments.
 
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own
