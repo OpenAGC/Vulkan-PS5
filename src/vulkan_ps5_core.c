@@ -10748,12 +10748,31 @@ static VkResult native_bind_graphics_descriptors(
                                 value->buffer.offset));
                         return VK_ERROR_INITIALIZATION_FAILED;
                     }
+                    const uint32_t access =
+                        AGC_SHADER_DESCRIPTOR_ACCESS(mapping->array_size);
+                    const AgcResourceUsage required_usage =
+                        mapping->type ==
+                                OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
+                            ((access &
+                                  AGC_SHADER_DESCRIPTOR_ACCESS_WRITE_BIT) !=
+                                 0u ||
+                             access == 0u) ?
+                        kAgcResourceUsageShaderWrite :
+                        kAgcResourceUsageShaderRead;
                     usage = native_buffer_recorded_usage(command, buffer);
-                    if (usage != kAgcResourceUsageShaderRead &&
-                        !(mapping->type ==
-                              OPENAGC_PSBC_DESCRIPTOR_STORAGE_BUFFER &&
-                          usage == kAgcResourceUsageShaderWrite))
-                        return VK_SUCCESS;
+                    const VkResult prepare_result =
+                        native_prepare_buffer_range(command, buffer,
+                            value->buffer.offset, range, required_usage);
+                    if (prepare_result != VK_SUCCESS) {
+                        fprintf(stderr,
+                            "vulkan-ps5: draw descriptor buffer prepare "
+                            "failed set=%u binding=%u array=%u type=%u "
+                            "before=%u after=%u result=%d\n",
+                            mapping->set, mapping->binding, array,
+                            mapping->type, (unsigned)usage,
+                            (unsigned)required_usage, prepare_result);
+                        return prepare_result;
+                    }
                     write->buffer = buffer->native_buffer;
                     write->buffer_offset = value->buffer.offset;
                     write->buffer_range = range;

@@ -2246,6 +2246,13 @@ int main(int argc, char **argv)
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                          0u, 0u, NULL, 4u, native_graphics_barriers,
                          1u, &native_texture_barrier);
+    VkBufferMemoryBarrier descriptor_use_transition =
+        native_graphics_barriers[3];
+    descriptor_use_transition.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    descriptor_use_transition.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 1u,
+                         &descriptor_use_transition, 0u, NULL);
     assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       geometry_pipeline);
