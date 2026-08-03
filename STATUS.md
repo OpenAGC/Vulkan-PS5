@@ -350,6 +350,10 @@ unlabelled `-8` path; they now label entry and print pipeline, render-pass,
 argument-buffer, usage, offset, count, stride, and record-size validation.
 Successful barriers now leave a distinct `vkCmdPipelineBarrier-complete`
 label so a later command cannot be misattributed to barrier entry.
+PID 92 produced that completed-barrier label and no indirect-draw diagnostic,
+so the next silent `-8` candidate is render-pass begin attachment validation.
+`vkCmdBeginRenderPass` now labels entry and reports color/depth attachment
+index, native object, usage, layer, and initial-layout failures.
 
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own

@@ -12918,6 +12918,7 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
                      VkSubpassContents s) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdBeginRenderPass");
     if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
         command->record_error != VK_SUCCESS)
         return;
@@ -13030,6 +13031,10 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             render_pass->subpasses[0].color_attachments[slot];
         if (attachment_index == VK_ATTACHMENT_UNUSED ||
             attachment_index >= framebuffer->attachment_count) {
+            fprintf(stderr,
+                "vulkan-ps5: begin render pass color index rejected "
+                "slot=%u attachment=%u framebuffer_attachments=%u\n",
+                slot, attachment_index, framebuffer->attachment_count);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -13043,6 +13048,13 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             !(image->usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
             !native_usage_from_layout(
                 attachment->initialLayout, &declared_before)) {
+            fprintf(stderr,
+                "vulkan-ps5: begin render pass color attachment rejected "
+                "slot=%u attachment=%u image=%u native=%u layers=%u/%u "
+                "usage=0x%x layout=%u\n", slot, attachment_index,
+                image != NULL, image && image->native_image != NULL,
+                view ? view->layer_count : 0u, required_layers,
+                image ? image->usage : 0u, attachment->initialLayout);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -13073,6 +13085,10 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
         render_pass->subpasses[0].depth_stencil_attachment;
     if (depth_index != VK_ATTACHMENT_UNUSED) {
         if (depth_index >= framebuffer->attachment_count) {
+            fprintf(stderr,
+                "vulkan-ps5: begin render pass depth index rejected "
+                "attachment=%u framebuffer_attachments=%u\n",
+                depth_index, framebuffer->attachment_count);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -13095,6 +13111,13 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             (has_stencil && !stencil_aspect_layout(
                 render_pass->subpasses[0].stencil_layout,
                 &stencil_read_only))) {
+            fprintf(stderr,
+                "vulkan-ps5: begin render pass depth layout rejected "
+                "format=%u depth=%u stencil=%u depth_layout=%u "
+                "stencil_layout=%u\n", image ? image->format : 0u,
+                has_depth, has_stencil,
+                render_pass->subpasses[0].depth_layout,
+                render_pass->subpasses[0].stencil_layout);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -13117,6 +13140,16 @@ vkCmdBeginRenderPass(VkCommandBuffer c, const VkRenderPassBeginInfo *b,
             !native_usage_from_layout(
                 render_pass->stencil_initial_layouts[depth_index],
                 &declared_stencil_before)) {
+            fprintf(stderr,
+                "vulkan-ps5: begin render pass depth attachment rejected "
+                "attachment=%u image=%u native=%u depth_surface=%u "
+                "layers=%u/%u usage=0x%x initial=%u stencil_initial=%u\n",
+                depth_index, image != NULL,
+                image && image->native_image != NULL,
+                image ? image->is_depth_surface : 0u,
+                view ? view->layer_count : 0u, required_layers,
+                image ? image->usage : 0u, attachment->initialLayout,
+                render_pass->stencil_initial_layouts[depth_index]);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
