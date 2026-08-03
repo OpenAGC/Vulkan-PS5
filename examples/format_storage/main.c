@@ -14,6 +14,7 @@
 #define IMAGE_WIDTH 4u
 #define IMAGE_HEIGHT 4u
 #define FORMAT_COUNT 30u
+#define TOTAL_IMAGE_COUNT (FORMAT_COUNT + 1u)
 #define PIPELINE_COUNT 3u
 
 typedef enum NumericClass {
@@ -233,6 +234,95 @@ static VkResult create_test_image(VkPhysicalDevice physical, VkDevice device,
     return vkCreateImageView(device, &view_info, NULL, &test_image->view);
 }
 
+static VkResult create_extended_optimal_image(VkPhysicalDevice physical,
+    VkDevice device, TestImage *test_image)
+{
+    const VkFormat view_formats[] = {
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        VK_FORMAT_A8B8G8R8_SNORM_PACK32,
+    };
+    const VkImageFormatListCreateInfo format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = 2u,
+        .pViewFormats = view_formats,
+    };
+    const VkImageCreateInfo image_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = &format_list,
+        .flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+            VK_IMAGE_CREATE_EXTENDED_USAGE_BIT,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        .extent = {480u, 480u, 1u},
+        .mipLevels = 1u,
+        .arrayLayers = 1u,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+            VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+    };
+    const VkPhysicalDeviceImageFormatInfo2 format_info = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+        .pNext = &format_list,
+        .format = image_info.format,
+        .type = image_info.imageType,
+        .tiling = image_info.tiling,
+        .usage = image_info.usage,
+        .flags = image_info.flags,
+    };
+    VkImageFormatProperties2 properties = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+    };
+    VkResult result = vkGetPhysicalDeviceImageFormatProperties2(physical,
+        &format_info, &properties);
+    if (result != VK_SUCCESS)
+        return result;
+    result = vkCreateImage(device, &image_info, NULL, &test_image->image);
+    if (result != VK_SUCCESS)
+        return result;
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, test_image->image, &requirements);
+    uint32_t memory_type = UINT32_MAX;
+    for (uint32_t i = 0u; i < 32u; ++i) {
+        if (requirements.memoryTypeBits & (1u << i)) {
+            memory_type = i;
+            break;
+        }
+    }
+    if (memory_type == UINT32_MAX)
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    const VkMemoryAllocateInfo allocation = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = memory_type,
+    };
+    result = vkAllocateMemory(device, &allocation, NULL, &test_image->memory);
+    if (result == VK_SUCCESS)
+        result = vkBindImageMemory(device, test_image->image,
+            test_image->memory, 0u);
+    const VkImageViewUsageCreateInfo view_usage = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT,
+    };
+    const VkImageViewCreateInfo view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = &view_usage,
+        .image = test_image->image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_A8B8G8R8_SNORM_PACK32,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+        },
+    };
+    if (result == VK_SUCCESS)
+        result = vkCreateImageView(device, &view_info, NULL,
+            &test_image->view);
+    return result;
+}
+
 static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     const ShaderCode *code, VkShaderModule *module, VkPipeline *pipeline)
 {
@@ -272,6 +362,7 @@ static int run_probe(void)
     VkCommandPool command_pool = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
     TestImage images[FORMAT_COUNT] = {0};
+    TestImage extended_image = {0};
 
 #define VK_TRY(expression) do { \
     result = (expression); \
@@ -331,6 +422,8 @@ static int run_probe(void)
             .size = VK_WHOLE_SIZE,
         };
     }
+    VK_TRY(create_extended_optimal_image(physical, device,
+        &extended_image));
     VK_TRY(vkFlushMappedMemoryRanges(device, FORMAT_COUNT, memory_ranges));
 
     const VkDescriptorSetLayoutBinding binding = {
@@ -374,30 +467,30 @@ static int run_probe(void)
             &modules[i], &pipelines[i]));
 
     const VkDescriptorPoolSize pool_size = {
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, FORMAT_COUNT,
+        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, TOTAL_IMAGE_COUNT,
     };
     const VkDescriptorPoolCreateInfo pool_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        .maxSets = FORMAT_COUNT,
+        .maxSets = TOTAL_IMAGE_COUNT,
         .poolSizeCount = 1u,
         .pPoolSizes = &pool_size,
     };
     VK_TRY(vkCreateDescriptorPool(device, &pool_info, NULL,
         &descriptor_pool));
-    VkDescriptorSetLayout set_layouts[FORMAT_COUNT];
-    for (uint32_t i = 0u; i < FORMAT_COUNT; ++i)
+    VkDescriptorSetLayout set_layouts[TOTAL_IMAGE_COUNT];
+    for (uint32_t i = 0u; i < TOTAL_IMAGE_COUNT; ++i)
         set_layouts[i] = set_layout;
     const VkDescriptorSetAllocateInfo set_allocate_info = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .descriptorPool = descriptor_pool,
-        .descriptorSetCount = FORMAT_COUNT,
+        .descriptorSetCount = TOTAL_IMAGE_COUNT,
         .pSetLayouts = set_layouts,
     };
-    VkDescriptorSet descriptor_sets[FORMAT_COUNT];
+    VkDescriptorSet descriptor_sets[TOTAL_IMAGE_COUNT];
     VK_TRY(vkAllocateDescriptorSets(device, &set_allocate_info,
         descriptor_sets));
-    VkDescriptorImageInfo descriptor_images[FORMAT_COUNT];
-    VkWriteDescriptorSet descriptor_writes[FORMAT_COUNT];
+    VkDescriptorImageInfo descriptor_images[TOTAL_IMAGE_COUNT];
+    VkWriteDescriptorSet descriptor_writes[TOTAL_IMAGE_COUNT];
     for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         descriptor_images[i] = (VkDescriptorImageInfo) {
             .imageView = images[i].view,
@@ -412,7 +505,20 @@ static int run_probe(void)
             .pImageInfo = &descriptor_images[i],
         };
     }
-    vkUpdateDescriptorSets(device, FORMAT_COUNT, descriptor_writes, 0u, NULL);
+    descriptor_images[FORMAT_COUNT] = (VkDescriptorImageInfo) {
+        .imageView = extended_image.view,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+    };
+    descriptor_writes[FORMAT_COUNT] = (VkWriteDescriptorSet) {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = descriptor_sets[FORMAT_COUNT],
+        .dstBinding = 0u,
+        .descriptorCount = 1u,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        .pImageInfo = &descriptor_images[FORMAT_COUNT],
+    };
+    vkUpdateDescriptorSets(device, TOTAL_IMAGE_COUNT, descriptor_writes,
+        0u, NULL);
 
     const VkCommandPoolCreateInfo command_pool_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -433,7 +539,7 @@ static int run_probe(void)
     };
     VK_TRY(vkBeginCommandBuffer(command, &begin_info));
 
-    VkImageMemoryBarrier to_shader[FORMAT_COUNT];
+    VkImageMemoryBarrier to_shader[TOTAL_IMAGE_COUNT];
     VkImageMemoryBarrier to_host[FORMAT_COUNT];
     const VkImageSubresourceRange range = {
         VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
@@ -467,9 +573,19 @@ static int run_probe(void)
             .subresourceRange = range,
         };
     }
+    to_shader[FORMAT_COUNT] = (VkImageMemoryBarrier) {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = extended_image.image,
+        .subresourceRange = range,
+    };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u, 0u, NULL, 0u, NULL,
-        FORMAT_COUNT, to_shader);
+        TOTAL_IMAGE_COUNT, to_shader);
     for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
             pipelines[format_cases[i].numeric_class]);
@@ -480,6 +596,13 @@ static int run_probe(void)
             &format_cases[i].value);
         vkCmdDispatch(command, 1u, 1u, 1u);
     }
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+        pipelines[NUMERIC_FLOAT]);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+        pipeline_layout, 0u, 1u, &descriptor_sets[FORMAT_COUNT], 0u, NULL);
+    vkCmdPushConstants(command, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT,
+        0u, sizeof(VkClearColorValue), &format_cases[8].value);
+    vkCmdDispatch(command, 1u, 1u, 1u);
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_HOST_BIT, 0u, 0u, NULL, 0u, NULL,
         FORMAT_COUNT, to_host);
@@ -530,6 +653,8 @@ static int run_probe(void)
     }
     printf("format_storage: PASS formats=%u pixels=%u exact-bits\n",
         FORMAT_COUNT, checked);
+    puts("format_storage: EXTENDED_OPTIMAL PASS format=a8b8g8r8_unorm "
+         "view=a8b8g8r8_snorm extent=480x480 usage=0x1f flags=0x108");
 #else
     puts("format_storage: PASS command recording");
 #endif
@@ -563,6 +688,12 @@ cleanup:
             if (images[i].memory != VK_NULL_HANDLE)
                 vkFreeMemory(device, images[i].memory, NULL);
         }
+        if (extended_image.view != VK_NULL_HANDLE)
+            vkDestroyImageView(device, extended_image.view, NULL);
+        if (extended_image.image != VK_NULL_HANDLE)
+            vkDestroyImage(device, extended_image.image, NULL);
+        if (extended_image.memory != VK_NULL_HANDLE)
+            vkFreeMemory(device, extended_image.memory, NULL);
         vkDestroyDevice(device, NULL);
     }
     if (instance != VK_NULL_HANDLE)
