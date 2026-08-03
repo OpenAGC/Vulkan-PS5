@@ -2363,7 +2363,7 @@ const VkSubpassEndInfo subpass_end = {
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .buffer = vertex_buffer,
         .offset = 2u * sizeof(float),
-        .size = 6u * sizeof(float),
+        .size = 2u * sizeof(float),
     };
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0u, 0u, NULL, 1u,
@@ -2371,6 +2371,8 @@ const VkSubpassEndInfo subpass_end = {
     vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     const VkDeviceSize vertex_offset = 2u * sizeof(float);
+    /* The bound tail now contains one explicitly prepared span followed by a
+       HostWrite span. Binding must walk and prepare both exact spans. */
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     const VkViewport dynamic_viewports[] = {
         {0, 0, 128, 256, 0, 1},

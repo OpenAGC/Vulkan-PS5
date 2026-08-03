@@ -7691,6 +7691,45 @@ static VkResult native_prepare_buffer_range(VkPs5CommandBuffer *command,
     return VK_SUCCESS;
 }
 
+static VkResult native_prepare_fragmented_buffer_range(
+    VkPs5CommandBuffer *command, VkPs5Buffer *buffer, uint64_t offset,
+    uint64_t size, AgcResourceUsage after)
+{
+    uint64_t position = offset;
+    uint64_t end;
+
+    if (!command || !buffer || !buffer->native_buffer || !size ||
+        offset > buffer->size || size > buffer->size - offset)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    end = offset + size;
+    while (position < end) {
+        AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
+        uint64_t span_size = 0u;
+        int32_t result = agcGetCommandBufferRangeStateSpan(
+            command->native_graphics_command_buffer, buffer->native_buffer,
+            position, end - position, &state, &span_size);
+        if (result != AGC_OK || span_size == 0u || span_size > end - position) {
+            fprintf(stderr,
+                "vulkan-ps5: buffer state span query failed "
+                "result=0x%08x offset=%llu size=%llu buffer_size=%llu "
+                "span=%llu after=%u/%u\n",
+                (unsigned)result, (unsigned long long)position,
+                (unsigned long long)(end - position),
+                (unsigned long long)buffer->size,
+                (unsigned long long)span_size, after,
+                native_owner_for_usage(after));
+            return result != AGC_OK ? native_command_result(result) :
+                VK_ERROR_INITIALIZATION_FAILED;
+        }
+        VkResult prepare = native_prepare_buffer_range(command, buffer,
+            position, span_size, after);
+        if (prepare != VK_SUCCESS)
+            return prepare;
+        position += span_size;
+    }
+    return VK_SUCCESS;
+}
+
 static AgcResourceUsage native_image_recorded_usage(
     const VkPs5CommandBuffer *command, const VkPs5Image *image)
 {
@@ -11801,8 +11840,8 @@ static VkResult native_bind_graphics_vertex_buffers(
         }
         if (native_buffer_recorded_usage(command, buffer) !=
                 kAgcResourceUsageShaderRead) {
-            VkResult prepare = native_prepare_buffer_range(command, buffer,
-                offset, buffer->size - offset,
+            VkResult prepare = native_prepare_fragmented_buffer_range(
+                command, buffer, offset, buffer->size - offset,
                 kAgcResourceUsageShaderRead);
             if (prepare != VK_SUCCESS) {
                 fprintf(stderr,
