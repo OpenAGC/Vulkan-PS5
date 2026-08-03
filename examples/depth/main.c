@@ -221,7 +221,7 @@ int main(void)
     const VkImageViewCreateInfo depth_view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = depth_image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
         .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
         .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT |
             VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1},
