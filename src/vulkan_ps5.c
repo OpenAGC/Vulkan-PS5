@@ -108,12 +108,13 @@ struct VkPs5Device {
     VkBool32 teardown_started;
 };
 
+#if !defined(__PROSPERO__)
 static atomic_uint vk_ps5_debug_device_teardown_failure_stage;
-
 void vk_ps5_debug_set_device_teardown_failure_stage(uint32_t stage) {
     atomic_store_explicit(&vk_ps5_debug_device_teardown_failure_stage, stage,
                           memory_order_release);
 }
+#endif
 
 struct VkPs5Memory {
     AgcDevice device;
@@ -2318,12 +2319,14 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
         }
         device->queue.present_ready_fence = NULL;
     }
+#if !defined(__PROSPERO__)
     if (atomic_exchange_explicit(&vk_ps5_debug_device_teardown_failure_stage,
-                                 0u, memory_order_acq_rel) == 1u) {
+            0u, memory_order_acq_rel) == 1u) {
         fprintf(stderr,
             "vulkan-ps5: injected native device teardown failure after fence\n");
         return;
     }
+#endif
     if (device->native_compute_queue) {
         native_result = agcDestroyQueue(device->native_compute_queue);
         if (native_result != AGC_OK) {
