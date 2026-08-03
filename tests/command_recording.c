@@ -2361,7 +2361,7 @@ vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
     vkCmdBindVertexBuffers(command, 0, 1, &vertex_buffer, &vertex_offset);
     const VkViewport dynamic_viewports[] = {
         {0, 0, 128, 256, 0, 1},
-        {128, 0, 128, 256, 0.25f, 0.75f},
+        {128, 256, 128, -256, 0.25f, 0.75f},
     };
     const VkRect2D dynamic_scissors[] = {
         /* Preserve the visible portion of a signed rectangle. */

@@ -2140,10 +2140,12 @@ static bool translate_viewport(
 {
     if (!source || !destination ||
         !(source->width > 0.0f && source->width <= 16384.0f) ||
-        !(source->height > 0.0f && source->height <= 16384.0f) ||
+        source->height == 0.0f || source->height < -16384.0f ||
+        source->height > 16384.0f ||
         !(source->x >= -32768.0f &&
           source->x + source->width <= 32767.0f) ||
-        !(source->y >= -32768.0f &&
+        !(source->y >= -32768.0f && source->y <= 32767.0f &&
+          source->y + source->height >= -32768.0f &&
           source->y + source->height <= 32767.0f) ||
         !(source->minDepth >= 0.0f && source->minDepth <= 1.0f) ||
         !(source->maxDepth >= 0.0f && source->maxDepth <= 1.0f) ||
@@ -10811,6 +10813,12 @@ vkCmdSetViewport(VkCommandBuffer c, uint32_t f, uint32_t n, const VkViewport *v)
     AgcGfx1013Viewport translated[VK_PS5_MAX_VIEWPORTS];
     for (uint32_t i = 0u; i < n; ++i) {
         if (!translate_viewport(&v[i], &translated[i])) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdSetViewport rejected index=%u "
+                "x=%g y=%g width=%g height=%g depth=%g,%g\n",
+                f + i, (double)v[i].x, (double)v[i].y,
+                (double)v[i].width, (double)v[i].height,
+                (double)v[i].minDepth, (double)v[i].maxDepth);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
