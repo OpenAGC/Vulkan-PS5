@@ -1290,6 +1290,17 @@ int main(int argc, char **argv)
                                      &graphics_pipeline) == VK_SUCCESS);
     assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
+    VkVertexInputBindingDescription zero_stride_binding = vertex_binding;
+    zero_stride_binding.stride = 0u;
+    VkPipelineVertexInputStateCreateInfo zero_stride_vertex_input =
+        vertex_input;
+    zero_stride_vertex_input.pVertexBindingDescriptions =
+        &zero_stride_binding;
+    VkGraphicsPipelineCreateInfo zero_stride_info = graphics_info;
+    zero_stride_info.pVertexInputState = &zero_stride_vertex_input;
+    VkPipeline zero_stride_pipeline;
+    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
+        &zero_stride_info, NULL, &zero_stride_pipeline) == VK_SUCCESS);
     const VkDynamicState zink_core_dynamic_states[] = {
         VK_DYNAMIC_STATE_DEPTH_BIAS,
         VK_DYNAMIC_STATE_BLEND_CONSTANTS,
@@ -2776,6 +2787,7 @@ vkCmdEndRenderPass2(command, &subpass_end);
     vkDestroyPipeline(device, unused_constant_pipeline, NULL);
     vkDestroyPipeline(device, zink_core_dynamic_pipeline, NULL);
     vkDestroyPipeline(device, graphics_pipeline, NULL);
+    vkDestroyPipeline(device, zero_stride_pipeline, NULL);
     vkDestroyPipeline(device, dynamic_rendering_pipeline, NULL);
     vkDestroyPipeline(device, color_only_dynamic_pipeline, NULL);
     vkDestroyFramebuffer(device, imageless_framebuffer, NULL);

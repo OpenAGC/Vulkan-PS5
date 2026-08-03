@@ -4938,7 +4938,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (binding->binding >= VK_PS5_MAX_VERTEX_BINDINGS ||
                 (binding->inputRate != VK_VERTEX_INPUT_RATE_VERTEX &&
                  binding->inputRate != VK_VERTEX_INPUT_RATE_INSTANCE) ||
-                binding->stride == 0u || binding->stride > 2048u ||
+                binding->stride > 2048u ||
                 (vertex_binding_mask & (1u << binding->binding)))
                 return graphics_pipeline_unsupported(
                     "vertex binding index, rate, stride, or duplicate");
