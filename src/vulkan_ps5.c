@@ -2143,10 +2143,6 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         device->has_allocator = VK_TRUE;
     }
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
-    /* The current OpenAGC ABI qualifies one fixed address32 range. Keep the
-     * selected value on the device so a future OpenAGC device query replaces
-     * this initialization without altering shader compilation. */
-    device->address32_hi = AGC_GFX1013_ADDRESS32_HIGH;
     device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
     device->null_descriptor = null_descriptor_requested(pCreateInfo);
     device->depth_clip_enable = depth_clip_enable_requested(pCreateInfo);
@@ -2160,6 +2156,9 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     native_device_desc.required_capability_bits = AGC_RUNTIME_CAP_BASELINE;
     int32_t native_result = agcCreateDevice(
         &native_device_desc, &device->native_device);
+    if (native_result == AGC_OK)
+        native_result = agcGetDeviceAddress32High(
+            device->native_device, &device->address32_hi);
     if (native_result == AGC_OK) {
         AgcDebugCallbackDesc debug_desc = AGC_DEBUG_CALLBACK_DESC_INIT;
         debug_desc.severity_mask = AGC_DEBUG_MESSAGE_SEVERITY_ERROR_BIT;
