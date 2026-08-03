@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define VK_PS5_DCB_SIZE (64u * 1024u)
+#define VK_PS5_DCB_SIZE (256u * 1024u)
 #define VK_PS5_PRESENT_TIMEOUT_US 2000000u
 #define VK_PS5_IDLE_TIMEOUT_NS UINT64_C(2000000000)
 

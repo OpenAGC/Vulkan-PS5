@@ -1696,6 +1696,16 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    /* A 576-row guest upload needs roughly 4,032 native dwords by itself and
+     * can arrive late in a busy command buffer.  Keep an aggregate command
+     * stream above the old 64-KiB DCB budget as a capacity regression. */
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    for (uint32_t copy_index = 0u; copy_index < 3000u; ++copy_index)
+        vkCmdCopyBuffer(command, indirect_buffer, output_buffer, 1u,
+                        &buffer_copies[0]);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     const VkMemoryBarrier eden_global_transfer_barrier = {
         .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
