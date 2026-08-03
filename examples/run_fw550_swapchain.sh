@@ -36,6 +36,7 @@ expected_sidecar_sha256=${VULKAN_PS5_QUALIFICATION_SIDECAR_EXPECTED_SHA256:-}
 asset=${VULKAN_PS5_QUALIFICATION_ASSET:-}
 asset_remote_name=${VULKAN_PS5_QUALIFICATION_ASSET_REMOTE_NAME:-}
 expected_asset_sha256=${VULKAN_PS5_QUALIFICATION_ASSET_EXPECTED_SHA256:-}
+forbidden_fixed_va_sha256=b3122a9a6137a99985651f84a424577139ad1676322650fa1c972957d2a8d2a1
 
 if [ ! -f "$elf" ]; then
     echo "missing Prospero sample: $elf" >&2
@@ -148,6 +149,14 @@ verify_local_sha256() {
     fi
 }
 
+reject_forbidden_qualification_elf() {
+    actual=$(shasum -a 256 "$elf" | awk '{print $1}')
+    if [ "$actual" = "$forbidden_fixed_va_sha256" ]; then
+        echo "refusing rejected fixed-address ELF: sha256=$actual" >&2
+        return 1
+    fi
+}
+
 verify_remote_sha256() {
     remote_url=$1
     expected=$2
@@ -167,6 +176,7 @@ verify_remote_sha256() {
     fi
 }
 
+reject_forbidden_qualification_elf
 verify_local_sha256 "$elf" "$expected_sha256" 'swapchain ELF'
 verify_local_sha256 "$cleanup_elf" "$expected_cleanup_sha256" \
     'cleanup prerequisite'

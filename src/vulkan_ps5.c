@@ -82,6 +82,7 @@ struct VkPs5Device {
     VkBool32 has_allocator;
     VkPs5PhysicalDevice *physical_device;
     AgcDevice native_device;
+    uint32_t address32_hi;
     AgcQueue native_graphics_queue;
     AgcQueue native_compute_queue;
     VkPs5Queue queue;
@@ -781,6 +782,11 @@ uint64_t vk_ps5_memory_gpu_address(
 AgcDevice vk_ps5_native_device(VkDevice device_handle) {
     VkPs5Device *device = (VkPs5Device *)device_handle;
     return device ? device->native_device : NULL;
+}
+
+uint32_t vk_ps5_device_address32_hi(VkDevice device_handle) {
+    const VkPs5Device *device = (const VkPs5Device *)device_handle;
+    return device ? device->address32_hi : 0u;
 }
 
 AgcMemory vk_ps5_native_memory(VkDeviceMemory memory_handle) {
@@ -2137,6 +2143,10 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
         device->has_allocator = VK_TRUE;
     }
     device->physical_device = (VkPs5PhysicalDevice *)physicalDevice;
+    /* The current OpenAGC ABI qualifies one fixed address32 range. Keep the
+     * selected value on the device so a future OpenAGC device query replaces
+     * this initialization without altering shader compilation. */
+    device->address32_hi = AGC_GFX1013_ADDRESS32_HIGH;
     device->robust_buffer_access = robust_buffer_access_requested(pCreateInfo);
     device->null_descriptor = null_descriptor_requested(pCreateInfo);
     device->depth_clip_enable = depth_clip_enable_requested(pCreateInfo);

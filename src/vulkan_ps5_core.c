@@ -3770,7 +3770,8 @@ static VkResult translate_specialization(const VkSpecializationInfo *source,
     return VK_SUCCESS;
 }
 
-static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
+static VkResult compile_stage(VkDevice device,
+                              const VkPipelineShaderStageCreateInfo *stage,
                               OpenAgcPsbcStage psbc_stage,
                               const VkPipelineShaderStageCreateInfo *pre_stage,
                               OpenAgcPsbcStage psbc_pre_stage,
@@ -3788,6 +3789,9 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
     if (!stage || stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
         !stage->module || !stage->pName)
         return VK_ERROR_INITIALIZATION_FAILED;
+    const uint32_t address32_hi = vk_ps5_device_address32_hi(device);
+    if (address32_hi == 0u)
+        return VK_ERROR_INCOMPATIBLE_DRIVER;
     if (pre_stage &&
         (pre_stage->sType != VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO ||
          !pre_stage->module || !pre_stage->pName))
@@ -3816,6 +3820,7 @@ static VkResult compile_stage(const VkPipelineShaderStageCreateInfo *stage,
     if (result != VK_SUCCESS) return result;
     const OpenAgcPsbcCompileInfo info = {
         .api_version = OPENAGC_PSBC_API_VERSION,
+        .address32_hi = address32_hi,
         .stage = psbc_stage,
         .spirv = module->code,
         .spirv_size = module->code_size,
@@ -3961,7 +3966,7 @@ vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
         VkPs5Pipeline *pipeline = alloc_object(device, pAllocator, sizeof(*pipeline),
                                                 _Alignof(VkPs5Pipeline));
         if (!pipeline) return VK_ERROR_OUT_OF_HOST_MEMORY;
-        VkResult result = compile_stage(&create->stage, OPENAGC_PSBC_STAGE_COMPUTE,
+        VkResult result = compile_stage(device, &create->stage, OPENAGC_PSBC_STAGE_COMPUTE,
                                         NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                         NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                         &context, &pipeline->stages[0]);
@@ -5154,7 +5159,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         if (tess_control) {
             context.enable_ngg = false;
             context.wave32 = true;
-            result = compile_stage(tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
+            result = compile_stage(device, tess_control, OPENAGC_PSBC_STAGE_TESS_CONTROL,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    tess_evaluation,
                                    OPENAGC_PSBC_STAGE_TESS_EVALUATION,
@@ -5166,7 +5171,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (result == VK_SUCCESS) {
                 context.enable_ngg = true;
                 context.wave32 = true;
-                result = compile_stage(
+                result = compile_stage(device,
                     geometry ? geometry : tess_evaluation,
                     geometry ? OPENAGC_PSBC_STAGE_GEOMETRY :
                                OPENAGC_PSBC_STAGE_TESS_EVALUATION,
@@ -5184,7 +5189,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         } else if (geometry) {
             context.enable_ngg = true;
             context.wave32 = true;
-            result = compile_stage(geometry, OPENAGC_PSBC_STAGE_GEOMETRY,
+            result = compile_stage(device, geometry, OPENAGC_PSBC_STAGE_GEOMETRY,
                                    vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
@@ -5195,7 +5200,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         } else {
             context.enable_ngg = true;
             context.wave32 = true;
-            result = compile_stage(vertex, OPENAGC_PSBC_STAGE_VERTEX,
+            result = compile_stage(device, vertex, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);
@@ -5206,7 +5211,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         }
         if (result == VK_SUCCESS) {
             context.enable_ngg = false;
-            result = compile_stage(fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
+            result = compile_stage(device, fragment, OPENAGC_PSBC_STAGE_FRAGMENT,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    NULL, OPENAGC_PSBC_STAGE_VERTEX,
                                    &context, &pipeline->stages[compiled]);

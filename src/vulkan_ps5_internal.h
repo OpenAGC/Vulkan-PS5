@@ -35,6 +35,7 @@ VkDevice vk_ps5_queue_device(VkQueue queue);
 VkDeviceSize vk_ps5_memory_size(VkDeviceMemory memory);
 uint64_t vk_ps5_memory_gpu_address(VkDeviceMemory memory, VkDeviceSize offset);
 AgcDevice vk_ps5_native_device(VkDevice device);
+uint32_t vk_ps5_device_address32_hi(VkDevice device);
 AgcMemory vk_ps5_native_memory(VkDeviceMemory memory);
 uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory);
 typedef enum VkPs5NativeObjectType {
