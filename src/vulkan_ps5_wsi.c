@@ -14,14 +14,6 @@
 #define VK_PS5_SWAPCHAIN_IMAGE_COUNT 3u
 #define VK_PS5_PRESENT_PROGRESS_INTERVAL UINT64_C(100)
 
-#if defined(__PROSPERO__)
-static bool trace_qualification_ordinal(unsigned int ordinal) {
-    if (ordinal < 16u) return true;
-    const unsigned int completed = ordinal + 1u;
-    return completed != 0u && (completed & (completed - 1u)) == 0u;
-}
-#endif
-
 typedef struct VkPs5Surface {
     VkInstance instance;
     atomic_flag lock;
@@ -538,15 +530,6 @@ vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain_handle,
 static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
                                    VkSemaphore semaphore, VkFence fence,
                                    uint32_t *image_index) {
-#if defined(__PROSPERO__)
-    static atomic_uint acquire_diagnostics = ATOMIC_VAR_INIT(0u);
-    const unsigned int diagnostic =
-        atomic_fetch_add(&acquire_diagnostics, 1u);
-    if (trace_qualification_ordinal(diagnostic))
-        fprintf(stderr,
-            "vulkan-ps5: acquire checkpoint %u entry timeout=%llu\n",
-            diagnostic, (unsigned long long)timeout);
-#endif
     if (!swapchain || !image_index || (!semaphore && !fence))
         return VK_ERROR_INITIALIZATION_FAILED;
     struct timespec deadline = {0};
@@ -577,13 +560,6 @@ static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
                 else
                     swapchain->acquired[index] = false;
                 (void)pthread_mutex_unlock(&swapchain->lock);
-#if defined(__PROSPERO__)
-                if (trace_qualification_ordinal(diagnostic))
-                    fprintf(stderr,
-                        "vulkan-ps5: acquire checkpoint %u complete "
-                        "index=%u result=%d\n",
-                        diagnostic, index, result);
-#endif
                 return result;
             }
         }
@@ -629,16 +605,6 @@ vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR *pAcquir
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
-#if defined(__PROSPERO__)
-    static atomic_uint present_diagnostics = ATOMIC_VAR_INIT(0u);
-    const unsigned int diagnostic =
-        atomic_fetch_add(&present_diagnostics, 1u);
-    if (trace_qualification_ordinal(diagnostic))
-        fprintf(stderr,
-            "vulkan-ps5: present checkpoint %u entry swapchains=%u waits=%u\n",
-            diagnostic, pPresentInfo ? pPresentInfo->swapchainCount : 0u,
-            pPresentInfo ? pPresentInfo->waitSemaphoreCount : 0u);
-#endif
     if (!queue || !pPresentInfo ||
         pPresentInfo->sType != VK_STRUCTURE_TYPE_PRESENT_INFO_KHR ||
         (pPresentInfo->swapchainCount &&
@@ -676,12 +642,6 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
     }
     VkResult result = vk_ps5_consume_semaphores(
         pPresentInfo->waitSemaphoreCount, pPresentInfo->pWaitSemaphores);
-#if defined(__PROSPERO__)
-    if (trace_qualification_ordinal(diagnostic))
-        fprintf(stderr,
-            "vulkan-ps5: present checkpoint %u semaphore result=%d\n",
-            diagnostic, result);
-#endif
     if (result != VK_SUCCESS) return result;
 
     VkResult overall = VK_SUCCESS;
@@ -709,24 +669,9 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
             } else if (!swapchain->acquired[index]) {
                 item_result = VK_ERROR_INITIALIZATION_FAILED;
             } else {
-#if defined(__PROSPERO__)
-                if (trace_qualification_ordinal(diagnostic))
-                    fprintf(stderr,
-                        "vulkan-ps5: present checkpoint %u native call "
-                        "index=%u frame=%llu\n",
-                        diagnostic, index, (unsigned long long)frame_id);
-#endif
                 item_result = vk_ps5_queue_present_native(queue,
                     swapchain->present_chain, index, frame_id,
                     (uint64_t)VK_PS5_PRESENT_TIMEOUT_US * UINT64_C(1000));
-#if defined(__PROSPERO__)
-                if (trace_qualification_ordinal(diagnostic))
-                    fprintf(stderr,
-                        "vulkan-ps5: present checkpoint %u native result=%d "
-                        "index=%u frame=%llu\n",
-                        diagnostic, item_result, index,
-                        (unsigned long long)frame_id);
-#endif
             }
             if (item_result == VK_SUCCESS) {
                 swapchain->acquired[index] = false;
@@ -736,10 +681,10 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
             (void)pthread_mutex_unlock(&swapchain->lock);
         }
 #if defined(__PROSPERO__)
-        /* Detailed first-eight output remains above.  This sparse progress
-         * proof is counted only after a native success is committed while the
-         * swapchain lock is held, so failed native attempts cannot advance it. */
-        if (successful_present_count && diagnostic >= 8u &&
+        /* This sparse progress proof is counted only after a native success
+         * is committed while the swapchain lock is held, so failed native
+         * attempts cannot advance it. */
+        if (successful_present_count &&
             successful_present_count % VK_PS5_PRESENT_PROGRESS_INTERVAL == 0u) {
             if (successful_present_count == 6u *
                                            VK_PS5_PRESENT_PROGRESS_INTERVAL) {
@@ -758,6 +703,12 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
         }
 #endif
 item_done:
+        if (item_result < VK_SUCCESS) {
+            fprintf(stderr,
+                "vulkan-ps5: queue present failed: result=%d index=%u "
+                "frame=%llu\n",
+                item_result, index, (unsigned long long)frame_id);
+        }
         if (pPresentInfo->pResults) pPresentInfo->pResults[i] = item_result;
         if (overall == VK_SUCCESS && item_result != VK_SUCCESS)
             overall = item_result;

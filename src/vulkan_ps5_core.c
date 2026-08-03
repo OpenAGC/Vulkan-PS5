@@ -1121,15 +1121,6 @@ vkEnumerateDeviceLayerProperties(VkPhysicalDevice physicalDevice, uint32_t *pPro
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
               VkFence fence_handle) {
-#if defined(__PROSPERO__)
-    static atomic_uint submit_diagnostics = ATOMIC_VAR_INIT(0u);
-    const unsigned int submit_diagnostic =
-        atomic_fetch_add(&submit_diagnostics, 1u);
-    if (submit_diagnostic < 8u)
-        fprintf(stderr,
-            "vulkan-ps5: submit checkpoint %u entry submits=%u\n",
-            submit_diagnostic, submitCount);
-#endif
     if (!queue || (submitCount && !pSubmits)) return VK_ERROR_INITIALIZATION_FAILED;
     for (uint32_t i = 0; i < submitCount; ++i) {
         if (pSubmits[i].sType != VK_STRUCTURE_TYPE_SUBMIT_INFO)
@@ -1203,22 +1194,8 @@ vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
             }
             AgcCommandBuffer native_command =
                 command->native_graphics_command_buffer;
-#if defined(__PROSPERO__)
-            if (submit_diagnostic < 8u)
-                fprintf(stderr,
-                    "vulkan-ps5: submit checkpoint %u native-begin "
-                    "draws=%u dispatches=%u\n",
-                    submit_diagnostic, command->native_draw_count,
-                    command->native_dispatch_count);
-#endif
             result = vk_ps5_queue_submit_native(
                 queue, 1u, &native_command);
-#if defined(__PROSPERO__)
-            if (submit_diagnostic < 8u)
-                fprintf(stderr,
-                    "vulkan-ps5: submit checkpoint %u native-end result=%d\n",
-                    submit_diagnostic, result);
-#endif
             if (result == VK_SUCCESS)
                 native_commit_resource_states(command);
             command->state = VK_PS5_COMMAND_EXECUTABLE;
@@ -2945,16 +2922,6 @@ command->requires_native_stream = VK_FALSE;
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)commandBuffer;
-#if defined(__PROSPERO__)
-    static atomic_uint end_diagnostics = ATOMIC_VAR_INIT(0u);
-    const unsigned int end_diagnostic =
-        atomic_fetch_add(&end_diagnostics, 1u);
-    if (end_diagnostic < 8u)
-        fprintf(stderr,
-            "vulkan-ps5: end checkpoint %u entry draws=%u dispatches=%u\n",
-            end_diagnostic, command ? command->native_draw_count : 0u,
-            command ? command->native_dispatch_count : 0u);
-#endif
     if (!command || command->state != VK_PS5_COMMAND_RECORDING)
         return VK_ERROR_INITIALIZATION_FAILED;
     if (command->record_error != VK_SUCCESS || command->active_render_pass ||
@@ -2987,24 +2954,20 @@ vkEndCommandBuffer(VkCommandBuffer commandBuffer) {
             command->native_graphics_command_buffer);
         return result;
     }
+    const char *native_stage = "graphics";
     int32_t native_result = agcEndCommandBuffer(
         command->native_graphics_command_buffer);
-#if defined(__PROSPERO__)
-    if (end_diagnostic < 8u)
-        fprintf(stderr,
-            "vulkan-ps5: end checkpoint %u graphics result=0x%08x\n",
-            end_diagnostic, (unsigned int)native_result);
-#endif
-    if (native_result == AGC_OK)
+    if (native_result == AGC_OK) {
+        native_stage = "compute";
         native_result = agcEndCommandBuffer(
             command->native_compute_command_buffer);
-#if defined(__PROSPERO__)
-    if (end_diagnostic < 8u)
-        fprintf(stderr,
-            "vulkan-ps5: end checkpoint %u complete result=0x%08x\n",
-            end_diagnostic, (unsigned int)native_result);
-#endif
+    }
     if (native_result != AGC_OK) {
+        fprintf(stderr,
+            "vulkan-ps5: native command-buffer end failed: "
+            "stage=%s result=0x%08x draws=%u dispatches=%u\n",
+            native_stage, (unsigned int)native_result,
+            command->native_draw_count, command->native_dispatch_count);
         command->state = VK_PS5_COMMAND_INITIAL;
         (void)agcResetCommandBuffer(
             command->native_compute_command_buffer);
