@@ -5421,6 +5421,25 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     }
                 }
             }
+            uint32_t reflected_vertex_binding_mask = 0u;
+            const AgcShaderReflection *vertex_reflection =
+                &pipeline->stages[0].metadata;
+            for (uint32_t input_index = 0u;
+                 input_index < vertex_reflection->vertex_input_count;
+                 ++input_index) {
+                const uint32_t binding =
+                    vertex_reflection->vertex_inputs[input_index].binding;
+                if (binding >= VK_PS5_MAX_VERTEX_BINDINGS) {
+                    native_layout_valid = false;
+                    break;
+                }
+                reflected_vertex_binding_mask |= 1u << binding;
+            }
+            /* Binding descriptions may include entries unused by any vertex
+             * attribute or by the compiled vertex shader. Vulkan requires
+             * buffers only for statically consumed inputs; use the PSBC
+             * reflection shared with OpenAGC as that authoritative set. */
+            pipeline->vertex_binding_mask = reflected_vertex_binding_mask;
             AgcGraphicsPipelineDesc native_desc =
                 AGC_GRAPHICS_PIPELINE_DESC_INIT;
             native_desc.primitive_topology =

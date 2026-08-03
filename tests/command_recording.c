@@ -1174,11 +1174,14 @@ int main(int argc, char **argv)
         {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, NULL, 0,
          VK_SHADER_STAGE_FRAGMENT_BIT, fragment, "main", NULL},
     };
-    const VkVertexInputBindingDescription vertex_binding = {
-        .binding = 0,
-        .stride = 2u * sizeof(float),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-    };
+    VkVertexInputBindingDescription vertex_bindings[32];
+    for (uint32_t binding = 0u; binding < 32u; ++binding) {
+        vertex_bindings[binding] = (VkVertexInputBindingDescription){
+            .binding = binding,
+            .stride = binding == 0u ? 2u * sizeof(float) : 0u,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+    }
     const VkVertexInputAttributeDescription vertex_attribute = {
         .location = 0,
         .binding = 0,
@@ -1186,8 +1189,8 @@ int main(int argc, char **argv)
     };
     const VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &vertex_binding,
+        .vertexBindingDescriptionCount = 32,
+        .pVertexBindingDescriptions = vertex_bindings,
         .vertexAttributeDescriptionCount = 1,
         .pVertexAttributeDescriptions = &vertex_attribute,
     };
@@ -1290,10 +1293,11 @@ int main(int argc, char **argv)
                                      &graphics_pipeline) == VK_SUCCESS);
     assert(vk_ps5_pipeline_has_native_shaders(graphics_pipeline));
     assert(vk_ps5_pipeline_has_native_graphics_pipeline(graphics_pipeline));
-    VkVertexInputBindingDescription zero_stride_binding = vertex_binding;
+    VkVertexInputBindingDescription zero_stride_binding = vertex_bindings[0];
     zero_stride_binding.stride = 0u;
     VkPipelineVertexInputStateCreateInfo zero_stride_vertex_input =
         vertex_input;
+    zero_stride_vertex_input.vertexBindingDescriptionCount = 1u;
     zero_stride_vertex_input.pVertexBindingDescriptions =
         &zero_stride_binding;
     VkGraphicsPipelineCreateInfo zero_stride_info = graphics_info;
