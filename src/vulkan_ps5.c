@@ -1355,6 +1355,55 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     }
 }
 
+static VkBool32 image_usage_supported_by_features(
+    VkImageUsageFlags usage, VkFormatFeatureFlags features) {
+    if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
+        !(features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
+        !(features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
+        !(features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT) &&
+        !(features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                      VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+        !(features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
+        !(features & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
+        return VK_FALSE;
+    if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+        !(features & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
+        return VK_FALSE;
+    return VK_TRUE;
+}
+
+VkBool32 vk_ps5_image_format_list_supports_usage(
+    VkPhysicalDevice physical_device, VkFormat base_format,
+    VkImageTiling tiling, VkImageUsageFlags usage,
+    const VkImageFormatListCreateInfo *format_list) {
+    if (format_list && format_list->viewFormatCount &&
+        !format_list->pViewFormats)
+        return VK_FALSE;
+    VkFormatFeatureFlags features = 0u;
+    const uint32_t count = format_list && format_list->viewFormatCount ?
+        format_list->viewFormatCount : 1u;
+    for (uint32_t i = 0u; i < count; ++i) {
+        const VkFormat format = format_list && format_list->viewFormatCount ?
+            format_list->pViewFormats[i] : base_format;
+        VkFormatProperties properties;
+        vkGetPhysicalDeviceFormatProperties(physical_device, format,
+                                            &properties);
+        features |= tiling == VK_IMAGE_TILING_LINEAR ?
+            properties.linearTilingFeatures : properties.optimalTilingFeatures;
+    }
+    return image_usage_supported_by_features(usage, features);
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkFormat format,
                                          VkImageType type, VkImageTiling tiling,
@@ -1375,24 +1424,7 @@ vkGetPhysicalDeviceImageFormatProperties(VkPhysicalDevice physicalDevice, VkForm
     vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
     VkFormatFeatureFlags supported = tiling == VK_IMAGE_TILING_LINEAR ?
         properties.linearTilingFeatures : properties.optimalTilingFeatures;
-    if (!supported) return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT))
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
-        !(supported & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
+    if (!supported || !image_usage_supported_by_features(usage, supported))
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     if (flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) {
         if (type != VK_IMAGE_TYPE_2D ||
@@ -1849,16 +1881,28 @@ vkGetPhysicalDeviceImageFormatProperties2(
         pImageFormatInfo->sType != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2 ||
         pImageFormatProperties->sType != VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2)
         return VK_ERROR_INITIALIZATION_FAILED;
+    const VkImageFormatListCreateInfo *format_list = NULL;
     for (const VkBaseInStructure *next =
              (const VkBaseInStructure *)pImageFormatInfo->pNext;
          next; next = next->pNext) {
         if (next->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO &&
             ((const VkPhysicalDeviceExternalImageFormatInfo *)next)->handleType != 0)
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        if (next->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
+            format_list = (const VkImageFormatListCreateInfo *)next;
     }
+    const VkBool32 extended_usage =
+        (pImageFormatInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT) != 0u;
+    if (extended_usage && !vk_ps5_image_format_list_supports_usage(
+            physicalDevice, pImageFormatInfo->format,
+            pImageFormatInfo->tiling, pImageFormatInfo->usage,
+            format_list))
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
     VkResult result = vkGetPhysicalDeviceImageFormatProperties(
         physicalDevice, pImageFormatInfo->format, pImageFormatInfo->type,
-        pImageFormatInfo->tiling, pImageFormatInfo->usage, pImageFormatInfo->flags,
+        pImageFormatInfo->tiling,
+        extended_usage ? 0u : pImageFormatInfo->usage,
+        pImageFormatInfo->flags,
         &pImageFormatProperties->imageFormatProperties);
     if (result != VK_SUCCESS) return result;
     for (VkBaseOutStructure *next = (VkBaseOutStructure *)pImageFormatProperties->pNext;

@@ -794,6 +794,75 @@ int main(int argc, char **argv)
                                      sizeof(eden_32_bit_view_formats[0])),
         .pViewFormats = eden_32_bit_view_formats,
     };
+    VkImageCreateInfo extended_storage_image_info = image_info;
+    extended_storage_image_info.pNext = &eden_32_bit_format_list;
+    extended_storage_image_info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT |
+        VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+    extended_storage_image_info.format =
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    extended_storage_image_info.extent = (VkExtent3D){480u, 480u, 1u};
+    extended_storage_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    extended_storage_image_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    extended_storage_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    const VkPhysicalDeviceImageFormatInfo2 extended_storage_format_info = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
+        .pNext = &eden_32_bit_format_list,
+        .format = extended_storage_image_info.format,
+        .type = extended_storage_image_info.imageType,
+        .tiling = extended_storage_image_info.tiling,
+        .usage = extended_storage_image_info.usage,
+        .flags = extended_storage_image_info.flags,
+    };
+    VkImageFormatProperties2 extended_storage_format_properties = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+    };
+    assert(vkGetPhysicalDeviceImageFormatProperties2(physical,
+               &extended_storage_format_info,
+               &extended_storage_format_properties) == VK_SUCCESS);
+    const VkFormat no_storage_view_format =
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    const VkImageFormatListCreateInfo no_storage_format_list = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
+        .viewFormatCount = 1u,
+        .pViewFormats = &no_storage_view_format,
+    };
+    VkPhysicalDeviceImageFormatInfo2 no_storage_format_info =
+        extended_storage_format_info;
+    no_storage_format_info.pNext = &no_storage_format_list;
+    assert(vkGetPhysicalDeviceImageFormatProperties2(physical,
+               &no_storage_format_info,
+               &extended_storage_format_properties) ==
+           VK_ERROR_FORMAT_NOT_SUPPORTED);
+    VkImage extended_storage_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &extended_storage_image_info, NULL,
+                         &extended_storage_image) == VK_SUCCESS);
+    const VkImageViewUsageCreateInfo storage_view_usage = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT,
+    };
+    const VkImageViewCreateInfo storage_view_info = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = &storage_view_usage,
+        .image = extended_storage_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_A8B8G8R8_SNORM_PACK32,
+        .subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
+        },
+    };
+    VkImageView storage_view = VK_NULL_HANDLE;
+    assert(vkCreateImageView(device, &storage_view_info, NULL,
+                             &storage_view) == VK_SUCCESS);
+    vkDestroyImageView(device, storage_view, NULL);
+    vkDestroyImage(device, extended_storage_image, NULL);
+    extended_storage_image_info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    extended_storage_image = VK_NULL_HANDLE;
+    assert(vkCreateImage(device, &extended_storage_image_info, NULL,
+                         &extended_storage_image) ==
+           VK_ERROR_FORMAT_NOT_SUPPORTED);
+    assert(extended_storage_image == VK_NULL_HANDLE);
     VkImage color_image_1;
     assert(vkCreateImage(device, &image_info, NULL,
                          &color_image_1) == VK_SUCCESS);

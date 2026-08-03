@@ -2347,6 +2347,28 @@ static bool image_format_list_contains(const VkPs5Image *image,
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
               const VkAllocationCallbacks *pAllocator, VkImage *pImage) {
+    const VkImageFormatListCreateInfo *format_list = NULL;
+    if (pCreateInfo) {
+        for (const VkBaseInStructure *next =
+                 (const VkBaseInStructure *)pCreateInfo->pNext;
+             next; next = next->pNext) {
+            if (next->sType ==
+                    VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO &&
+                ((const VkExternalMemoryImageCreateInfo *)next)->handleTypes != 0)
+                return VK_ERROR_FEATURE_NOT_PRESENT;
+            if (next->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
+                format_list = (const VkImageFormatListCreateInfo *)next;
+        }
+    }
+    const bool extended_usage = pCreateInfo &&
+        (pCreateInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT);
+    const bool usage_supported = pCreateInfo &&
+        (extended_usage ? vk_ps5_image_format_list_supports_usage(
+            VK_NULL_HANDLE, pCreateInfo->format, pCreateInfo->tiling,
+            pCreateInfo->usage, format_list) :
+         (!(pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) ||
+          native_image_storage_supported(pCreateInfo->format,
+                                         pCreateInfo->tiling)));
     if (!device || !pCreateInfo || !pImage ||
         pCreateInfo->sType != VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO ||
         !pCreateInfo->extent.width || !pCreateInfo->extent.height ||
@@ -2356,9 +2378,7 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
         (pCreateInfo->samples != VK_SAMPLE_COUNT_1_BIT &&
          pCreateInfo->samples != VK_SAMPLE_COUNT_4_BIT) ||
         !native_image_format(pCreateInfo->format, &(AgcFormat){0}) ||
-        ((pCreateInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
-         !native_image_storage_supported(pCreateInfo->format,
-             pCreateInfo->tiling)) ||
+        !usage_supported ||
         (pCreateInfo->flags & (VK_IMAGE_CREATE_SPARSE_BINDING_BIT |
                                VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT |
                                VK_IMAGE_CREATE_SPARSE_ALIASED_BIT |
@@ -2367,15 +2387,6 @@ vkCreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
          (pCreateInfo->imageType != VK_IMAGE_TYPE_3D ||
           pCreateInfo->arrayLayers != 1u))) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    }
-    const VkImageFormatListCreateInfo *format_list = NULL;
-    for (const VkBaseInStructure *next = (const VkBaseInStructure *)pCreateInfo->pNext;
-         next; next = next->pNext) {
-        if (next->sType == VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO &&
-            ((const VkExternalMemoryImageCreateInfo *)next)->handleTypes != 0)
-            return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (next->sType == VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO)
-            format_list = (const VkImageFormatListCreateInfo *)next;
     }
     if (format_list && format_list->viewFormatCount) {
         if (!format_list->pViewFormats ||

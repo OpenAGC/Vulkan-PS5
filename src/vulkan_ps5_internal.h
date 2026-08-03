@@ -59,6 +59,10 @@ void vk_ps5_destroy_or_defer_native(VkDevice device,
 void vk_ps5_collect_deferred_native(VkDevice device);
 uint32_t vk_ps5_deferred_native_count(VkDevice device);
 VkBool32 vk_ps5_device_null_descriptor(VkDevice device);
+VkBool32 vk_ps5_image_format_list_supports_usage(
+    VkPhysicalDevice physical_device, VkFormat base_format,
+    VkImageTiling tiling, VkImageUsageFlags usage,
+    const VkImageFormatListCreateInfo *format_list);
 VkPipeline vk_ps5_device_meta_clear_pipeline(VkDevice device);
 VkResult vk_ps5_device_meta_attachment_pipeline(VkDevice device,
     VkRenderPass render_pass, uint32_t subpass, uint32_t color_attachment,
