@@ -626,6 +626,14 @@ and pinned ELF
 passed twice on FW 5.500.008 with bounded waits, teardown, PID absence, and
 immediate relaunch. See `analysis/fw550_format_storage_20260802.md`.
 
+The Eden extended-image follow-up is qualified on FW 5.500.008. Probe
+`215169ea600dac81901ab423d36d342ee7d9df98537e5119b0fb591c1e09f96e`
+first repeated the 30-format exact-bit matrix, then created/bound Eden's exact
+480x480 optimal A8B8G8R8 mutable extended-usage image, issued a compute write
+through its listed SNORM storage view, completed the fence, tore down, and
+left PID/global exact-process absence. The accepted log is
+`examples/qualification-logs/extended-storage/20260803T132208Z-swapchain-run1.log`.
+
 The BC slice now has a real shader-execution gate rather than format-query-only
 coverage. Compute descriptor preparation realizes Vulkan samplers, combined
 image samplers, sampled images, storage images, and input attachments through

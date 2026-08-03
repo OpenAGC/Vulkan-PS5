@@ -708,6 +708,13 @@ descriptor encoding, and command recording; the FW 5.50 gate verifies an exact
 4,096-pixel checkerboard. Run the bounded hardware gate with
 `PS5_HOST=10.0.1.41 examples/run_fw550_storage_image.sh`.
 
+`vulkan_ps5_format_storage_probe` also carries Eden's exact mutable extended
+image gate: a 480x480 optimal `VK_FORMAT_A8B8G8R8_UNORM_PACK32` image with
+usage `0x1f` and flags `0x108` is created and bound, a listed SNORM storage
+view receives a compute dispatch, and the queue fence must complete. This runs
+after the existing 30-format, 480-pixel exact-bit readback matrix, so the
+extended-image pass cannot hide a storage-path regression.
+
 `vulkan_ps5_robust_buffer_probe` requests `robustBufferAccess`, binds a
 16-byte SSBO range backed by a larger allocation, and proves that an OOB read
 returns zero while an OOB store leaves the guard word unchanged. The companion
