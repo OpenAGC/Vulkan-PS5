@@ -7,6 +7,7 @@
 #include "meta/blit_frag_spv.h"
 #include "meta/blit_3d_frag_spv.h"
 #include "meta/resolve_frag_spv.h"
+#include "meta/upload_depth_frag_spv.h"
 #include <openagc_psbc.h>
 #include <agc_cb.h>
 #include <agc_graphics.h>
@@ -96,7 +97,8 @@ static AgcBufferUsageFlags native_buffer_usage(VkBufferUsageFlags usage) {
     if (usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT)
         native |= AGC_BUFFER_USAGE_INDIRECT_BIT;
     if (usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
-        native |= AGC_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        native |= AGC_BUFFER_USAGE_TRANSFER_SRC_BIT |
+            AGC_BUFFER_USAGE_STORAGE_BIT;
     if (usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
         native |= AGC_BUFFER_USAGE_TRANSFER_DST_BIT;
     return native ? native : AGC_BUFFER_USAGE_STORAGE_BIT;
@@ -4673,6 +4675,152 @@ VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
     return result;
 }
 
+VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    if (!device || !layout_out || !pipeline_out)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *layout_out = VK_NULL_HANDLE;
+    *pipeline_out = VK_NULL_HANDLE;
+
+    const VkDescriptorSetLayoutBinding source_binding = {
+        .binding = 0u,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        .descriptorCount = 1u,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+    };
+    const VkDescriptorSetLayoutCreateInfo set_create = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1u,
+        .pBindings = &source_binding,
+    };
+    VkDescriptorSetLayout set_layout = VK_NULL_HANDLE;
+    VkResult result = vkCreateDescriptorSetLayout(device, &set_create, NULL,
+        &set_layout);
+    if (result != VK_SUCCESS)
+        return result;
+    const VkPushConstantRange push_range = {
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0u,
+        .size = 16u,
+    };
+    const VkPipelineLayoutCreateInfo layout_create = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1u,
+        .pSetLayouts = &set_layout,
+        .pushConstantRangeCount = 1u,
+        .pPushConstantRanges = &push_range,
+    };
+    result = vkCreatePipelineLayout(device, &layout_create, NULL, layout_out);
+    vkDestroyDescriptorSetLayout(device, set_layout, NULL);
+    if (result != VK_SUCCESS)
+        return result;
+
+    const VkShaderModuleCreateInfo vertex_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_meta_clear_attachment_vert_spv),
+        .pCode = vulkan_ps5_meta_clear_attachment_vert_spv,
+    };
+    const VkShaderModuleCreateInfo fragment_create = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = sizeof(vulkan_ps5_meta_upload_depth_frag_spv),
+        .pCode = vulkan_ps5_meta_upload_depth_frag_spv,
+    };
+    VkShaderModule vertex = VK_NULL_HANDLE;
+    VkShaderModule fragment = VK_NULL_HANDLE;
+    result = vkCreateShaderModule(device, &vertex_create, NULL, &vertex);
+    if (result == VK_SUCCESS)
+        result = vkCreateShaderModule(device, &fragment_create, NULL,
+            &fragment);
+    const VkPipelineShaderStageCreateInfo stages[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertex,
+            .pName = "main",
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragment,
+            .pName = "main",
+        },
+    };
+    const VkPipelineVertexInputStateCreateInfo vertex_input = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+    };
+    const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+    };
+    const VkPipelineViewportStateCreateInfo viewport = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1u,
+        .scissorCount = 1u,
+    };
+    const VkPipelineRasterizationStateCreateInfo rasterization = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .lineWidth = 1.0f,
+    };
+    const VkPipelineMultisampleStateCreateInfo multisample = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    };
+    const VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f,
+    };
+    const VkPipelineColorBlendStateCreateInfo blend = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    };
+    const VkDynamicState dynamic_states[] = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR,
+    };
+    const VkPipelineDynamicStateCreateInfo dynamic = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2u,
+        .pDynamicStates = dynamic_states,
+    };
+    const VkPipelineRenderingCreateInfo rendering = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .stencilAttachmentFormat = VK_FORMAT_D32_SFLOAT_S8_UINT,
+    };
+    const VkGraphicsPipelineCreateInfo pipeline_create = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &rendering,
+        .stageCount = 2u,
+        .pStages = stages,
+        .pVertexInputState = &vertex_input,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport,
+        .pRasterizationState = &rasterization,
+        .pMultisampleState = &multisample,
+        .pDepthStencilState = &depth_stencil,
+        .pColorBlendState = &blend,
+        .pDynamicState = &dynamic,
+        .layout = *layout_out,
+    };
+    if (result == VK_SUCCESS)
+        result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1u,
+            &pipeline_create, NULL, pipeline_out);
+    vkDestroyShaderModule(device, fragment, NULL);
+    vkDestroyShaderModule(device, vertex, NULL);
+    if (result != VK_SUCCESS) {
+        vkDestroyPipelineLayout(device, *layout_out, NULL);
+        *layout_out = VK_NULL_HANDLE;
+        *pipeline_out = VK_NULL_HANDLE;
+    }
+    return result;
+}
+
 VkResult vk_ps5_initialize_meta_resolve(VkDevice device, VkFormat format,
     VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
 {
@@ -8956,6 +9104,216 @@ vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
         }
     }
 }
+
+static uint32_t native_mip_dimension(uint32_t dimension, uint32_t mip);
+
+static VkResult native_copy_buffer_to_d32s8_depth(
+    VkPs5CommandBuffer *command, VkPs5Buffer *source,
+    VkPs5Image *destination, uint32_t region_count,
+    const VkBufferImageCopy *regions)
+{
+    if (!command || !source || !destination || !region_count || !regions ||
+        destination->format != VK_FORMAT_D32_SFLOAT_S8_UINT ||
+        destination->type != VK_IMAGE_TYPE_2D ||
+        destination->samples != VK_SAMPLE_COUNT_1_BIT ||
+        !(destination->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) ||
+        !(source->usage & VK_BUFFER_USAGE_TRANSFER_SRC_BIT) ||
+        !(source->native_buffer && destination->native_image))
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+
+    uint64_t source_span_start = UINT64_MAX;
+    uint64_t source_span_end = 0u;
+    for (uint32_t index = 0u; index < region_count; ++index) {
+        const VkBufferImageCopy *region = &regions[index];
+        const VkImageSubresourceLayers *layers = &region->imageSubresource;
+        if (layers->aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT ||
+            layers->mipLevel >= destination->mip_levels ||
+            !layers->layerCount ||
+            layers->baseArrayLayer >= destination->array_layers ||
+            layers->layerCount > destination->array_layers -
+                layers->baseArrayLayer ||
+            region->imageOffset.x < 0 || region->imageOffset.y < 0 ||
+            region->imageOffset.z != 0 || !region->imageExtent.width ||
+            !region->imageExtent.height || region->imageExtent.depth != 1u ||
+            (region->bufferOffset & 3u) != 0u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const uint32_t mip_width = native_mip_dimension(
+            destination->extent.width, layers->mipLevel);
+        const uint32_t mip_height = native_mip_dimension(
+            destination->extent.height, layers->mipLevel);
+        if ((uint32_t)region->imageOffset.x > mip_width ||
+            region->imageExtent.width > mip_width -
+                (uint32_t)region->imageOffset.x ||
+            (uint32_t)region->imageOffset.y > mip_height ||
+            region->imageExtent.height > mip_height -
+                (uint32_t)region->imageOffset.y)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const uint64_t row_length = region->bufferRowLength ?
+            region->bufferRowLength : region->imageExtent.width;
+        const uint64_t image_height = region->bufferImageHeight ?
+            region->bufferImageHeight : region->imageExtent.height;
+        if (row_length < region->imageExtent.width ||
+            image_height < region->imageExtent.height ||
+            row_length > UINT32_MAX ||
+            image_height > UINT64_MAX / row_length ||
+            layers->layerCount > UINT64_MAX / (image_height * row_length))
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const uint64_t layer_words = image_height * row_length;
+        const uint64_t final_word = region->bufferOffset / 4u +
+            (uint64_t)(layers->layerCount - 1u) * layer_words +
+            (uint64_t)(region->imageExtent.height - 1u) * row_length +
+            region->imageExtent.width;
+        if (final_word > source->size / 4u || final_word > UINT32_MAX)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (region->bufferOffset < source_span_start)
+            source_span_start = region->bufferOffset;
+        if (final_word * 4u > source_span_end)
+            source_span_end = final_word * 4u;
+    }
+    if (!native_require_complete_stream(command))
+        return command->record_error;
+
+    VkPipelineLayout layout_handle = VK_NULL_HANDLE;
+    VkPipeline pipeline_handle = VK_NULL_HANDLE;
+    VkResult result = vk_ps5_device_meta_depth_upload_pipeline(
+        command->device, &layout_handle, &pipeline_handle);
+    if (result != VK_SUCCESS || !layout_handle || !pipeline_handle)
+        return result == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : result;
+    VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+
+    result = native_transition_whole_image(command, destination,
+        native_image_recorded_usage(command, destination),
+        kAgcResourceUsageDepthStencilWrite);
+    if (result != VK_SUCCESS)
+        return result;
+    result = native_prepare_buffer_range(command, source, source_span_start,
+        source_span_end - source_span_start, kAgcResourceUsageShaderRead);
+    if (result != VK_SUCCESS)
+        return result;
+
+    const char *native_step = "bind pipeline";
+    int32_t native_result = agcCmdBindGraphicsPipeline(
+        command->native_graphics_command_buffer,
+        pipeline->native_graphics_pipeline);
+    if (native_result == AGC_OK) {
+        command->native_bound_graphics = pipeline->native_graphics_pipeline;
+        command->native_descriptor_graphics_pipeline = NULL;
+        command->native_vertex_graphics_pipeline = NULL;
+        command->native_attachments_render_pass = NULL;
+        command->native_attachments_framebuffer = NULL;
+        native_step = "unbind color targets";
+        native_result = agcCmdBindColorTargets(
+            command->native_graphics_command_buffer, 0u, NULL);
+    }
+    if (native_result == AGC_OK) {
+        AgcDescriptorWrite write = AGC_DESCRIPTOR_WRITE_INIT;
+        write.type = AGC_SHADER_DESCRIPTOR_STORAGE_BUFFER;
+        write.buffer = source->native_buffer;
+        write.buffer_offset = source_span_start;
+        write.buffer_range = source_span_end - source_span_start;
+        native_step = "source descriptor";
+        native_result = agcCmdBindDescriptors(
+            command->native_graphics_command_buffer, 1u, &write);
+        if (native_result == AGC_OK)
+            command->native_descriptor_bind_count++;
+    }
+    for (uint32_t index = 0u;
+         native_result == AGC_OK && index < region_count; ++index) {
+        const VkBufferImageCopy *region = &regions[index];
+        const uint32_t mip_width = native_mip_dimension(
+            destination->extent.width,
+            region->imageSubresource.mipLevel);
+        const uint32_t mip_height = native_mip_dimension(
+            destination->extent.height,
+            region->imageSubresource.mipLevel);
+        const uint32_t row_length = region->bufferRowLength ?
+            region->bufferRowLength : region->imageExtent.width;
+        const uint32_t image_height = region->bufferImageHeight ?
+            region->bufferImageHeight : region->imageExtent.height;
+        AgcViewport viewport = AGC_VIEWPORT_INIT;
+        viewport.width = (float)mip_width;
+        viewport.height = (float)mip_height;
+        viewport.max_depth = 1.0f;
+        AgcScissor scissor = AGC_SCISSOR_INIT;
+        scissor.x = region->imageOffset.x;
+        scissor.y = region->imageOffset.y;
+        scissor.width = region->imageExtent.width;
+        scissor.height = region->imageExtent.height;
+        native_step = "viewport/scissor";
+        native_result = agcCmdSetViewportScissors(
+            command->native_graphics_command_buffer, 1u,
+            &viewport, &scissor);
+        for (uint32_t layer = 0u; native_result == AGC_OK &&
+             layer < region->imageSubresource.layerCount; ++layer) {
+            const uint64_t base_word =
+                (region->bufferOffset - source_span_start) / 4u +
+                (uint64_t)layer * image_height * row_length;
+            const uint32_t push[] = {
+                (uint32_t)base_word, row_length,
+                (uint32_t)region->imageOffset.x,
+                (uint32_t)region->imageOffset.y,
+            };
+            native_step = "push constants";
+            native_result = agcCmdPushConstants(
+                command->native_graphics_command_buffer,
+                1u << kAgcShaderStagePs, 0u, sizeof(push), push);
+            AgcDepthStencilTargetBinding target =
+                AGC_DEPTH_STENCIL_TARGET_BINDING_INIT;
+            target.image = destination->native_image;
+            target.mip_level = region->imageSubresource.mipLevel;
+            target.array_layer =
+                region->imageSubresource.baseArrayLayer + layer;
+            if (native_result == AGC_OK) {
+                native_step = "destination attachment";
+                native_result = agcCmdBindDepthStencilTarget(
+                    command->native_graphics_command_buffer, &target);
+            }
+            if (native_result == AGC_OK) {
+                native_step = "draw";
+                native_result = agcCmdDraw(
+                    command->native_graphics_command_buffer,
+                    3u, 1u, 0u, 0u);
+            }
+            if (native_result == AGC_OK)
+                command->native_draw_count++;
+        }
+    }
+    if (native_result != AGC_OK) {
+        AgcDebugMessage message = AGC_DEBUG_MESSAGE_INIT;
+        const int32_t debug_result = agcGetLastDebugMessage(
+            vk_ps5_native_device(command->device), &message);
+        fprintf(stderr,
+            "vulkan-ps5: native D32/S8 depth upload failed step=%s "
+            "result=0x%x%s%s\n", native_step, (unsigned)native_result,
+            debug_result == AGC_OK ? ": " : "",
+            debug_result == AGC_OK ? message.message : "");
+        return native_command_result(native_result);
+    }
+    result = native_prepare_buffer_range(command, source, source_span_start,
+        source_span_end - source_span_start,
+        kAgcResourceUsageCopySource);
+    if (result != VK_SUCCESS)
+        return result;
+    result = native_transition_whole_image(command, destination,
+        kAgcResourceUsageDepthStencilWrite,
+        kAgcResourceUsageCopyDestination);
+    if (result != VK_SUCCESS)
+        return result;
+    command->native_bound_graphics = NULL;
+    command->native_descriptor_graphics_pipeline = NULL;
+    command->native_vertex_graphics_pipeline = NULL;
+    command->native_attachments_render_pass = NULL;
+    command->native_attachments_framebuffer = NULL;
+    if (command->bound_graphics) {
+        vkCmdBindPipeline((VkCommandBuffer)command,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            (VkPipeline)command->bound_graphics);
+        if (command->record_error != VK_SUCCESS)
+            return command->record_error;
+    }
+    return VK_SUCCESS;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout dl,
                        uint32_t n, const VkBufferImageCopy *r) {
@@ -8986,6 +9344,17 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
             source ? source->usage : 0u,
             destination ? destination->usage : 0u, dl);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (destination->is_depth_surface) {
+        command->record_error = native_copy_buffer_to_d32s8_depth(command,
+            source, destination, n, r);
+        if (command->record_error != VK_SUCCESS)
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdCopyBufferToImage depth upload failed "
+                "result=%d format=%u regions=%u aspect=0x%x\n",
+                command->record_error, destination->format, n,
+                r[0].imageSubresource.aspectMask);
         return;
     }
     for (uint32_t region = 0u; region < n; ++region) {

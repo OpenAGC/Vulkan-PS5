@@ -967,7 +967,8 @@ int main(int argc, char **argv)
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
@@ -1853,6 +1854,16 @@ int main(int argc, char **argv)
         VK_IMAGE_LAYOUT_GENERAL, 1u, &buffer_image_copy);
     vkCmdCopyImageToBuffer(command, color_image,
         VK_IMAGE_LAYOUT_GENERAL, output_buffer, 1u, &buffer_image_copy);
+    const VkBufferImageCopy depth_buffer_image_copy = {
+        .bufferOffset = 0u,
+        .bufferRowLength = 8u,
+        .bufferImageHeight = 4u,
+        .imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 0u, 1u},
+        .imageOffset = {2, 2, 0},
+        .imageExtent = {4u, 3u, 1u},
+    };
+    vkCmdCopyBufferToImage(command, indirect_buffer, depth_image,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &depth_buffer_image_copy);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
@@ -2747,6 +2758,16 @@ vkCmdEndRenderPass2(command, &subpass_end);
            VK_SUCCESS);
     vkCmdClearColorImage(invalid_copy_command, depth_image,
         VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1u, &color_range);
+    assert(vkEndCommandBuffer(invalid_copy_command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
+    assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
+           VK_SUCCESS);
+    VkBufferImageCopy stencil_buffer_image_copy = depth_buffer_image_copy;
+    stencil_buffer_image_copy.imageSubresource.aspectMask =
+        VK_IMAGE_ASPECT_STENCIL_BIT;
+    vkCmdCopyBufferToImage(invalid_copy_command, indirect_buffer, depth_image,
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &stencil_buffer_image_copy);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);

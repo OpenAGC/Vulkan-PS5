@@ -101,6 +101,8 @@ struct VkPs5Device {
     uint32_t meta_resolve_count;
     VkPs5MetaResolvePipeline meta_resolves[
         VK_PS5_META_RESOLVE_PIPELINE_COUNT];
+    VkPipelineLayout meta_depth_upload_layout;
+    VkPipeline meta_depth_upload_pipeline;
     atomic_uint memory_allocation_count;
     atomic_uint wsi_ownership_count;
     atomic_flag deferred_native_lock;
@@ -487,6 +489,31 @@ VkResult vk_ps5_device_meta_resolve_pipeline(VkDevice device_handle,
     }
     if (result == VK_SUCCESS)
         *pipeline_out = entry->pipeline;
+    atomic_flag_clear_explicit(&device->meta_attachment_lock,
+        memory_order_release);
+    return result;
+}
+
+VkResult vk_ps5_device_meta_depth_upload_pipeline(VkDevice device_handle,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (!device || !layout_out || !pipeline_out)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    *layout_out = VK_NULL_HANDLE;
+    *pipeline_out = VK_NULL_HANDLE;
+    while (atomic_flag_test_and_set_explicit(&device->meta_attachment_lock,
+            memory_order_acquire)) {}
+    VkResult result = VK_SUCCESS;
+    if (!device->meta_depth_upload_pipeline) {
+        result = vk_ps5_initialize_meta_depth_upload(device_handle,
+            &device->meta_depth_upload_layout,
+            &device->meta_depth_upload_pipeline);
+    }
+    if (result == VK_SUCCESS) {
+        *layout_out = device->meta_depth_upload_layout;
+        *pipeline_out = device->meta_depth_upload_pipeline;
+    }
     atomic_flag_clear_explicit(&device->meta_attachment_lock,
         memory_order_release);
     return result;
@@ -2331,6 +2358,11 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
         device->meta_resolves[index].layout = VK_NULL_HANDLE;
     }
     device->meta_resolve_count = 0u;
+    vkDestroyPipeline(device_handle, device->meta_depth_upload_pipeline, NULL);
+    vkDestroyPipelineLayout(device_handle,
+        device->meta_depth_upload_layout, NULL);
+    device->meta_depth_upload_pipeline = VK_NULL_HANDLE;
+    device->meta_depth_upload_layout = VK_NULL_HANDLE;
     vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
     vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
     device->meta_clear_pipeline = VK_NULL_HANDLE;
