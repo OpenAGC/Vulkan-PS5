@@ -9411,6 +9411,7 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             return;
         }
     }
+    command->debug_last_command = "vkCmdPipelineBarrier-complete";
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdBeginQuery(VkCommandBuffer c, VkQueryPool p, uint32_t q, VkQueryControlFlags f) {
@@ -11445,6 +11446,16 @@ static void record_graphics_indirect(
         !(arguments->usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) ||
         (offset & 3u) != 0u ||
         stride < argument_size || (stride & 3u) != 0u) {
+        fprintf(stderr,
+            "vulkan-ps5: indirect draw rejected indexed=%u pipeline=%u "
+            "baseline=%u render_pass=%u arguments=%u memory=%u native=%u "
+            "usage=0x%x offset=%llu count=%u stride=%u required=%u\n",
+            indexed, pipeline != NULL, baseline,
+            command->active_render_pass != NULL, arguments != NULL,
+            arguments && arguments->memory != NULL,
+            arguments && arguments->native_buffer != NULL,
+            arguments ? arguments->usage : 0u,
+            (unsigned long long)offset, draw_count, stride, argument_size);
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return;
     }
@@ -11562,12 +11573,14 @@ static void record_graphics_indirect(
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o, uint32_t n, uint32_t s) {
+    debug_note_command((VkPs5CommandBuffer *)c, "vkCmdDrawIndirect");
     record_graphics_indirect((VkPs5CommandBuffer *)c, (VkPs5Buffer *)b,
         o, n, s, false);
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdDrawIndexedIndirect(VkCommandBuffer c, VkBuffer b, VkDeviceSize o,
                          uint32_t n, uint32_t s) {
+    debug_note_command((VkPs5CommandBuffer *)c, "vkCmdDrawIndexedIndirect");
     record_graphics_indirect((VkPs5CommandBuffer *)c, (VkPs5Buffer *)b,
         o, n, s, true);
 }

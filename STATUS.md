@@ -345,6 +345,11 @@ PID 182 produced none of those diagnostics, proving the error is latched by an
 unlabelled command after the barrier. Timestamp, direct/indexed indirect-count,
 and indexed-draw entrypoints now update the last-command label; the unsupported
 timestamp and indirect-count paths also print their exact arguments.
+PID 89 ruled those out. Regular direct/indexed indirect draws were the next
+unlabelled `-8` path; they now label entry and print pipeline, render-pass,
+argument-buffer, usage, offset, count, stride, and record-size validation.
+Successful barriers now leave a distinct `vkCmdPipelineBarrier-complete`
+label so a later command cannot be misattributed to barrier entry.
 
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own
