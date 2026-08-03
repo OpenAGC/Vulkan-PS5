@@ -314,6 +314,23 @@ matching target klog. The first diagnostic attempt correctly fell back to the
 legacy stream because required typed vertex/argument transitions were absent;
 the guarded retry added those Vulkan barriers and exercised the native stream.
 
+Eden's Flappy Bird workload exposed the remaining command-side query gap:
+`vkCmdCopyQueryPoolResults` rejected the first occlusion resolve after two
+successful draws. The driver now records bounded query-copy operations,
+prepares the exact destination range as `CopyDestination`, and, after the
+already-synchronous native queue submit completes, reduces OpenAGC's opaque
+per-RB record into Vulkan 32- or 64-bit results with optional availability.
+The result is flushed into host-visible transfer-destination memory before
+Vulkan completion is signaled. WAIT, PARTIAL, availability, range, stride,
+flag, operation-count, and destination-memory contracts fail closed; device-
+local result destinations remain unsupported until a GPU-native reduction
+path exists. Mesa RADV's GFX10.3 implementation is the reference for that next
+step: it waits on the last enabled RB's availability word and dispatches a
+query-reduction shader over the opaque begin/end counters. Command regressions
+cover the required zero-count no-op, Eden's WAIT|64-bit copy plus its following
+transfer barrier, and rejection of an undersized stride. Host command,
+lifecycle, and validation tests pass, and the Prospero static library builds.
+
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own
 `AgcMemory` plus a placed `AgcBuffer`; query recording no longer emits legacy

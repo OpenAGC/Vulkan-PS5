@@ -556,6 +556,7 @@ typedef struct VkPs5DescriptorUpdateTemplate {
     (VK_PS5_MAX_VERTEX_BINDINGS * sizeof(AgcGfx1013BufferDescriptor))
 #define VK_PS5_INDIRECT_DESCRIPTOR_TABLE_SLICE 256u
 #define VK_PS5_MAX_NATIVE_RESOURCE_STATES 128u
+#define VK_PS5_MAX_QUERY_COPIES 64u
 
 typedef struct VkPs5ShaderModule {
     size_t code_size;
@@ -934,6 +935,16 @@ typedef struct VkPs5NativeImageState {
     AgcResourceUsage usage;
 } VkPs5NativeImageState;
 
+typedef struct VkPs5QueryCopy {
+    VkPs5QueryPool *pool;
+    VkPs5Buffer *destination;
+    uint32_t first_query;
+    uint32_t query_count;
+    VkDeviceSize destination_offset;
+    VkDeviceSize stride;
+    VkQueryResultFlags flags;
+} VkPs5QueryCopy;
+
 typedef struct VkPs5CommandBuffer {
     VK_LOADER_DATA loader_data;
     VkDevice device;
@@ -1010,10 +1021,73 @@ typedef struct VkPs5CommandBuffer {
     VkBool32 native_suppress_depth_attachment;
     uint32_t native_dispatch_count;
     uint32_t native_draw_count;
+    VkPs5QueryCopy query_copies[VK_PS5_MAX_QUERY_COPIES];
+    uint32_t query_copy_count;
     VkBool32 native_stream_complete;
     VkBool32 requires_native_stream;
     struct VkPs5CommandBuffer *next;
 } VkPs5CommandBuffer;
+
+static VkResult resolve_query_copies(VkPs5CommandBuffer *command)
+{
+    for (uint32_t copy_index = 0u;
+         copy_index < command->query_copy_count; ++copy_index) {
+        const VkPs5QueryCopy *copy = &command->query_copies[copy_index];
+        const VkBool32 result_64 =
+            (copy->flags & VK_QUERY_RESULT_64_BIT) != 0u;
+        const VkBool32 with_availability =
+            (copy->flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0u;
+        const VkDeviceSize value_size = result_64 ? 8u : 4u;
+        uint8_t output[16u];
+        for (uint32_t i = 0u; i < copy->query_count; ++i) {
+            AgcOcclusionQueryResult native =
+                AGC_OCCLUSION_QUERY_RESULT_INIT;
+            const uint64_t timeout =
+                (copy->flags & VK_QUERY_RESULT_WAIT_BIT) != 0u ?
+                    UINT64_C(5000000000) : 0u;
+            int32_t native_result = agcGetOcclusionQueryResult(
+                copy->pool->native_buffer,
+                (uint64_t)(copy->first_query + i) *
+                    copy->pool->record_size,
+                timeout, &native);
+            if (native_result != AGC_OK && native_result != AGC_ERROR_TIMEOUT)
+                return native_result == AGC_ERROR_OUT_OF_MEMORY ?
+                    VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_DEVICE_LOST;
+            if (native_result == AGC_ERROR_TIMEOUT &&
+                (copy->flags & VK_QUERY_RESULT_WAIT_BIT) != 0u)
+                return VK_ERROR_DEVICE_LOST;
+            memset(output, 0, sizeof(output));
+            if (native.available ||
+                (copy->flags & VK_QUERY_RESULT_PARTIAL_BIT) != 0u) {
+                if (result_64)
+                    memcpy(output, &native.value, sizeof(native.value));
+                else {
+                    const uint32_t value = (uint32_t)native.value;
+                    memcpy(output, &value, sizeof(value));
+                }
+            }
+            if (with_availability) {
+                if (result_64) {
+                    const uint64_t available = native.available;
+                    memcpy(output + value_size, &available,
+                           sizeof(available));
+                } else {
+                    const uint32_t available = native.available;
+                    memcpy(output + value_size, &available,
+                           sizeof(available));
+                }
+            }
+            VkResult write_result = vk_ps5_memory_write(
+                copy->destination->memory,
+                copy->destination->memory_offset +
+                    copy->destination_offset + (VkDeviceSize)i * copy->stride,
+                output, value_size * (with_availability ? 2u : 1u));
+            if (write_result != VK_SUCCESS)
+                return write_result;
+        }
+    }
+    return VK_SUCCESS;
+}
 
 static void debug_note_command(VkPs5CommandBuffer *command, const char *name)
 {
@@ -1218,6 +1292,8 @@ vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits,
                 command->native_graphics_command_buffer;
             result = vk_ps5_queue_submit_native(
                 queue, 1u, &native_command);
+            if (result == VK_SUCCESS)
+                result = resolve_query_copies(command);
             if (result == VK_SUCCESS)
                 native_commit_resource_states(command);
             command->state = VK_PS5_COMMAND_EXECUTABLE;
@@ -2778,7 +2854,8 @@ command->native_attachments_render_pass = NULL;
 command->native_attachments_framebuffer = NULL;
 command->native_attachments_subpass = 0u;
 command->native_dispatch_count = 0u;
-command->native_draw_count = 0u;
+        command->native_draw_count = 0u;
+        command->query_copy_count = 0u;
 command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     }
@@ -2953,6 +3030,7 @@ command->native_attachments_framebuffer = NULL;
 command->native_attachments_subpass = 0u;
 command->native_dispatch_count = 0u;
 command->native_draw_count = 0u;
+command->query_copy_count = 0u;
 command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
@@ -3073,6 +3151,7 @@ command->native_attachments_framebuffer = NULL;
 command->native_attachments_subpass = 0u;
 command->native_dispatch_count = 0u;
 command->native_draw_count = 0u;
+command->query_copy_count = 0u;
 command->native_stream_complete = VK_TRUE;
 command->requires_native_stream = VK_FALSE;
     memset(command->compute_sets, 0, sizeof(command->compute_sets));
@@ -9384,10 +9463,61 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdCopyQueryPoolResults(VkCommandBuffer c, VkQueryPool p, uint32_t f, uint32_t n,
                           VkBuffer d, VkDeviceSize o, VkDeviceSize s,
                           VkQueryResultFlags flags) {
-    IGNORE(p); IGNORE(f); IGNORE(n); IGNORE(d); IGNORE(o); IGNORE(s); IGNORE(flags);
     VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
-    if (command && command->state == VK_PS5_COMMAND_RECORDING)
-        command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+    VkPs5QueryPool *pool = (VkPs5QueryPool *)p;
+    VkPs5Buffer *destination = (VkPs5Buffer *)d;
+    debug_note_command(command, "vkCmdCopyQueryPoolResults");
+    const VkQueryResultFlags supported = VK_QUERY_RESULT_64_BIT |
+        VK_QUERY_RESULT_WAIT_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT |
+        VK_QUERY_RESULT_PARTIAL_BIT;
+    const VkDeviceSize value_size =
+        (flags & VK_QUERY_RESULT_64_BIT) != 0u ? 8u : 4u;
+    const VkDeviceSize result_size = value_size *
+        ((flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0u ? 2u : 1u);
+    if (command && command->state == VK_PS5_COMMAND_RECORDING && n == 0u)
+        return;
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING || !pool ||
+        pool->type != VK_QUERY_TYPE_OCCLUSION || !destination ||
+        !destination->native_buffer || !destination->memory ||
+        !(destination->usage & VK_BUFFER_USAGE_TRANSFER_DST_BIT) ||
+        command->active_render_pass || f > pool->count ||
+        n > pool->count - f || (flags & ~supported) != 0u ||
+        s < result_size || (s & (value_size - 1u)) != 0u ||
+        vk_ps5_memory_type_index(destination->memory) != 0u ||
+        o > destination->size ||
+        (VkDeviceSize)(n - 1u) > (UINT64_MAX - o) / s ||
+        o + (VkDeviceSize)(n - 1u) * s > destination->size ||
+        result_size > destination->size -
+            (o + (VkDeviceSize)(n - 1u) * s) ||
+        command->query_copy_count == VK_PS5_MAX_QUERY_COPIES) {
+        if (command && command->state == VK_PS5_COMMAND_RECORDING) {
+            fprintf(stderr,
+                "vulkan-ps5: query result copy rejected first=%u count=%u "
+                "offset=%llu stride=%llu flags=0x%x host_visible=%u\n",
+                f, n, (unsigned long long)o, (unsigned long long)s, flags,
+                destination && destination->memory &&
+                    vk_ps5_memory_type_index(destination->memory) == 0u);
+            command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        return;
+    }
+    const VkDeviceSize covered_size = (VkDeviceSize)(n - 1u) * s +
+        result_size;
+    VkResult prepare = native_prepare_buffer_range(command, destination, o,
+        covered_size, kAgcResourceUsageCopyDestination);
+    if (prepare != VK_SUCCESS) {
+        command->record_error = prepare;
+        return;
+    }
+    command->query_copies[command->query_copy_count++] = (VkPs5QueryCopy){
+        .pool = pool,
+        .destination = destination,
+        .first_query = f,
+        .query_count = n,
+        .destination_offset = o,
+        .stride = s,
+        .flags = flags,
+    };
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdExecuteCommands(VkCommandBuffer c, uint32_t n, const VkCommandBuffer *p) {

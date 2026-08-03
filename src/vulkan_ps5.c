@@ -806,6 +806,18 @@ uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory_handle) {
     return memory ? memory->memory_type_index : UINT32_MAX;
 }
 
+VkResult vk_ps5_memory_write(VkDeviceMemory memory_handle,
+    VkDeviceSize offset, const void *data, VkDeviceSize size)
+{
+    VkPs5Memory *memory = (VkPs5Memory *)memory_handle;
+    if (!memory || !data || !size || memory->memory_type_index != 0u ||
+        offset > memory->size || size > memory->size - offset)
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    memcpy((uint8_t *)memory->data + offset, data, (size_t)size);
+    return agcFlushMemory(memory->native_memory, offset, size) == AGC_OK ?
+        VK_SUCCESS : VK_ERROR_MEMORY_MAP_FAILED;
+}
+
 VkBool32 vk_ps5_device_null_descriptor(VkDevice device_handle) {
     const VkPs5Device *device = (const VkPs5Device *)device_handle;
     return device ? device->null_descriptor : VK_FALSE;

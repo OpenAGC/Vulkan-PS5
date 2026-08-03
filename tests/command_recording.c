@@ -2177,6 +2177,43 @@ int main(int argc, char **argv)
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
 
+    /* Eden resolves occlusion samples into a host-visible transfer buffer
+     * after leaving the render pass. The synchronous PS5 submit path reduces
+     * OpenAGC's opaque per-RB record before signaling Vulkan completion. */
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdCopyQueryPoolResults(command, VK_NULL_HANDLE, UINT32_MAX, 0u,
+                              VK_NULL_HANDLE, UINT64_MAX, 0u, ~0u);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    vkCmdCopyQueryPoolResults(command, query_pool, 0u, 2u,
+                              output_buffer, 32u, sizeof(uint64_t),
+                              VK_QUERY_RESULT_WAIT_BIT |
+                                  VK_QUERY_RESULT_64_BIT);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    const VkBufferMemoryBarrier query_copy_barrier = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = output_buffer,
+        .offset = 32u,
+        .size = 2u * sizeof(uint64_t),
+    };
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         1u, &query_copy_barrier, 0u, NULL);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdCopyQueryPoolResults(command, query_pool, 0u, 1u,
+                              output_buffer, 0u, 4u,
+                              VK_QUERY_RESULT_64_BIT);
+    assert(vk_ps5_command_buffer_record_error(command) ==
+           VK_ERROR_FEATURE_NOT_PRESENT);
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+
     /* Native shader execution requires typed descriptor resource state and
      * fails closed; there is no shader-code legacy fallback. */
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);

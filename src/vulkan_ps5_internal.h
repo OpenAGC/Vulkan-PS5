@@ -44,6 +44,8 @@ void vk_ps5_debug_set_device_teardown_failure_stage(uint32_t stage);
 uint32_t vk_ps5_device_address32_hi(VkDevice device);
 AgcMemory vk_ps5_native_memory(VkDeviceMemory memory);
 uint32_t vk_ps5_memory_type_index(VkDeviceMemory memory);
+VkResult vk_ps5_memory_write(VkDeviceMemory memory, VkDeviceSize offset,
+    const void *data, VkDeviceSize size);
 typedef enum VkPs5NativeObjectType {
     VK_PS5_NATIVE_BUFFER,
     VK_PS5_NATIVE_IMAGE,
