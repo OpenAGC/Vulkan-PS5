@@ -1029,6 +1029,10 @@ static bool native_image_supports_usage(const VkPs5Image *image,
 static VkBool32 native_require_complete_stream(VkPs5CommandBuffer *command)
 {
     if (!command->native_stream_complete) {
+        fprintf(stderr,
+            "vulkan-ps5: native stream required but incomplete at %s\n",
+            command->debug_last_command ? command->debug_last_command :
+                "unknown command");
         if (command->record_error == VK_SUCCESS)
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
         return VK_FALSE;
@@ -8954,6 +8958,10 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
                                       VK_IMAGE_LAYOUT_GENERAL, &before) ||
             !native_usage_from_access(m[index].dstAccessMask,
                                       VK_IMAGE_LAYOUT_GENERAL, &after)) {
+            fprintf(stderr,
+                "vulkan-ps5: memory barrier access rejected index=%u "
+                "src_access=0x%x dst_access=0x%x\n", index,
+                m[index].srcAccessMask, m[index].dstAccessMask);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -8972,6 +8980,15 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             !native_usage_from_access(barrier->dstAccessMask,
                                       VK_IMAGE_LAYOUT_GENERAL, &after) ||
             barrier->offset > buffer->size) {
+            fprintf(stderr,
+                "vulkan-ps5: buffer barrier validation rejected index=%u "
+                "src_access=0x%x dst_access=0x%x src_queue=%u dst_queue=%u "
+                "offset=%llu buffer_size=%llu native=%u\n", index,
+                barrier->srcAccessMask, barrier->dstAccessMask,
+                barrier->srcQueueFamilyIndex, barrier->dstQueueFamilyIndex,
+                (unsigned long long)barrier->offset,
+                (unsigned long long)(buffer ? buffer->size : 0u),
+                buffer && buffer->native_buffer ? 1u : 0u);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
@@ -8996,6 +9013,21 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             !native_image_usage_from_access(barrier->dstAccessMask,
                                             barrier->newLayout, &after) ||
             !native_image_range(image, &barrier->subresourceRange, &range)) {
+            fprintf(stderr,
+                "vulkan-ps5: image barrier validation rejected index=%u "
+                "format=%u old_layout=%u new_layout=%u src_access=0x%x "
+                "dst_access=0x%x src_queue=%u dst_queue=%u aspect=0x%x "
+                "mip=%u+%u layer=%u+%u native=%u\n", index,
+                image ? image->format : VK_FORMAT_UNDEFINED,
+                barrier->oldLayout, barrier->newLayout,
+                barrier->srcAccessMask, barrier->dstAccessMask,
+                barrier->srcQueueFamilyIndex, barrier->dstQueueFamilyIndex,
+                barrier->subresourceRange.aspectMask,
+                barrier->subresourceRange.baseMipLevel,
+                barrier->subresourceRange.levelCount,
+                barrier->subresourceRange.baseArrayLayer,
+                barrier->subresourceRange.layerCount,
+                image && image->native_image ? 1u : 0u);
             command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
             return;
         }
