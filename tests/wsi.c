@@ -194,6 +194,7 @@ if (extension_count > 32) return 1;
         .imageExtent = capabilities.currentExtent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                       VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
@@ -240,20 +241,56 @@ if (extension_count > 32) return 1;
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         };
         CHECK(vkBeginCommandBuffer(present_commands[i], &begin));
-        const VkImageMemoryBarrier barrier = {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = images[i],
-            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+        VkImageMemoryBarrier barriers[3] = {
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = images[i],
+                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                .dstAccessMask = i == 1 ? VK_ACCESS_TRANSFER_READ_BIT :
+                                         VK_ACCESS_MEMORY_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                .newLayout = i == 1 ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL :
+                                      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = images[i],
+                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+                .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
+                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image = images[i],
+                .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            },
         };
         vkCmdPipelineBarrier(present_commands[i],
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL,
-            1, &barrier);
+            1, &barriers[0]);
+        vkCmdPipelineBarrier(present_commands[i],
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL,
+            1, &barriers[1]);
+        if (i == 1) {
+            vkCmdPipelineBarrier(present_commands[i],
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0, NULL,
+                1, &barriers[2]);
+        }
         CHECK(vkEndCommandBuffer(present_commands[i]));
     }
     const VkImageViewCreateInfo mutable_view_info = {
@@ -344,6 +381,25 @@ if (extension_count > 32) return 1;
         };
         CHECK(vkQueuePresentKHR(queue, &present_info));
         if (per_swapchain != VK_SUCCESS) return 1;
+    }
+
+    for (uint32_t iteration = 0; iteration < 16; ++iteration) {
+        uint32_t recycle_index = 0;
+        CHECK(vkAcquireNextImageKHR(device, swapchain, 0,
+                                    acquire_semaphores[0], VK_NULL_HANDLE,
+                                    &recycle_index));
+        VkResult recycle_result = VK_SUCCESS;
+        const VkPresentInfoKHR recycle_present = {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &acquire_semaphores[0],
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain,
+            .pImageIndices = &recycle_index,
+            .pResults = &recycle_result,
+        };
+        CHECK(vkQueuePresentKHR(queue, &recycle_present));
+        if (recycle_result != VK_SUCCESS) return 1;
     }
 
     VkDeviceGroupPresentCapabilitiesKHR group_capabilities = {
