@@ -8,6 +8,7 @@
 #include "meta/blit_3d_frag_spv.h"
 #include "meta/resolve_frag_spv.h"
 #include "meta/upload_depth_frag_spv.h"
+#include "meta/upload_stencil_frag_spv.h"
 #include <openagc_psbc.h>
 #include <agc_cb.h>
 #include <agc_graphics.h>
@@ -4675,8 +4676,9 @@ VkResult vk_ps5_initialize_meta_blit(VkDevice device, VkFormat format,
     return result;
 }
 
-VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
-    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+static VkResult vk_ps5_initialize_meta_ds_upload(VkDevice device,
+    VkBool32 stencil, VkPipelineLayout *layout_out,
+    VkPipeline *pipeline_out)
 {
     if (!device || !layout_out || !pipeline_out)
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -4723,8 +4725,11 @@ VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
     };
     const VkShaderModuleCreateInfo fragment_create = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = sizeof(vulkan_ps5_meta_upload_depth_frag_spv),
-        .pCode = vulkan_ps5_meta_upload_depth_frag_spv,
+        .codeSize = stencil ?
+            sizeof(vulkan_ps5_meta_upload_stencil_frag_spv) :
+            sizeof(vulkan_ps5_meta_upload_depth_frag_spv),
+        .pCode = stencil ? vulkan_ps5_meta_upload_stencil_frag_spv :
+            vulkan_ps5_meta_upload_depth_frag_spv,
     };
     VkShaderModule vertex = VK_NULL_HANDLE;
     VkShaderModule fragment = VK_NULL_HANDLE;
@@ -4769,14 +4774,27 @@ VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
     };
-    const VkPipelineDepthStencilStateCreateInfo depth_stencil = {
+    VkPipelineDepthStencilStateCreateInfo depth_stencil = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
+        .depthTestEnable = stencil ? VK_FALSE : VK_TRUE,
+        .depthWriteEnable = stencil ? VK_FALSE : VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+        .stencilTestEnable = stencil,
         .minDepthBounds = 0.0f,
         .maxDepthBounds = 1.0f,
     };
+    if (stencil) {
+        const VkStencilOpState stencil_state = {
+            .failOp = VK_STENCIL_OP_KEEP,
+            .passOp = VK_STENCIL_OP_REPLACE,
+            .depthFailOp = VK_STENCIL_OP_KEEP,
+            .compareOp = VK_COMPARE_OP_ALWAYS,
+            .compareMask = 0xffu,
+            .writeMask = 0xffu,
+        };
+        depth_stencil.front = stencil_state;
+        depth_stencil.back = stencil_state;
+    }
     const VkPipelineColorBlendStateCreateInfo blend = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
     };
@@ -4819,6 +4837,20 @@ VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
         *pipeline_out = VK_NULL_HANDLE;
     }
     return result;
+}
+
+VkResult vk_ps5_initialize_meta_depth_upload(VkDevice device,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    return vk_ps5_initialize_meta_ds_upload(device, VK_FALSE, layout_out,
+        pipeline_out);
+}
+
+VkResult vk_ps5_initialize_meta_stencil_upload(VkDevice device,
+    VkPipelineLayout *layout_out, VkPipeline *pipeline_out)
+{
+    return vk_ps5_initialize_meta_ds_upload(device, VK_TRUE, layout_out,
+        pipeline_out);
 }
 
 VkResult vk_ps5_initialize_meta_resolve(VkDevice device, VkFormat format,
@@ -9107,7 +9139,7 @@ vkCmdCopyImage(VkCommandBuffer c, VkImage s, VkImageLayout sl, VkImage d,
 
 static uint32_t native_mip_dimension(uint32_t dimension, uint32_t mip);
 
-static VkResult native_copy_buffer_to_d32s8_depth(
+static VkResult native_copy_buffer_to_d32s8(
     VkPs5CommandBuffer *command, VkPs5Buffer *source,
     VkPs5Image *destination, uint32_t region_count,
     const VkBufferImageCopy *regions)
@@ -9121,12 +9153,16 @@ static VkResult native_copy_buffer_to_d32s8_depth(
         !(source->native_buffer && destination->native_image))
         return VK_ERROR_FEATURE_NOT_PRESENT;
 
-    uint64_t source_span_start = UINT64_MAX;
-    uint64_t source_span_end = 0u;
+    VkBool32 needs_depth = VK_FALSE;
+    VkBool32 needs_stencil = VK_FALSE;
     for (uint32_t index = 0u; index < region_count; ++index) {
         const VkBufferImageCopy *region = &regions[index];
         const VkImageSubresourceLayers *layers = &region->imageSubresource;
-        if (layers->aspectMask != VK_IMAGE_ASPECT_DEPTH_BIT ||
+        const VkBool32 depth =
+            layers->aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT;
+        const VkBool32 stencil =
+            layers->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
+        if ((!depth && !stencil) ||
             layers->mipLevel >= destination->mip_levels ||
             !layers->layerCount ||
             layers->baseArrayLayer >= destination->array_layers ||
@@ -9135,8 +9171,19 @@ static VkResult native_copy_buffer_to_d32s8_depth(
             region->imageOffset.x < 0 || region->imageOffset.y < 0 ||
             region->imageOffset.z != 0 || !region->imageExtent.width ||
             !region->imageExtent.height || region->imageExtent.depth != 1u ||
-            (region->bufferOffset & 3u) != 0u)
+            (depth && (region->bufferOffset & 3u) != 0u)) {
+            fprintf(stderr,
+                "vulkan-ps5: invalid D32/S8 upload region=%u aspect=0x%x "
+                "mip=%u layer=%u layers=%u buffer_offset=%llu "
+                "offset=%d,%d,%d extent=%u,%u,%u\n",
+                index, layers->aspectMask, layers->mipLevel,
+                layers->baseArrayLayer, layers->layerCount,
+                (unsigned long long)region->bufferOffset,
+                region->imageOffset.x, region->imageOffset.y,
+                region->imageOffset.z, region->imageExtent.width,
+                region->imageExtent.height, region->imageExtent.depth);
             return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
         const uint32_t mip_width = native_mip_dimension(
             destination->extent.width, layers->mipLevel);
         const uint32_t mip_height = native_mip_dimension(
@@ -9146,7 +9193,8 @@ static VkResult native_copy_buffer_to_d32s8_depth(
                 (uint32_t)region->imageOffset.x ||
             (uint32_t)region->imageOffset.y > mip_height ||
             region->imageExtent.height > mip_height -
-                (uint32_t)region->imageOffset.y)
+                (uint32_t)region->imageOffset.y ||
+            mip_width > 0x7fffu || mip_height > 0x7fffu)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         const uint64_t row_length = region->bufferRowLength ?
             region->bufferRowLength : region->imageExtent.width;
@@ -9158,68 +9206,95 @@ static VkResult native_copy_buffer_to_d32s8_depth(
             image_height > UINT64_MAX / row_length ||
             layers->layerCount > UINT64_MAX / (image_height * row_length))
             return VK_ERROR_FEATURE_NOT_PRESENT;
-        const uint64_t layer_words = image_height * row_length;
-        const uint64_t final_word = region->bufferOffset / 4u +
-            (uint64_t)(layers->layerCount - 1u) * layer_words +
-            (uint64_t)(region->imageExtent.height - 1u) * row_length +
-            region->imageExtent.width;
-        if (final_word > source->size / 4u || final_word > UINT32_MAX)
+        const uint64_t layer_elements = image_height * row_length;
+        const uint64_t layer_offset =
+            (uint64_t)(layers->layerCount - 1u) * layer_elements;
+        const uint64_t row_offset =
+            (uint64_t)(region->imageExtent.height - 1u) * row_length;
+        if (layer_offset > UINT64_MAX - row_offset ||
+            layer_offset + row_offset >
+                UINT64_MAX - region->imageExtent.width)
             return VK_ERROR_FEATURE_NOT_PRESENT;
-        if (region->bufferOffset < source_span_start)
-            source_span_start = region->bufferOffset;
-        if (final_word * 4u > source_span_end)
-            source_span_end = final_word * 4u;
+        const uint64_t element_count = layer_offset + row_offset +
+            region->imageExtent.width;
+        const uint64_t element_size = depth ? 4u : 1u;
+        if (element_count >
+            (UINT64_MAX - region->bufferOffset) / element_size)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const uint64_t final_byte = region->bufferOffset +
+            element_count * element_size;
+        if (final_byte > UINT64_MAX - 3u)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        const uint64_t aligned_start = region->bufferOffset & ~UINT64_C(3);
+        const uint64_t aligned_end = (final_byte + 3u) & ~UINT64_C(3);
+        if (aligned_end > source->size || aligned_end <= aligned_start ||
+            aligned_end - aligned_start > UINT32_MAX)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        needs_depth |= depth;
+        needs_stencil |= stencil;
     }
     if (!native_require_complete_stream(command))
         return command->record_error;
 
-    VkPipelineLayout layout_handle = VK_NULL_HANDLE;
-    VkPipeline pipeline_handle = VK_NULL_HANDLE;
-    VkResult result = vk_ps5_device_meta_depth_upload_pipeline(
-        command->device, &layout_handle, &pipeline_handle);
-    if (result != VK_SUCCESS || !layout_handle || !pipeline_handle)
+    VkPipelineLayout depth_layout = VK_NULL_HANDLE;
+    VkPipeline depth_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout stencil_layout = VK_NULL_HANDLE;
+    VkPipeline stencil_pipeline = VK_NULL_HANDLE;
+    VkResult result = VK_SUCCESS;
+    if (needs_depth)
+        result = vk_ps5_device_meta_depth_upload_pipeline(command->device,
+            &depth_layout, &depth_pipeline);
+    if (result == VK_SUCCESS && needs_stencil)
+        result = vk_ps5_device_meta_stencil_upload_pipeline(command->device,
+            &stencil_layout, &stencil_pipeline);
+    if (result != VK_SUCCESS || (needs_depth &&
+            (!depth_layout || !depth_pipeline)) || (needs_stencil &&
+            (!stencil_layout || !stencil_pipeline))) {
+        fprintf(stderr,
+            "vulkan-ps5: D32/S8 upload pipeline initialization failed "
+            "result=%d needs_depth=%u depth=%u/%u needs_stencil=%u "
+            "stencil=%u/%u\n", result, needs_depth,
+            depth_layout != VK_NULL_HANDLE,
+            depth_pipeline != VK_NULL_HANDLE, needs_stencil,
+            stencil_layout != VK_NULL_HANDLE,
+            stencil_pipeline != VK_NULL_HANDLE);
         return result == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : result;
-    VkPs5Pipeline *pipeline = (VkPs5Pipeline *)pipeline_handle;
+    }
 
     result = native_transition_whole_image(command, destination,
         native_image_recorded_usage(command, destination),
         kAgcResourceUsageDepthStencilWrite);
     if (result != VK_SUCCESS)
         return result;
-    result = native_prepare_buffer_range(command, source, source_span_start,
-        source_span_end - source_span_start, kAgcResourceUsageShaderRead);
-    if (result != VK_SUCCESS)
-        return result;
 
-    const char *native_step = "bind pipeline";
-    int32_t native_result = agcCmdBindGraphicsPipeline(
-        command->native_graphics_command_buffer,
-        pipeline->native_graphics_pipeline);
-    if (native_result == AGC_OK) {
-        command->native_bound_graphics = pipeline->native_graphics_pipeline;
-        command->native_descriptor_graphics_pipeline = NULL;
-        command->native_vertex_graphics_pipeline = NULL;
-        command->native_attachments_render_pass = NULL;
-        command->native_attachments_framebuffer = NULL;
-        native_step = "unbind color targets";
-        native_result = agcCmdBindColorTargets(
-            command->native_graphics_command_buffer, 0u, NULL);
-    }
-    if (native_result == AGC_OK) {
-        AgcDescriptorWrite write = AGC_DESCRIPTOR_WRITE_INIT;
-        write.type = AGC_SHADER_DESCRIPTOR_STORAGE_BUFFER;
-        write.buffer = source->native_buffer;
-        write.buffer_offset = source_span_start;
-        write.buffer_range = source_span_end - source_span_start;
-        native_step = "source descriptor";
-        native_result = agcCmdBindDescriptors(
-            command->native_graphics_command_buffer, 1u, &write);
-        if (native_result == AGC_OK)
-            command->native_descriptor_bind_count++;
-    }
+    const char *native_step = "begin";
+    uint32_t native_region = 0u;
+    VkImageAspectFlags native_aspect = 0u;
+    int32_t native_result = AGC_OK;
     for (uint32_t index = 0u;
          native_result == AGC_OK && index < region_count; ++index) {
         const VkBufferImageCopy *region = &regions[index];
+        const VkBool32 stencil = region->imageSubresource.aspectMask ==
+            VK_IMAGE_ASPECT_STENCIL_BIT;
+        VkPs5Pipeline *pipeline = (VkPs5Pipeline *)(stencil ?
+            stencil_pipeline : depth_pipeline);
+        native_region = index;
+        native_aspect = region->imageSubresource.aspectMask;
+        native_step = "bind pipeline";
+        native_result = agcCmdBindGraphicsPipeline(
+            command->native_graphics_command_buffer,
+            pipeline->native_graphics_pipeline);
+        if (native_result == AGC_OK) {
+            command->native_bound_graphics =
+                pipeline->native_graphics_pipeline;
+            command->native_descriptor_graphics_pipeline = NULL;
+            command->native_vertex_graphics_pipeline = NULL;
+            command->native_attachments_render_pass = NULL;
+            command->native_attachments_framebuffer = NULL;
+            native_step = "unbind color targets";
+            native_result = agcCmdBindColorTargets(
+                command->native_graphics_command_buffer, 0u, NULL);
+        }
         const uint32_t mip_width = native_mip_dimension(
             destination->extent.width,
             region->imageSubresource.mipLevel);
@@ -9230,6 +9305,34 @@ static VkResult native_copy_buffer_to_d32s8_depth(
             region->bufferRowLength : region->imageExtent.width;
         const uint32_t image_height = region->bufferImageHeight ?
             region->bufferImageHeight : region->imageExtent.height;
+        const uint64_t layer_elements =
+            (uint64_t)image_height * row_length;
+        const uint64_t element_count =
+            (uint64_t)(region->imageSubresource.layerCount - 1u) *
+                layer_elements +
+            (uint64_t)(region->imageExtent.height - 1u) * row_length +
+            region->imageExtent.width;
+        const uint64_t final_byte = region->bufferOffset +
+            element_count * (stencil ? 1u : 4u);
+        const uint64_t source_span_start =
+            region->bufferOffset & ~UINT64_C(3);
+        const uint64_t source_span_end =
+            (final_byte + 3u) & ~UINT64_C(3);
+        result = native_prepare_buffer_range(command, source,
+            source_span_start, source_span_end - source_span_start,
+            kAgcResourceUsageShaderRead);
+        if (result != VK_SUCCESS)
+            return result;
+        AgcDescriptorWrite write = AGC_DESCRIPTOR_WRITE_INIT;
+        write.type = AGC_SHADER_DESCRIPTOR_STORAGE_BUFFER;
+        write.buffer = source->native_buffer;
+        write.buffer_offset = source_span_start;
+        write.buffer_range = source_span_end - source_span_start;
+        native_step = "source descriptor";
+        native_result = agcCmdBindDescriptors(
+            command->native_graphics_command_buffer, 1u, &write);
+        if (native_result == AGC_OK)
+            command->native_descriptor_bind_count++;
         AgcViewport viewport = AGC_VIEWPORT_INIT;
         viewport.width = (float)mip_width;
         viewport.height = (float)mip_height;
@@ -9245,11 +9348,18 @@ static VkResult native_copy_buffer_to_d32s8_depth(
             &viewport, &scissor);
         for (uint32_t layer = 0u; native_result == AGC_OK &&
              layer < region->imageSubresource.layerCount; ++layer) {
-            const uint64_t base_word =
+            const uint64_t base = stencil ?
+                region->bufferOffset - source_span_start +
+                    (uint64_t)layer * image_height * row_length :
                 (region->bufferOffset - source_span_start) / 4u +
-                (uint64_t)layer * image_height * row_length;
+                    (uint64_t)layer * image_height * row_length;
+            if (base > UINT32_MAX) {
+                native_result = AGC_ERROR_NOT_SUPPORTED;
+                native_step = "push range";
+                break;
+            }
             const uint32_t push[] = {
-                (uint32_t)base_word, row_length,
+                (uint32_t)base, row_length,
                 (uint32_t)region->imageOffset.x,
                 (uint32_t)region->imageOffset.y,
             };
@@ -9277,23 +9387,26 @@ static VkResult native_copy_buffer_to_d32s8_depth(
             if (native_result == AGC_OK)
                 command->native_draw_count++;
         }
+        if (native_result == AGC_OK) {
+            result = native_prepare_buffer_range(command, source,
+                source_span_start, source_span_end - source_span_start,
+                kAgcResourceUsageCopySource);
+            if (result != VK_SUCCESS)
+                return result;
+        }
     }
     if (native_result != AGC_OK) {
         AgcDebugMessage message = AGC_DEBUG_MESSAGE_INIT;
         const int32_t debug_result = agcGetLastDebugMessage(
             vk_ps5_native_device(command->device), &message);
         fprintf(stderr,
-            "vulkan-ps5: native D32/S8 depth upload failed step=%s "
-            "result=0x%x%s%s\n", native_step, (unsigned)native_result,
+            "vulkan-ps5: native D32/S8 upload failed region=%u "
+            "aspect=0x%x step=%s result=0x%x%s%s\n", native_region,
+            native_aspect, native_step, (unsigned)native_result,
             debug_result == AGC_OK ? ": " : "",
             debug_result == AGC_OK ? message.message : "");
         return native_command_result(native_result);
     }
-    result = native_prepare_buffer_range(command, source, source_span_start,
-        source_span_end - source_span_start,
-        kAgcResourceUsageCopySource);
-    if (result != VK_SUCCESS)
-        return result;
     result = native_transition_whole_image(command, destination,
         kAgcResourceUsageDepthStencilWrite,
         kAgcResourceUsageCopyDestination);
@@ -9347,7 +9460,7 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
         return;
     }
     if (destination->is_depth_surface) {
-        command->record_error = native_copy_buffer_to_d32s8_depth(command,
+        command->record_error = native_copy_buffer_to_d32s8(command,
             source, destination, n, r);
         if (command->record_error != VK_SUCCESS)
             fprintf(stderr,

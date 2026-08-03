@@ -1854,16 +1854,26 @@ int main(int argc, char **argv)
         VK_IMAGE_LAYOUT_GENERAL, 1u, &buffer_image_copy);
     vkCmdCopyImageToBuffer(command, color_image,
         VK_IMAGE_LAYOUT_GENERAL, output_buffer, 1u, &buffer_image_copy);
-    const VkBufferImageCopy depth_buffer_image_copy = {
-        .bufferOffset = 0u,
-        .bufferRowLength = 8u,
-        .bufferImageHeight = 4u,
-        .imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 0u, 1u},
-        .imageOffset = {2, 2, 0},
-        .imageExtent = {4u, 3u, 1u},
+    const VkBufferImageCopy depth_stencil_buffer_image_copies[] = {
+        {
+            .bufferOffset = 0u,
+            .bufferRowLength = 8u,
+            .bufferImageHeight = 4u,
+            .imageSubresource = {VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 0u, 1u},
+            .imageOffset = {2, 2, 0},
+            .imageExtent = {4u, 3u, 1u},
+        },
+        {
+            .bufferOffset = 97u,
+            .bufferRowLength = 8u,
+            .bufferImageHeight = 4u,
+            .imageSubresource = {VK_IMAGE_ASPECT_STENCIL_BIT, 0u, 0u, 1u},
+            .imageOffset = {2, 2, 0},
+            .imageExtent = {4u, 3u, 1u},
+        },
     };
     vkCmdCopyBufferToImage(command, indirect_buffer, depth_image,
-        VK_IMAGE_LAYOUT_GENERAL, 1u, &depth_buffer_image_copy);
+        VK_IMAGE_LAYOUT_GENERAL, 2u, depth_stencil_buffer_image_copies);
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
@@ -2763,11 +2773,12 @@ vkCmdEndRenderPass2(command, &subpass_end);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
     assert(vkBeginCommandBuffer(invalid_copy_command, &begin_info) ==
            VK_SUCCESS);
-    VkBufferImageCopy stencil_buffer_image_copy = depth_buffer_image_copy;
-    stencil_buffer_image_copy.imageSubresource.aspectMask =
-        VK_IMAGE_ASPECT_STENCIL_BIT;
+    VkBufferImageCopy invalid_depth_stencil_copy =
+        depth_stencil_buffer_image_copies[0];
+    invalid_depth_stencil_copy.imageSubresource.aspectMask =
+        VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
     vkCmdCopyBufferToImage(invalid_copy_command, indirect_buffer, depth_image,
-        VK_IMAGE_LAYOUT_GENERAL, 1u, &stencil_buffer_image_copy);
+        VK_IMAGE_LAYOUT_GENERAL, 1u, &invalid_depth_stencil_copy);
     assert(vkEndCommandBuffer(invalid_copy_command) ==
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(invalid_copy_command, 0u) == VK_SUCCESS);
