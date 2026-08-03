@@ -336,6 +336,11 @@ latched `VK_ERROR_FEATURE_NOT_PRESENT`. Fill and occlusion reset/begin/end now
 record command labels and print exact native emission failures; successful
 query-copy recording is also logged. This diagnostic slice changes no accepted
 feature surface.
+PID 179 then proved none of those commands were reached: no success/failure
+query-copy or fill/query label appeared, while the final last-entry label was
+still `vkCmdPipelineBarrier`. The remaining silent barrier branches now print
+exact OpenAGC buffer-range or image-subresource state-query failures, including
+native result and resource range.
 
 OpenAGC API 37 adds opaque occlusion-query layout/result contracts and typed
 query-buffer reset, begin, and end commands. Vulkan query pools now own

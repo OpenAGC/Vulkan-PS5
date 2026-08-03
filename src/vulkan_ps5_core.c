@@ -9227,6 +9227,13 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             command->native_graphics_command_buffer, buffer->native_buffer,
             barrier->offset, size, &state);
         if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: buffer barrier state query failed index=%u "
+                "result=0x%08x offset=%llu size=%llu buffer_size=%llu\n",
+                index, (unsigned)result,
+                (unsigned long long)barrier->offset,
+                (unsigned long long)size,
+                (unsigned long long)buffer->size);
             command->record_error = native_command_result(result);
             return;
         }
@@ -9313,6 +9320,15 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             command->native_graphics_command_buffer, image->native_image,
             &transition.image_range, &state);
         if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: image barrier state query failed index=%u "
+                "result=0x%08x format=%u aspect=0x%x mip=%u+%u "
+                "layer=%u+%u\n", index, (unsigned)result, image->format,
+                transition.image_range.aspect_mask,
+                transition.image_range.base_mip_level,
+                transition.image_range.mip_level_count,
+                transition.image_range.base_array_layer,
+                transition.image_range.array_layer_count);
             command->record_error = native_command_result(result);
             return;
         }
