@@ -2274,7 +2274,9 @@ vkCmdBeginRenderPass2(command, &render_begin, &subpass_begin);
     };
     const VkRect2D dynamic_scissors[] = {
         {{0, 0}, {128, 256}},
-        {{128, 0}, {128, 256}},
+        /* The right edge extends past the 256-wide framebuffer. Vulkan clips
+         * this legal scissor to the attachment rather than rejecting it. */
+        {{128, 0}, {256, 256}},
     };
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       dynamic_viewport_pipeline);

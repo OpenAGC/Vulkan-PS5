@@ -2044,11 +2044,17 @@ static VkResult resolve_viewport_state(
             pipeline->viewport_state.count * sizeof(destination->scissors[0]));
     }
     for (uint32_t i = 0u; i < destination->count; ++i) {
-        if (destination->scissors[i].right >
-                command->active_framebuffer->width ||
-            destination->scissors[i].bottom >
-                command->active_framebuffer->height)
-            return VK_ERROR_INITIALIZATION_FAILED;
+        AgcGfx1013ScissorState *scissor = &destination->scissors[i];
+        const uint32_t width = command->active_framebuffer->width;
+        const uint32_t height = command->active_framebuffer->height;
+        /* Vulkan scissors are clipped by the framebuffer bounds; their
+         * declared right/bottom edges need not fit the attachment. */
+        if (scissor->left >= width || scissor->top >= height)
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (scissor->right > width)
+            scissor->right = width;
+        if (scissor->bottom > height)
+            scissor->bottom = height;
     }
     return VK_SUCCESS;
 }
