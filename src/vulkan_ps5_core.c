@@ -3942,6 +3942,13 @@ static VkResult finalize_pipeline(
     return VK_SUCCESS;
 }
 
+static VkResult graphics_pipeline_unsupported(const char *reason)
+{
+    fprintf(stderr,
+        "vulkan-ps5: graphics pipeline feature not present: %s\n", reason);
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
                          uint32_t createInfoCount,
@@ -4674,7 +4681,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     AGC_GFX1013_MAX_COLOR_TARGETS ||
                 (rendering->colorAttachmentCount &&
                  !rendering->pColorAttachmentFormats)))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "dynamic-rendering create state");
         AgcGfx1013PrimitiveTopology translated_topology;
         if (!primitive_topology(create->pInputAssemblyState->topology,
                 &translated_topology))
@@ -4858,7 +4866,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             multisample->alphaToCoverageEnable ||
             blend->attachmentCount > AGC_GFX1013_MAX_COLOR_TARGETS ||
             (blend->attachmentCount && !blend->pAttachments))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "rasterization, multisample, or blend create state");
         AgcGfx1013ViewportArrayState viewport_state = {
             .count = create->pViewportState->viewportCount,
         };
@@ -4870,7 +4879,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 (!dynamic_scissor && !translate_scissor(
                     &create->pViewportState->pScissors[viewport_index],
                     &viewport_state.scissors[viewport_index])))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "static viewport or scissor");
         }
         const VkPipelineShaderStageCreateInfo *vertex = NULL, *tess_control = NULL;
         const VkPipelineShaderStageCreateInfo *tess_evaluation = NULL;
@@ -4884,19 +4894,24 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: slot = &tess_evaluation; break;
             case VK_SHADER_STAGE_GEOMETRY_BIT: slot = &geometry; break;
             case VK_SHADER_STAGE_FRAGMENT_BIT: slot = &fragment; break;
-            default: return VK_ERROR_FEATURE_NOT_PRESENT;
+            default: return graphics_pipeline_unsupported(
+                "shader stage enum");
             }
             if (*slot) return VK_ERROR_INITIALIZATION_FAILED;
             *slot = stage;
         }
-        if (!vertex || !fragment) return VK_ERROR_FEATURE_NOT_PRESENT;
+        if (!vertex || !fragment)
+            return graphics_pipeline_unsupported(
+                "missing vertex or fragment stage");
         if ((tess_control == NULL) != (tess_evaluation == NULL))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "unpaired tessellation stages");
         if ((tess_control && create->pInputAssemblyState->topology !=
                 VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) ||
             (!tess_control && create->pInputAssemblyState->topology ==
                 VK_PRIMITIVE_TOPOLOGY_PATCH_LIST))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "patch topology and tessellation stage mismatch");
         if (tess_control && (!create->pTessellationState ||
             !create->pTessellationState->patchControlPoints))
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -4910,7 +4925,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 !vertex_input->pVertexAttributeDescriptions) ||
             (vertex_input->vertexBindingDescriptionCount &&
                 !vertex_input->pVertexBindingDescriptions))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "vertex input count or pointer");
         uint32_t vertex_binding_mask = 0u;
         uint32_t vertex_strides[VK_PS5_MAX_VERTEX_BINDINGS] = {0};
         VkVertexInputRate vertex_rates[VK_PS5_MAX_VERTEX_BINDINGS] = {0};
@@ -4924,7 +4940,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                  binding->inputRate != VK_VERTEX_INPUT_RATE_INSTANCE) ||
                 binding->stride == 0u || binding->stride > 2048u ||
                 (vertex_binding_mask & (1u << binding->binding)))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "vertex binding index, rate, stride, or duplicate");
             vertex_binding_mask |= 1u << binding->binding;
             vertex_strides[binding->binding] = binding->stride;
             vertex_rates[binding->binding] = binding->inputRate;
@@ -4957,7 +4974,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 vertex_rates[divisor->binding] != VK_VERTEX_INPUT_RATE_INSTANCE ||
                 divisor->divisor == 0u ||
                 (divisor_binding_mask & (1u << divisor->binding)))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "vertex divisor binding or value");
             divisor_binding_mask |= 1u << divisor->binding;
             vertex_divisors[divisor->binding] = divisor->divisor;
         }
@@ -5005,7 +5023,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 return VK_ERROR_INITIALIZATION_FAILED;
             if (multisample->rasterizationSamples !=
                     render_pass->subpasses[create->subpass].samples)
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "render-pass sample count mismatch");
             color_attachment_count =
                 render_pass->subpasses[create->subpass].color_attachment_count;
             view_mask = render_pass->subpasses[create->subpass].view_mask;
@@ -5051,12 +5070,14 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             }
         }
         if (view_mask && (geometry || tess_control))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "geometry/tessellation multiview");
         AgcGfx1013ColorBlendState color_blend;
         bool dual_source_blend = false;
         if (!color_blend_state(blend, color_attachment_count, &color_blend,
                                &dual_source_blend))
-            return VK_ERROR_FEATURE_NOT_PRESENT;
+            return graphics_pipeline_unsupported(
+                "color blend attachment state");
         OpenAgcPsbcColorExportFormat
             color_export_formats[AGC_GFX1013_MAX_COLOR_TARGETS] = {0};
         for (uint32_t attachment = 0;
@@ -5085,7 +5106,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (depth->depthCompareOp > VK_COMPARE_OP_ALWAYS ||
                 !stencil_face_state(&depth->front, &depth_stencil.front) ||
                 !stencil_face_state(&depth->back, &depth_stencil.back))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "depth/stencil create state");
             depth_stencil.depth_test_enable = depth->depthTestEnable;
             depth_stencil.depth_write_enable =
                 depth->depthTestEnable && depth->depthWriteEnable;
@@ -5100,7 +5122,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if ((depth_read_only && depth->depthWriteEnable) ||
                 (stencil_read_only && depth->stencilTestEnable &&
                  (depth->front.writeMask || depth->back.writeMask)))
-                return VK_ERROR_FEATURE_NOT_PRESENT;
+                return graphics_pipeline_unsupported(
+                    "read-only depth/stencil writes");
         }
         OpenAgcPsbcPipelineContext context = {
             .vertex_attributes = attributes,
