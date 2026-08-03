@@ -18,6 +18,7 @@ typedef struct VkPs5Surface {
     VkInstance instance;
     atomic_flag lock;
     uintptr_t active_swapchain;
+    atomic_bool terminal_failure;
 } VkPs5Surface;
 
 typedef struct VkPs5Swapchain {
@@ -123,6 +124,7 @@ vkCreateHeadlessSurfaceEXT(VkInstance instance,
     memset(surface, 0, sizeof(*surface));
     surface->instance = instance;
     atomic_flag_clear(&surface->lock);
+    atomic_init(&surface->terminal_failure, false);
     *pSurface = (VkSurfaceKHR)(uintptr_t)surface;
     return VK_SUCCESS;
 }
@@ -131,9 +133,19 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surface_handle,
                     const VkAllocationCallbacks *pAllocator) {
     VkPs5Surface *surface = surface_from_handle(surface_handle);
-    if (surface)
-        vk_ps5_instance_free(instance ? instance : surface->instance,
-                             pAllocator, surface);
+    if (!surface) return;
+    lock_flag(&surface->lock);
+    if (surface->active_swapchain ||
+        atomic_load_explicit(&surface->terminal_failure,
+            memory_order_acquire)) {
+        fprintf(stderr,
+            "vulkan-ps5: surface teardown failed: live or quarantined swapchain\n");
+        unlock_flag(&surface->lock);
+        return;
+    }
+    unlock_flag(&surface->lock);
+    vk_ps5_instance_free(instance ? instance : surface->instance,
+                         pAllocator, surface);
 }
 
 VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
@@ -201,11 +213,20 @@ vkGetPhysicalDevicePresentRectanglesKHR(VkPhysicalDevice physicalDevice,
     return VK_SUCCESS;
 }
 
-static void destroy_swapchain_storage(VkPs5Swapchain *swapchain,
-                                      const VkAllocationCallbacks *allocator) {
-    if (!swapchain) return;
-    if (swapchain->present_chain)
-        (void)agcDestroyPresentChain(swapchain->present_chain);
+static VkResult destroy_swapchain_storage(VkPs5Swapchain *swapchain,
+                                          const VkAllocationCallbacks *allocator) {
+    if (!swapchain) return VK_SUCCESS;
+    if (swapchain->present_chain) {
+        const int32_t native_result =
+            agcDestroyPresentChain(swapchain->present_chain);
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: native present-chain teardown failed: 0x%08x; "
+                "retaining registered image memory\n",
+                (unsigned)native_result);
+            return VK_ERROR_DEVICE_LOST;
+        }
+    }
     swapchain->present_chain = NULL;
     for (uint32_t i = 0; i < VK_PS5_SWAPCHAIN_IMAGE_COUNT; ++i) {
         if (swapchain->images[i])
@@ -217,6 +238,7 @@ static void destroy_swapchain_storage(VkPs5Swapchain *swapchain,
         (void)pthread_cond_destroy(&swapchain->available);
     if (swapchain->lock_initialized)
         (void)pthread_mutex_destroy(&swapchain->lock);
+    return VK_SUCCESS;
 }
 
 static VkResult validate_swapchain_create_info(
@@ -272,12 +294,20 @@ VK_PS5_EXPORT VKAPI_ATTR VkResult VKAPI_CALL
 vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
     const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain) {
     if (!device || !pSwapchain) return VK_ERROR_INITIALIZATION_FAILED;
+    *pSwapchain = VK_NULL_HANDLE;
     VkResult result = validate_swapchain_create_info(pCreateInfo);
     if (result != VK_SUCCESS) return result;
 
     VkPs5Surface *surface = surface_from_handle(pCreateInfo->surface);
     VkPs5Swapchain *old_swapchain = swapchain_from_handle(pCreateInfo->oldSwapchain);
+    if (old_swapchain && vkDeviceWaitIdle(device) != VK_SUCCESS)
+        return VK_ERROR_DEVICE_LOST;
     lock_flag(&surface->lock);
+    if (atomic_load_explicit(&surface->terminal_failure,
+            memory_order_acquire)) {
+        unlock_flag(&surface->lock);
+        return VK_ERROR_DEVICE_LOST;
+    }
     if (surface->active_swapchain &&
         surface->active_swapchain != (uintptr_t)old_swapchain) {
         unlock_flag(&surface->lock);
@@ -287,8 +317,22 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
         (void)pthread_mutex_lock(&old_swapchain->lock);
         old_swapchain->retired = VK_TRUE;
         (void)pthread_cond_broadcast(&old_swapchain->available);
+        if (old_swapchain->present_chain) {
+            const int32_t retire_result =
+                agcDestroyPresentChain(old_swapchain->present_chain);
+            if (retire_result != AGC_OK) {
+                atomic_store_explicit(&surface->terminal_failure, true,
+                    memory_order_release);
+                (void)pthread_mutex_unlock(&old_swapchain->lock);
+                unlock_flag(&surface->lock);
+                fprintf(stderr,
+                    "vulkan-ps5: old present-chain retirement failed: "
+                    "0x%08x\n", (unsigned)retire_result);
+                return VK_ERROR_DEVICE_LOST;
+            }
+            old_swapchain->present_chain = NULL;
+        }
         (void)pthread_mutex_unlock(&old_swapchain->lock);
-        surface->active_swapchain = 0;
     }
 
     VkPs5Swapchain *swapchain = vk_ps5_device_alloc(device, pAllocator,
@@ -378,8 +422,10 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
     AgcPresentChainDesc present_desc = AGC_PRESENT_CHAIN_DESC_INIT;
     present_desc.image_count = VK_PS5_SWAPCHAIN_IMAGE_COUNT;
     present_desc.images = native_images;
-    if (agcCreatePresentChain(vk_ps5_native_device(device), &present_desc,
-            &swapchain->present_chain) != AGC_OK) {
+    const int32_t present_chain_result = agcCreatePresentChain(
+        vk_ps5_native_device(device), &present_desc,
+        &swapchain->present_chain);
+    if (present_chain_result != AGC_OK) {
         result = VK_ERROR_INITIALIZATION_FAILED;
         goto fail;
     }
@@ -391,15 +437,25 @@ vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInf
             kAgcResourceUsageVideoOutScanout);
 
     surface->active_swapchain = (uintptr_t)swapchain;
+    vk_ps5_device_retain_wsi_ownership(device);
     *pSwapchain = (VkSwapchainKHR)(uintptr_t)swapchain;
     unlock_flag(&surface->lock);
     return VK_SUCCESS;
 
 fail:
-    destroy_swapchain_storage(swapchain, pAllocator);
-    vk_ps5_device_free(device, pAllocator, swapchain);
-    unlock_flag(&surface->lock);
-    return result;
+    {
+        const VkResult teardown_result =
+            destroy_swapchain_storage(swapchain, pAllocator);
+        if (teardown_result == VK_SUCCESS) {
+            vk_ps5_device_free(device, pAllocator, swapchain);
+        } else {
+            atomic_store_explicit(&surface->terminal_failure, true,
+                memory_order_release);
+            vk_ps5_device_retain_wsi_ownership(device);
+        }
+        unlock_flag(&surface->lock);
+        return teardown_result == VK_SUCCESS ? result : teardown_result;
+    }
 }
 
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
@@ -413,10 +469,42 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain_handle,
         return;
     }
     lock_flag(&swapchain->surface->lock);
+    if (pthread_mutex_lock(&swapchain->lock) != 0) {
+        atomic_store_explicit(&swapchain->surface->terminal_failure, true,
+            memory_order_release);
+        unlock_flag(&swapchain->surface->lock);
+        fprintf(stderr,
+            "vulkan-ps5: native present-chain teardown failed: "
+            "swapchain lock unavailable\n");
+        return;
+    }
+    if (swapchain->present_chain) {
+        const int32_t native_result =
+            agcDestroyPresentChain(swapchain->present_chain);
+        if (native_result != AGC_OK) {
+            atomic_store_explicit(&swapchain->surface->terminal_failure, true,
+                memory_order_release);
+            (void)pthread_mutex_unlock(&swapchain->lock);
+            unlock_flag(&swapchain->surface->lock);
+            fprintf(stderr,
+                "vulkan-ps5: native present-chain teardown failed: 0x%08x; "
+                "retaining registered image memory\n",
+                (unsigned)native_result);
+            return;
+        }
+        swapchain->present_chain = NULL;
+    }
+    (void)pthread_mutex_unlock(&swapchain->lock);
+    if (destroy_swapchain_storage(swapchain, pAllocator) != VK_SUCCESS) {
+        atomic_store_explicit(&swapchain->surface->terminal_failure, true,
+            memory_order_release);
+        unlock_flag(&swapchain->surface->lock);
+        return;
+    }
     if (swapchain->surface->active_swapchain == (uintptr_t)swapchain)
         swapchain->surface->active_swapchain = 0;
+    vk_ps5_device_release_wsi_ownership(device);
     unlock_flag(&swapchain->surface->lock);
-    destroy_swapchain_storage(swapchain, pAllocator);
     vk_ps5_device_free(device, pAllocator, swapchain);
 }
 
@@ -460,6 +548,11 @@ static VkResult acquire_next_image(VkPs5Swapchain *swapchain, uint64_t timeout,
     if (pthread_mutex_lock(&swapchain->lock) != 0)
         return VK_ERROR_DEVICE_LOST;
     for (;;) {
+        if (atomic_load_explicit(&swapchain->surface->terminal_failure,
+                memory_order_acquire)) {
+            (void)pthread_mutex_unlock(&swapchain->lock);
+            return VK_ERROR_DEVICE_LOST;
+        }
         if (swapchain->retired) {
             (void)pthread_mutex_unlock(&swapchain->lock);
             return VK_ERROR_OUT_OF_DATE_KHR;
@@ -593,10 +686,15 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
                 goto item_done;
             }
             frame_id = swapchain->frame_id++;
-            if (!swapchain->acquired[index]) {
+            if (atomic_load_explicit(
+                    &swapchain->surface->terminal_failure,
+                    memory_order_acquire)) {
+                item_result = VK_ERROR_DEVICE_LOST;
+            } else if (swapchain->retired) {
+                item_result = VK_ERROR_OUT_OF_DATE_KHR;
+            } else if (!swapchain->acquired[index]) {
                 item_result = VK_ERROR_INITIALIZATION_FAILED;
             } else {
-                (void)pthread_mutex_unlock(&swapchain->lock);
                 item_result = vk_ps5_queue_present_native(queue,
                     swapchain->present_chain, index, frame_id,
                     (uint64_t)VK_PS5_PRESENT_TIMEOUT_US * UINT64_C(1000));
@@ -608,10 +706,6 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresentInfo) {
                         diagnostic, item_result, index,
                         (unsigned long long)frame_id);
 #endif
-                if (pthread_mutex_lock(&swapchain->lock) != 0) {
-                    item_result = VK_ERROR_DEVICE_LOST;
-                    goto item_done;
-                }
             }
             if (item_result == VK_SUCCESS) {
                 swapchain->acquired[index] = false;

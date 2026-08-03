@@ -102,9 +102,18 @@ struct VkPs5Device {
     VkPs5MetaResolvePipeline meta_resolves[
         VK_PS5_META_RESOLVE_PIPELINE_COUNT];
     atomic_uint memory_allocation_count;
+    atomic_uint wsi_ownership_count;
     atomic_flag deferred_native_lock;
     VkPs5DeferredNative *deferred_native;
+    VkBool32 teardown_started;
 };
+
+static atomic_uint vk_ps5_debug_device_teardown_failure_stage;
+
+void vk_ps5_debug_set_device_teardown_failure_stage(uint32_t stage) {
+    atomic_store_explicit(&vk_ps5_debug_device_teardown_failure_stage, stage,
+                          memory_order_release);
+}
 
 struct VkPs5Memory {
     AgcDevice device;
@@ -782,6 +791,26 @@ uint64_t vk_ps5_memory_gpu_address(
 AgcDevice vk_ps5_native_device(VkDevice device_handle) {
     VkPs5Device *device = (VkPs5Device *)device_handle;
     return device ? device->native_device : NULL;
+}
+
+void vk_ps5_device_retain_wsi_ownership(VkDevice device_handle) {
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (device)
+        atomic_fetch_add_explicit(&device->wsi_ownership_count, 1u,
+            memory_order_relaxed);
+}
+
+void vk_ps5_device_release_wsi_ownership(VkDevice device_handle) {
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    if (device)
+        atomic_fetch_sub_explicit(&device->wsi_ownership_count, 1u,
+            memory_order_relaxed);
+}
+
+uint32_t vk_ps5_device_wsi_ownership_count(VkDevice device_handle) {
+    VkPs5Device *device = (VkPs5Device *)device_handle;
+    return device ? atomic_load_explicit(&device->wsi_ownership_count,
+        memory_order_relaxed) : 0u;
 }
 
 uint32_t vk_ps5_device_address32_hi(VkDevice device_handle) {
@@ -2148,6 +2177,7 @@ vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreat
     device->depth_clip_enable = depth_clip_enable_requested(pCreateInfo);
     device->queue.device = device;
     atomic_init(&device->memory_allocation_count, 0);
+    atomic_init(&device->wsi_ownership_count, 0);
     atomic_flag_clear(&device->deferred_native_lock);
     atomic_flag_clear(&device->meta_attachment_lock);
     atomic_flag_clear(&device->queue.submit_lock);
@@ -2218,10 +2248,18 @@ VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator) {
     VkPs5Device *device = (VkPs5Device *)device_handle;
     if (!device) return;
-    if (vkDeviceWaitIdle(device_handle) != VK_SUCCESS) {
+    if (vk_ps5_device_wsi_ownership_count(device_handle) != 0u) {
         fprintf(stderr,
-            "vulkan-ps5: refusing unsafe device teardown after idle timeout\n");
+            "vulkan-ps5: native device teardown failed: live WSI ownership\n");
         return;
+    }
+    if (!device->teardown_started) {
+        if (vkDeviceWaitIdle(device_handle) != VK_SUCCESS) {
+            fprintf(stderr,
+                "vulkan-ps5: refusing unsafe device teardown after idle timeout\n");
+            return;
+        }
+        device->teardown_started = VK_TRUE;
     }
     const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : device_allocator(device);
     vk_ps5_collect_deferred_native(device_handle);
@@ -2230,29 +2268,92 @@ vkDestroyDevice(VkDevice device_handle, const VkAllocationCallbacks *pAllocator)
             device->meta_attachments[index].pipeline, NULL);
         vkDestroyPipelineLayout(device_handle,
             device->meta_attachments[index].layout, NULL);
+        device->meta_attachments[index].pipeline = VK_NULL_HANDLE;
+        device->meta_attachments[index].layout = VK_NULL_HANDLE;
     }
     ps5_free(allocator, device->meta_attachments);
+    device->meta_attachments = NULL;
+    device->meta_attachment_count = 0u;
+    device->meta_attachment_capacity = 0u;
     for (uint32_t index = 0u; index < device->meta_blit_count; ++index) {
         vkDestroyPipeline(device_handle, device->meta_blits[index].pipeline,
             NULL);
         vkDestroyPipelineLayout(device_handle,
             device->meta_blits[index].layout, NULL);
+        device->meta_blits[index].pipeline = VK_NULL_HANDLE;
+        device->meta_blits[index].layout = VK_NULL_HANDLE;
     }
-    vkDestroySampler(device_handle, device->meta_blit_samplers[0], NULL);
-    vkDestroySampler(device_handle, device->meta_blit_samplers[1], NULL);
+    device->meta_blit_count = 0u;
+    for (uint32_t index = 0u; index < 2u; ++index) {
+        vkDestroySampler(device_handle, device->meta_blit_samplers[index], NULL);
+        device->meta_blit_samplers[index] = VK_NULL_HANDLE;
+    }
     for (uint32_t index = 0u; index < device->meta_resolve_count; ++index) {
         vkDestroyPipeline(device_handle,
             device->meta_resolves[index].pipeline, NULL);
         vkDestroyPipelineLayout(device_handle,
             device->meta_resolves[index].layout, NULL);
+        device->meta_resolves[index].pipeline = VK_NULL_HANDLE;
+        device->meta_resolves[index].layout = VK_NULL_HANDLE;
     }
+    device->meta_resolve_count = 0u;
     vkDestroyPipeline(device_handle, device->meta_clear_pipeline, NULL);
     vkDestroyPipelineLayout(device_handle, device->meta_clear_layout, NULL);
+    device->meta_clear_pipeline = VK_NULL_HANDLE;
+    device->meta_clear_layout = VK_NULL_HANDLE;
     vk_ps5_collect_deferred_native(device_handle);
-    (void)agcDestroyFence(device->queue.present_ready_fence);
-    (void)agcDestroyQueue(device->native_compute_queue);
-    (void)agcDestroyQueue(device->native_graphics_queue);
-    (void)agcDestroyDevice(device->native_device);
+    if (vk_ps5_deferred_native_count(device_handle) != 0u) {
+        fprintf(stderr,
+            "vulkan-ps5: native device teardown failed: deferred objects remain\n");
+        return;
+    }
+    int32_t native_result = AGC_OK;
+    if (device->queue.present_ready_fence) {
+        native_result = agcDestroyFence(device->queue.present_ready_fence);
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: native present fence teardown failed: 0x%08x\n",
+                (unsigned)native_result);
+            return;
+        }
+        device->queue.present_ready_fence = NULL;
+    }
+    if (atomic_exchange_explicit(&vk_ps5_debug_device_teardown_failure_stage,
+                                 0u, memory_order_acq_rel) == 1u) {
+        fprintf(stderr,
+            "vulkan-ps5: injected native device teardown failure after fence\n");
+        return;
+    }
+    if (device->native_compute_queue) {
+        native_result = agcDestroyQueue(device->native_compute_queue);
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: native compute queue teardown failed: 0x%08x\n",
+                (unsigned)native_result);
+            return;
+        }
+        device->native_compute_queue = NULL;
+    }
+    if (device->native_graphics_queue) {
+        native_result = agcDestroyQueue(device->native_graphics_queue);
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: native graphics queue teardown failed: 0x%08x\n",
+                (unsigned)native_result);
+            return;
+        }
+        device->native_graphics_queue = NULL;
+    }
+    if (device->native_device) {
+        native_result = agcDestroyDevice(device->native_device);
+        if (native_result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: native device teardown failed: 0x%08x\n",
+                (unsigned)native_result);
+            return;
+        }
+        device->native_device = NULL;
+    }
     ps5_free(allocator, device);
 }
 

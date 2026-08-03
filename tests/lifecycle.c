@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+void vk_ps5_debug_set_device_teardown_failure_stage(uint32_t stage);
+
 int main(void) {
     uint32_t api_version = 0;
     assert(vkEnumerateInstanceVersion(&api_version) == VK_SUCCESS);
@@ -1184,6 +1186,8 @@ enabled_timeline.pNext = &enabled_depth_clip;
     assert(vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkCreateDevice") == NULL);
     assert(vkGetDeviceProcAddr(VK_NULL_HANDLE, "vkAllocateMemory") == NULL);
     assert(vkDeviceWaitIdle(device) == VK_SUCCESS);
+    vk_ps5_debug_set_device_teardown_failure_stage(1u);
+    vkDestroyDevice(device, NULL);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
     return 0;

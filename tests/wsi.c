@@ -1,4 +1,6 @@
 #include <vulkan/vulkan.h>
+#include <agc_error.h>
+#include <agc_videoout.h>
 
 #include <stdio.h>
 #include <pthread.h>
@@ -7,6 +9,7 @@
 
 VkBool32 vk_ps5_swapchain_has_native_present_chain(VkSwapchainKHR swapchain);
 VkFormat vk_ps5_image_blit_format(VkImage image);
+uint32_t vk_ps5_device_wsi_ownership_count(VkDevice device);
 
 #define CHECK(call) do { \
     VkResult check_result = (call); \
@@ -371,7 +374,9 @@ if (extension_count > 32) return 1;
         .pSwapchains = &swapchain,
         .pImageIndices = &retired_swapchain_index,
     };
-    CHECK(vkQueuePresentKHR(queue, &retired_present));
+    if (vkQueuePresentKHR(queue, &retired_present) !=
+        VK_ERROR_OUT_OF_DATE_KHR)
+        return 1;
 
     uint32_t replacement_index = 0;
     CHECK(vkAcquireNextImageKHR(device, replacement, 0, acquire_semaphores[0],
@@ -507,14 +512,23 @@ if (extension_count > 32) return 1;
 
     vkDestroyImage(device, scanout_blit_source, NULL);
     vkFreeMemory(device, scanout_blit_source_memory, NULL);
-    vkDestroySwapchainKHR(device, zink_swapchain, NULL);
-
     vkDestroyCommandPool(device, command_pool, NULL);
     for (uint32_t i = 0; i < 4; ++i)
         vkDestroySemaphore(device, acquire_semaphores[i], NULL);
+
+    agcVideoOutDebugSetNextCloseResult(AGC_ERROR_INTERNAL);
+    vkDestroySwapchainKHR(device, zink_swapchain, NULL);
+    if (vk_ps5_device_wsi_ownership_count(device) != 1u)
+        return 1;
+    VkSwapchainKHR rejected_swapchain = VK_NULL_HANDLE;
+    if (vkCreateSwapchainKHR(device, &swapchain_info, NULL,
+            &rejected_swapchain) != VK_ERROR_DEVICE_LOST ||
+        rejected_swapchain != VK_NULL_HANDLE)
+        return 1;
     vkDestroyDevice(device, NULL);
+    if (vk_ps5_device_wsi_ownership_count(device) != 1u)
+        return 1;
     vkDestroySurfaceKHR(instance, surface, NULL);
-    vkDestroyInstance(instance, NULL);
-    puts("vulkan_ps5 WSI tests passed");
+    puts("vulkan_ps5 WSI tests passed (including fail-closed teardown)");
     return 0;
 }
