@@ -1682,6 +1682,75 @@ static uint32_t format_bytes(VkFormat format) {
     }
 }
 
+static bool buffer_image_copy_footprint(VkFormat format, VkImageType image_type,
+                                        const VkBufferImageCopy *copy,
+                                        uint64_t *offset, uint64_t *size) {
+    uint64_t block_width = 1u;
+    uint64_t block_height = 1u;
+    uint64_t bytes_per_block = format_bytes(format);
+    switch (format) {
+    case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+    case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+    case VK_FORMAT_BC4_UNORM_BLOCK:
+    case VK_FORMAT_BC4_SNORM_BLOCK:
+        block_width = block_height = 4u;
+        bytes_per_block = 8u;
+        break;
+    case VK_FORMAT_BC2_UNORM_BLOCK:
+    case VK_FORMAT_BC2_SRGB_BLOCK:
+    case VK_FORMAT_BC3_UNORM_BLOCK:
+    case VK_FORMAT_BC3_SRGB_BLOCK:
+    case VK_FORMAT_BC5_UNORM_BLOCK:
+    case VK_FORMAT_BC5_SNORM_BLOCK:
+    case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+    case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+    case VK_FORMAT_BC7_UNORM_BLOCK:
+    case VK_FORMAT_BC7_SRGB_BLOCK:
+        block_width = block_height = 4u;
+        bytes_per_block = 16u;
+        break;
+    default:
+        break;
+    }
+    if (!copy || !offset || !size || !bytes_per_block)
+        return false;
+    const uint64_t row_length = copy->bufferRowLength ?
+        copy->bufferRowLength : copy->imageExtent.width;
+    const uint64_t image_height = copy->bufferImageHeight ?
+        copy->bufferImageHeight : copy->imageExtent.height;
+    const uint64_t row_blocks =
+        (row_length + block_width - 1u) / block_width;
+    const uint64_t copy_width_blocks =
+        ((uint64_t)copy->imageExtent.width + block_width - 1u) / block_width;
+    const uint64_t row_count =
+        ((uint64_t)copy->imageExtent.height + block_height - 1u) /
+        block_height;
+    const uint64_t image_height_blocks =
+        (image_height + block_height - 1u) / block_height;
+    const uint64_t slice_count = image_type == VK_IMAGE_TYPE_3D ?
+        copy->imageExtent.depth : copy->imageSubresource.layerCount;
+    if (!row_blocks || !copy_width_blocks || !row_count || !slice_count ||
+        row_blocks > UINT64_MAX / bytes_per_block ||
+        copy_width_blocks > UINT64_MAX / bytes_per_block)
+        return false;
+    const uint64_t row_pitch = row_blocks * bytes_per_block;
+    const uint64_t row_bytes = copy_width_blocks * bytes_per_block;
+    if (image_height_blocks > UINT64_MAX / row_pitch)
+        return false;
+    const uint64_t slice_pitch = image_height_blocks * row_pitch;
+    if (slice_count - 1u > UINT64_MAX / slice_pitch ||
+        row_count - 1u > UINT64_MAX / row_pitch)
+        return false;
+    const uint64_t slice_tail = (slice_count - 1u) * slice_pitch;
+    const uint64_t row_tail = (row_count - 1u) * row_pitch;
+    if (slice_tail > UINT64_MAX - row_tail ||
+        slice_tail + row_tail > UINT64_MAX - row_bytes)
+        return false;
+    *offset = copy->bufferOffset;
+    *size = slice_tail + row_tail + row_bytes;
+    return *size != 0u;
+}
+
 static bool color_target_format(
     VkFormat format, AgcGfx1013ColorTargetFormat *target_format) {
     if (!target_format) return false;
@@ -8914,10 +8983,23 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
     if (!native_require_complete_stream(command))
         return;
     const char *prepare_step = "source buffer";
-    VkResult prepare = native_prepare_buffer_range(command, source, 0u,
-        source->size, kAgcResourceUsageCopySource);
+    uint32_t prepare_region = 0u;
+    VkResult prepare = VK_SUCCESS;
+    for (; prepare_region < n && prepare == VK_SUCCESS; ++prepare_region) {
+        uint64_t offset;
+        uint64_t size;
+        if (!buffer_image_copy_footprint(destination->format,
+                destination->type, &r[prepare_region], &offset, &size) ||
+            offset > source->size || size > source->size - offset) {
+            prepare = VK_ERROR_INITIALIZATION_FAILED;
+            break;
+        }
+        prepare = native_prepare_buffer_range(command, source, offset, size,
+            kAgcResourceUsageCopySource);
+    }
     if (prepare == VK_SUCCESS) {
         prepare_step = "destination image";
+        prepare_region = 0u;
         prepare = native_transition_whole_image(command, destination,
             native_image_recorded_usage(command, destination),
             kAgcResourceUsageCopyDestination);
@@ -8925,8 +9007,8 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
     if (prepare != VK_SUCCESS) {
         fprintf(stderr,
             "vulkan-ps5: vkCmdCopyBufferToImage prepare failed step=%s "
-            "result=%d format=%u regions=%u\n",
-            prepare_step, prepare, destination->format, n);
+            "region=%u result=%d format=%u regions=%u\n",
+            prepare_step, prepare_region, prepare, destination->format, n);
         command->record_error = prepare;
         return;
     }

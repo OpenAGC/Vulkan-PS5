@@ -1826,7 +1826,19 @@ int main(int argc, char **argv)
         .imageOffset = {2, 2, 0},
         .imageExtent = {4u, 3u, 1u},
     };
+    const VkBufferMemoryBarrier disjoint_copy_state = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = indirect_buffer,
+        .offset = 96u,
+        .size = 32u,
+    };
     assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         1u, &disjoint_copy_state, 0u, NULL);
     vkCmdCopyBufferToImage(command, indirect_buffer, color_image,
         VK_IMAGE_LAYOUT_GENERAL, 1u, &buffer_image_copy);
     vkCmdCopyImageToBuffer(command, color_image,
