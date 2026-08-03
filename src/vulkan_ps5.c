@@ -1342,11 +1342,11 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     case VK_FORMAT_D16_UNORM:
     case VK_FORMAT_D32_SFLOAT:
     case VK_FORMAT_S8_UINT:
+    case VK_FORMAT_D32_SFLOAT_S8_UINT:
         pFormatProperties->linearTilingFeatures = sampled_depth;
         pFormatProperties->optimalTilingFeatures = sampled_depth;
         break;
     case VK_FORMAT_D16_UNORM_S8_UINT:
-    case VK_FORMAT_D32_SFLOAT_S8_UINT:
         pFormatProperties->linearTilingFeatures = attachment_depth;
         pFormatProperties->optimalTilingFeatures = attachment_depth;
         break;
