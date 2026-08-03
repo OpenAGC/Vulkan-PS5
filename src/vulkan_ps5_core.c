@@ -7153,6 +7153,8 @@ static bool native_usage_from_access(VkAccessFlags access,
 
 static bool native_image_usage_from_access(VkAccessFlags access,
                                            VkImageLayout layout,
+                                           VkImageUsageFlags image_usage,
+                                           VkImageAspectFlags aspect_mask,
                                            AgcResourceUsage *usage)
 {
     /* Vulkan discards prior contents for UNDEFINED. The source access scope
@@ -7193,8 +7195,45 @@ static bool native_image_usage_from_access(VkAccessFlags access,
         const uint32_t role_count = ((concrete & transfer) != 0u) +
             ((concrete & color) != 0u) + ((concrete & depth) != 0u) +
             ((concrete & host) != 0u) + (shader != 0u);
-        if (role_count > 1u)
+        if (role_count > 1u) {
+            /* GENERAL permits conservative access masks spanning several
+             * synchronization roles.  Select a role that the concrete image
+             * can actually have so a preceding write still receives a real
+             * native cache/state transition.  Aspect-specific attachment
+             * roles are stronger evidence than generic shader scopes. */
+            if (layout != VK_IMAGE_LAYOUT_GENERAL)
+                return false;
+            if ((aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) != 0u &&
+                (image_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0u &&
+                (concrete & color) != 0u) {
+                *usage = kAgcResourceUsageColorTarget;
+                return true;
+            }
+            if ((aspect_mask & (VK_IMAGE_ASPECT_DEPTH_BIT |
+                                VK_IMAGE_ASPECT_STENCIL_BIT)) != 0u &&
+                (image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) !=
+                    0u && (concrete & depth) != 0u) {
+                *usage = (concrete &
+                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT) != 0u ?
+                    kAgcResourceUsageDepthStencilWrite :
+                    kAgcResourceUsageDepthStencilRead;
+                return true;
+            }
+            if ((concrete & VK_ACCESS_SHADER_WRITE_BIT) != 0u &&
+                (image_usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0u) {
+                *usage = kAgcResourceUsageShaderWrite;
+                return true;
+            }
+            if ((concrete & (VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+                             VK_ACCESS_SHADER_READ_BIT)) != 0u &&
+                (image_usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
+                                VK_IMAGE_USAGE_STORAGE_BIT |
+                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) != 0u) {
+                *usage = kAgcResourceUsageShaderRead;
+                return true;
+            }
             return false;
+        }
     }
     /* Generic scope bits supplement a concrete access but must not change its
      * typed role (for example SHADER_READ|MEMORY_WRITE remains ShaderRead). */
@@ -9018,9 +9057,13 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             !native_queue_family_barrier(barrier->srcQueueFamilyIndex,
                                          barrier->dstQueueFamilyIndex) ||
             !native_image_usage_from_access(barrier->srcAccessMask,
-                                            barrier->oldLayout, &before) ||
+                                            barrier->oldLayout, image->usage,
+                                            barrier->subresourceRange.aspectMask,
+                                            &before) ||
             !native_image_usage_from_access(barrier->dstAccessMask,
-                                            barrier->newLayout, &after) ||
+                                            barrier->newLayout, image->usage,
+                                            barrier->subresourceRange.aspectMask,
+                                            &after) ||
             !native_image_range(image, &barrier->subresourceRange, &range)) {
             fprintf(stderr,
                 "vulkan-ps5: image barrier validation rejected index=%u "
@@ -9154,10 +9197,12 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         AgcResourceUsage after;
         AgcResourceStateInfo state = AGC_RESOURCE_STATE_INFO_INIT;
         AgcResourceTransition transition = AGC_RESOURCE_TRANSITION_INIT;
-        (void)native_image_usage_from_access(barrier->srcAccessMask,
-                                             barrier->oldLayout, &before);
-        (void)native_image_usage_from_access(barrier->dstAccessMask,
-                                             barrier->newLayout, &after);
+        (void)native_image_usage_from_access(
+            barrier->srcAccessMask, barrier->oldLayout, image->usage,
+            barrier->subresourceRange.aspectMask, &before);
+        (void)native_image_usage_from_access(
+            barrier->dstAccessMask, barrier->newLayout, image->usage,
+            barrier->subresourceRange.aspectMask, &after);
         transition.resource_type = kAgcResourceTypeImage;
         transition.image = image->native_image;
         (void)native_image_range(image, &barrier->subresourceRange,

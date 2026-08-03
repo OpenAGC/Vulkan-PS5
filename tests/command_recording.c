@@ -1768,6 +1768,27 @@ int main(int argc, char **argv)
            VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkEndCommandBuffer(command) == VK_ERROR_FEATURE_NOT_PRESENT);
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    /* Eden returns transfer-written color images to GENERAL with a
+     * conservative scope covering every shader and attachment role.  The
+     * color aspect and COLOR_ATTACHMENT usage make ColorTarget the concrete
+     * native destination, including the required write dependency. */
+    generic_after_write_barriers[1].dstAccessMask =
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+        VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &generic_after_write_barriers[0]);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0u, 0u, NULL,
+                         0u, NULL, 1u, &generic_after_write_barriers[1]);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     const VkImageCopy image_copy = {
         .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
         .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0u, 0u, 1u},
