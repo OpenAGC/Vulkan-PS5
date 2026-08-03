@@ -525,6 +525,12 @@ static VkResult ensure_native_image_view(VkPs5ImageView *view) {
         result == AGC_ERROR_OUT_OF_MEMORY ? VK_ERROR_OUT_OF_DEVICE_MEMORY :
         VK_ERROR_INITIALIZATION_FAILED;
 }
+
+VkBool32 vk_ps5_image_view_has_native(VkImageView image_view)
+{
+    const VkPs5ImageView *view = (const VkPs5ImageView *)image_view;
+    return view && view->native_view;
+}
 typedef struct VkPs5BufferView { VkBuffer buffer; VkFormat format; } VkPs5BufferView;
 typedef struct VkPs5Opaque { uint32_t kind; } VkPs5Opaque;
 typedef struct VkPs5Sampler {
@@ -3149,8 +3155,7 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
         }
         break;
     case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
-        if ((!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D) ||
-            image->is_depth_surface)
+        if (!compatible_3d_view && image->type != VK_IMAGE_TYPE_2D)
             return VK_ERROR_FEATURE_NOT_PRESENT;
         break;
     case VK_IMAGE_VIEW_TYPE_CUBE:
@@ -3180,7 +3185,10 @@ vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
     view->mip_level_count = level_count;
     view->base_array_layer = pCreateInfo->subresourceRange.baseArrayLayer;
     view->layer_count = layer_count;
-    VkResult native_result = ensure_native_image_view(view);
+    const VkImageUsageFlags descriptor_usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    VkResult native_result = (image->usage & descriptor_usage) != 0u ?
+        ensure_native_image_view(view) : VK_SUCCESS;
     if (native_result != VK_SUCCESS) {
 #if defined(__PROSPERO__)
         fprintf(stderr, "vulkan-ps5: image-view native creation failed: result=%d image-type=%u flags=0x%x image-format=%u view-format=%u view-type=%u base-mip=%u levels=%u base-layer=%u layers=%u compatible-3d=%u\n",

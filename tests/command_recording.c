@@ -996,7 +996,7 @@ int main(int argc, char **argv)
     const VkImageViewCreateInfo depth_view_info = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = depth_image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
         .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
         .subresourceRange = {
             VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
@@ -1006,6 +1006,7 @@ int main(int argc, char **argv)
     VkImageView depth_view;
     assert(vkCreateImageView(device, &depth_view_info, NULL,
                              &depth_view) == VK_SUCCESS);
+    assert(!vk_ps5_image_view_has_native(depth_view));
     const VkImageView framebuffer_attachments[] = {
         color_view, color_view_1, depth_view,
     };

@@ -140,6 +140,7 @@ AgcRasterizationStateFlags vk_ps5_pipeline_native_rasterization_flags(
 VkResult vk_ps5_enable_image_scanout(VkImage image);
 VkFormat vk_ps5_image_blit_format(VkImage image);
 AgcImage vk_ps5_native_image(VkImage image);
+VkBool32 vk_ps5_image_view_has_native(VkImageView image_view);
 void vk_ps5_set_image_native_usage(VkImage image, AgcResourceUsage usage);
 VkBool32 vk_ps5_swapchain_has_native_present_chain(VkSwapchainKHR swapchain);
 
