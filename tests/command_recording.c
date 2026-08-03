@@ -1250,6 +1250,9 @@ int main(int argc, char **argv)
         .depthTestEnable = VK_TRUE,
         .depthWriteEnable = VK_TRUE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_TRUE,
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f,
         .stencilTestEnable = VK_TRUE,
         .front = {
             .passOp = VK_STENCIL_OP_REPLACE,
@@ -1291,10 +1294,13 @@ int main(int argc, char **argv)
         VK_DYNAMIC_STATE_DEPTH_BIAS,
         VK_DYNAMIC_STATE_BLEND_CONSTANTS,
         VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+        VK_DYNAMIC_STATE_DEPTH_BOUNDS,
+        VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+        VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
     };
     const VkPipelineDynamicStateCreateInfo zink_core_dynamic_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = 3u,
+        .dynamicStateCount = 6u,
         .pDynamicStates = zink_core_dynamic_states,
     };
     VkGraphicsPipelineCreateInfo zink_core_dynamic_info = graphics_info;
@@ -1545,6 +1551,11 @@ int main(int argc, char **argv)
     vkCmdSetBlendConstants(command, dynamic_blend_constants);
     vkCmdSetStencilReference(command, VK_STENCIL_FACE_FRONT_AND_BACK,
                              0x3cu);
+    vkCmdSetStencilCompareMask(command, VK_STENCIL_FACE_FRONT_AND_BACK,
+                              0x7eu);
+    vkCmdSetStencilWriteMask(command, VK_STENCIL_FACE_FRONT_AND_BACK,
+                            0x81u);
+    vkCmdSetDepthBounds(command, 0.25f, 0.75f);
     vkCmdSetDepthBias(command, 2.0f, 0.25f, -1.5f);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       zink_core_dynamic_pipeline);

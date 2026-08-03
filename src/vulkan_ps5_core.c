@@ -824,6 +824,9 @@ typedef struct VkPs5Pipeline {
     VkBool32 line_width_dynamic;
     VkBool32 blend_constants_dynamic;
     VkBool32 stencil_reference_dynamic;
+    VkBool32 stencil_compare_mask_dynamic;
+    VkBool32 stencil_write_mask_dynamic;
+    VkBool32 depth_bounds_dynamic;
     AgcGfx1013DepthBiasState depth_bias;
     VkBool32 depth_bias_enable;
     VkBool32 depth_bias_dynamic;
@@ -964,6 +967,15 @@ typedef struct VkPs5CommandBuffer {
     uint32_t dynamic_stencil_reference_front;
     uint32_t dynamic_stencil_reference_back;
     VkBool32 dynamic_stencil_reference_set;
+    uint32_t dynamic_stencil_compare_mask_front;
+    uint32_t dynamic_stencil_compare_mask_back;
+    VkBool32 dynamic_stencil_compare_mask_set;
+    uint32_t dynamic_stencil_write_mask_front;
+    uint32_t dynamic_stencil_write_mask_back;
+    VkBool32 dynamic_stencil_write_mask_set;
+    float dynamic_depth_bounds_min;
+    float dynamic_depth_bounds_max;
+    VkBool32 dynamic_depth_bounds_set;
     AgcGfx1013Viewport dynamic_viewports[VK_PS5_MAX_VIEWPORTS];
     AgcGfx1013ScissorState dynamic_scissors[VK_PS5_MAX_VIEWPORTS];
     uint32_t dynamic_viewport_mask;
@@ -2907,6 +2919,9 @@ vkBeginCommandBuffer(VkCommandBuffer commandBuffer,
     command->dynamic_depth_bias_set = VK_FALSE;
     command->dynamic_blend_constants_set = VK_FALSE;
     command->dynamic_stencil_reference_set = VK_FALSE;
+    command->dynamic_stencil_compare_mask_set = VK_FALSE;
+    command->dynamic_stencil_write_mask_set = VK_FALSE;
+    command->dynamic_depth_bounds_set = VK_FALSE;
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
@@ -3024,6 +3039,9 @@ vkResetCommandBuffer(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags fl
     command->dynamic_depth_bias_set = VK_FALSE;
     command->dynamic_blend_constants_set = VK_FALSE;
     command->dynamic_stencil_reference_set = VK_FALSE;
+    command->dynamic_stencil_compare_mask_set = VK_FALSE;
+    command->dynamic_stencil_write_mask_set = VK_FALSE;
+    command->dynamic_depth_bounds_set = VK_FALSE;
     command->dynamic_viewport_mask = 0u;
     command->dynamic_scissor_mask = 0u;
     memset(command->vertex_buffers, 0, sizeof(command->vertex_buffers));
@@ -4677,6 +4695,9 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         VkBool32 dynamic_line_width = VK_FALSE;
         VkBool32 dynamic_blend_constants = VK_FALSE;
         VkBool32 dynamic_stencil_reference = VK_FALSE;
+        VkBool32 dynamic_stencil_compare_mask = VK_FALSE;
+        VkBool32 dynamic_stencil_write_mask = VK_FALSE;
+        VkBool32 dynamic_depth_bounds = VK_FALSE;
         VkBool32 dynamic_viewport = VK_FALSE;
         VkBool32 dynamic_scissor = VK_FALSE;
         if (create->pDynamicState) {
@@ -4706,6 +4727,21 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                     if (dynamic_stencil_reference)
                         return VK_ERROR_FEATURE_NOT_PRESENT;
                     dynamic_stencil_reference = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
+                    if (dynamic_stencil_compare_mask)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_stencil_compare_mask = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
+                    if (dynamic_stencil_write_mask)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_stencil_write_mask = VK_TRUE;
+                    break;
+                case VK_DYNAMIC_STATE_DEPTH_BOUNDS:
+                    if (dynamic_depth_bounds)
+                        return VK_ERROR_FEATURE_NOT_PRESENT;
+                    dynamic_depth_bounds = VK_TRUE;
                     break;
                 case VK_DYNAMIC_STATE_VIEWPORT:
                     if (dynamic_viewport)
@@ -5012,8 +5048,7 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (!depth || depth->sType !=
                     VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO)
                 return VK_ERROR_INITIALIZATION_FAILED;
-            if (depth->depthBoundsTestEnable ||
-                depth->depthCompareOp > VK_COMPARE_OP_ALWAYS ||
+            if (depth->depthCompareOp > VK_COMPARE_OP_ALWAYS ||
                 !stencil_face_state(&depth->front, &depth_stencil.front) ||
                 !stencil_face_state(&depth->back, &depth_stencil.back))
                 return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -5022,6 +5057,8 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
                 depth->depthTestEnable && depth->depthWriteEnable;
             depth_stencil.depth_compare_operation =
                 (AgcGfx1013CompareOp)depth->depthCompareOp;
+            depth_stencil.depth_bounds_enable =
+                depth->depthBoundsTestEnable;
             depth_stencil.min_depth_bounds = depth->minDepthBounds;
             depth_stencil.max_depth_bounds = depth->maxDepthBounds;
             depth_stencil.stencil_test_enable = depth->stencilTestEnable;
@@ -5099,6 +5136,10 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
         pipeline->line_width_dynamic = dynamic_line_width;
         pipeline->blend_constants_dynamic = dynamic_blend_constants;
         pipeline->stencil_reference_dynamic = dynamic_stencil_reference;
+        pipeline->stencil_compare_mask_dynamic =
+            dynamic_stencil_compare_mask;
+        pipeline->stencil_write_mask_dynamic = dynamic_stencil_write_mask;
+        pipeline->depth_bounds_dynamic = dynamic_depth_bounds;
         pipeline->depth_bias = (AgcGfx1013DepthBiasState){
             .constant_factor = raster->depthBiasConstantFactor,
             .clamp = raster->depthBiasClamp,
@@ -5493,6 +5534,17 @@ vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache,
             if (dynamic_stencil_reference && native_depth.stencil_test_enable)
                 native_desc.dynamic_state_mask |=
                     AGC_DYNAMIC_STATE_STENCIL_REFERENCE_BIT;
+            if (dynamic_stencil_compare_mask &&
+                native_depth.stencil_test_enable)
+                native_desc.dynamic_state_mask |=
+                    AGC_DYNAMIC_STATE_STENCIL_COMPARE_MASK_BIT;
+            if (dynamic_stencil_write_mask &&
+                native_depth.stencil_test_enable)
+                native_desc.dynamic_state_mask |=
+                    AGC_DYNAMIC_STATE_STENCIL_WRITE_MASK_BIT;
+            if (dynamic_depth_bounds && native_depth.depth_bounds_enable)
+                native_desc.dynamic_state_mask |=
+                    AGC_DYNAMIC_STATE_DEPTH_BOUNDS_BIT;
 
             int32_t native_result = native_layout_valid ?
                 agcCreateGraphicsPipeline(vk_ps5_native_device(device),
@@ -9282,6 +9334,29 @@ vkCmdBindPipeline(VkCommandBuffer c, VkPipelineBindPoint b, VkPipeline p) {
                     command->native_graphics_command_buffer,
                     command->dynamic_stencil_reference_front,
                     command->dynamic_stencil_reference_back);
+            if (native_result == AGC_OK &&
+                pipeline->stencil_compare_mask_dynamic &&
+                pipeline->depth_stencil.stencil_test_enable &&
+                command->dynamic_stencil_compare_mask_set)
+                native_result = agcCmdSetStencilCompareMask(
+                    command->native_graphics_command_buffer,
+                    command->dynamic_stencil_compare_mask_front,
+                    command->dynamic_stencil_compare_mask_back);
+            if (native_result == AGC_OK &&
+                pipeline->stencil_write_mask_dynamic &&
+                pipeline->depth_stencil.stencil_test_enable &&
+                command->dynamic_stencil_write_mask_set)
+                native_result = agcCmdSetStencilWriteMask(
+                    command->native_graphics_command_buffer,
+                    command->dynamic_stencil_write_mask_front,
+                    command->dynamic_stencil_write_mask_back);
+            if (native_result == AGC_OK && pipeline->depth_bounds_dynamic &&
+                pipeline->depth_stencil.depth_bounds_enable &&
+                command->dynamic_depth_bounds_set)
+                native_result = agcCmdSetDepthBounds(
+                    command->native_graphics_command_buffer,
+                    command->dynamic_depth_bounds_min,
+                    command->dynamic_depth_bounds_max);
         }
     } else {
         command->record_error = VK_ERROR_FEATURE_NOT_PRESENT;
@@ -9886,14 +9961,80 @@ vkCmdSetBlendConstants(VkCommandBuffer c, const float v[4]) {
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
-vkCmdSetDepthBounds(VkCommandBuffer c, float a, float b) { IGNORE(c); IGNORE(a); IGNORE(b); }
+vkCmdSetDepthBounds(VkCommandBuffer c, float minimum, float maximum) {
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    debug_note_command(command, "vkCmdSetDepthBounds");
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    command->dynamic_depth_bounds_min = minimum;
+    command->dynamic_depth_bounds_max = maximum;
+    command->dynamic_depth_bounds_set = VK_TRUE;
+    if (command->bound_graphics &&
+        command->bound_graphics->depth_bounds_dynamic &&
+        command->bound_graphics->depth_stencil.depth_bounds_enable &&
+        command->native_bound_graphics ==
+            command->bound_graphics->native_graphics_pipeline &&
+        agcCmdSetDepthBounds(command->native_graphics_command_buffer,
+            minimum, maximum) != AGC_OK)
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+}
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetStencilCompareMask(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t m) {
-    IGNORE(c); IGNORE(f); IGNORE(m);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    const VkStencilFaceFlags known = VK_STENCIL_FACE_FRONT_BIT |
+                                     VK_STENCIL_FACE_BACK_BIT;
+    debug_note_command(command, "vkCmdSetStencilCompareMask");
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!(f & known) || (f & ~known)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (f & VK_STENCIL_FACE_FRONT_BIT)
+        command->dynamic_stencil_compare_mask_front = m & 0xffu;
+    if (f & VK_STENCIL_FACE_BACK_BIT)
+        command->dynamic_stencil_compare_mask_back = m & 0xffu;
+    command->dynamic_stencil_compare_mask_set = VK_TRUE;
+    if (command->bound_graphics &&
+        command->bound_graphics->stencil_compare_mask_dynamic &&
+        command->bound_graphics->depth_stencil.stencil_test_enable &&
+        command->native_bound_graphics ==
+            command->bound_graphics->native_graphics_pipeline &&
+        agcCmdSetStencilCompareMask(
+            command->native_graphics_command_buffer,
+            command->dynamic_stencil_compare_mask_front,
+            command->dynamic_stencil_compare_mask_back) != AGC_OK)
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetStencilWriteMask(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t m) {
-    IGNORE(c); IGNORE(f); IGNORE(m);
+    VkPs5CommandBuffer *command = (VkPs5CommandBuffer *)c;
+    const VkStencilFaceFlags known = VK_STENCIL_FACE_FRONT_BIT |
+                                     VK_STENCIL_FACE_BACK_BIT;
+    debug_note_command(command, "vkCmdSetStencilWriteMask");
+    if (!command || command->state != VK_PS5_COMMAND_RECORDING ||
+        command->record_error != VK_SUCCESS)
+        return;
+    if (!(f & known) || (f & ~known)) {
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
+        return;
+    }
+    if (f & VK_STENCIL_FACE_FRONT_BIT)
+        command->dynamic_stencil_write_mask_front = m & 0xffu;
+    if (f & VK_STENCIL_FACE_BACK_BIT)
+        command->dynamic_stencil_write_mask_back = m & 0xffu;
+    command->dynamic_stencil_write_mask_set = VK_TRUE;
+    if (command->bound_graphics &&
+        command->bound_graphics->stencil_write_mask_dynamic &&
+        command->bound_graphics->depth_stencil.stencil_test_enable &&
+        command->native_bound_graphics ==
+            command->bound_graphics->native_graphics_pipeline &&
+        agcCmdSetStencilWriteMask(command->native_graphics_command_buffer,
+            command->dynamic_stencil_write_mask_front,
+            command->dynamic_stencil_write_mask_back) != AGC_OK)
+        command->record_error = VK_ERROR_INITIALIZATION_FAILED;
 }
 VK_PS5_EXPORT VKAPI_ATTR void VKAPI_CALL
 vkCmdSetStencilReference(VkCommandBuffer c, VkStencilFaceFlags f, uint32_t r) {
