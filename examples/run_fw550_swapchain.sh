@@ -10,6 +10,9 @@ log_dir=${VULKAN_PS5_FW550_LOG_DIR:-$script_dir/qualification-logs}
 websrv_timeout=${VULKAN_PS5_WEBSRV_TIMEOUT:-60}
 klog_port=${VULKAN_PS5_KLOG_PORT:-3232}
 klog_settle_delay=${VULKAN_PS5_KLOG_SETTLE_DELAY:-2}
+continuous_klog=${VULKAN_PS5_CONTINUOUS_KLOG:-0}
+live_klog_timeout=${VULKAN_PS5_LIVE_KLOG_TIMEOUT:-180}
+live_klog_start_delay=${VULKAN_PS5_LIVE_KLOG_START_DELAY:-1}
 cleanup_settle_delay=${VULKAN_PS5_CLEANUP_SETTLE_DELAY:-2}
 pyps4debug_dir=${PYPS4DEBUG_DIR:-/Users/bizkut/Downloads/PS5/homebrew/PyPS4debug}
 elf=${VULKAN_PS5_QUALIFICATION_ELF:-$build_dir/vulkan_ps5_swapchain_example.elf}
@@ -118,6 +121,25 @@ case "$klog_settle_delay" in
         exit 2
         ;;
 esac
+case "$continuous_klog" in
+    0|1) ;;
+    *)
+        echo "VULKAN_PS5_CONTINUOUS_KLOG must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+case "$live_klog_timeout" in
+    ''|*[!0-9]*|0)
+        echo "VULKAN_PS5_LIVE_KLOG_TIMEOUT must be a positive integer" >&2
+        exit 2
+        ;;
+esac
+case "$live_klog_start_delay" in
+    ''|*[!0-9]*)
+        echo "VULKAN_PS5_LIVE_KLOG_START_DELAY must be a non-negative integer" >&2
+        exit 2
+        ;;
+esac
 case "$cleanup_settle_delay" in
     ''|*[!0-9]*)
         echo "VULKAN_PS5_CLEANUP_SETTLE_DELAY must be a non-negative integer" >&2
@@ -196,6 +218,7 @@ fi
 
 cleanup_dir=/data/homebrew/vulkan_ps5_process_cleanup
 target_pid=
+live_klog_pid=
 
 assert_no_eboot_process() {
     uv run --project "$pyps4debug_dir" python \
@@ -271,6 +294,22 @@ finalize_process_state() {
     exit "$status"
 }
 
+stop_continuous_klog() {
+    if [ -n "$live_klog_pid" ]; then
+        if kill -0 "$live_klog_pid" 2>/dev/null; then
+            kill "$live_klog_pid" 2>/dev/null || true
+        fi
+        wait "$live_klog_pid" 2>/dev/null || true
+        live_klog_pid=
+    fi
+}
+
+finalize_runner() {
+    status=$1
+    stop_continuous_klog
+    finalize_process_state "$status"
+}
+
 curl -sS --connect-timeout 3 --max-time 30 \
     "ftp://${PS5_HOST}:2121/" --quote "MKD $cleanup_dir" \
     >/dev/null 2>&1 || true
@@ -279,7 +318,7 @@ curl -sS --connect-timeout 3 --max-time 30 -T "$cleanup_elf" \
 verify_remote_sha256 \
     "ftp://${PS5_HOST}:2121${cleanup_dir}/eboot.elf" \
     "$expected_cleanup_sha256" 'cleanup prerequisite'
-trap 'finalize_process_state "$?"' 0
+trap 'finalize_runner "$?"' 0
 launch_pinned_cleanup
 if ! assert_no_eboot_process; then
     echo "cleanup prerequisite did not retire every exact eboot.bin process" >&2
@@ -302,15 +341,38 @@ timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 log="$log_dir/${timestamp}-swapchain-run1.log"
 klog="$log_dir/${timestamp}-swapchain-run1.klog"
 target_klog="$log_dir/${timestamp}-swapchain-run1-target.klog"
-capture_klog() {
+start_continuous_klog() {
+    : >"$klog"
+    : >"$klog.capture.err"
+    nc -w "$live_klog_timeout" "$PS5_HOST" "$klog_port" \
+        >"$klog" 2>"$klog.capture.err" &
+    live_klog_pid=$!
+    sleep "$live_klog_start_delay"
+    if ! kill -0 "$live_klog_pid" 2>/dev/null; then
+        wait "$live_klog_pid" 2>/dev/null || true
+        live_klog_pid=
+        echo "continuous kernel-log listener was unavailable before launch" >&2
+        return 1
+    fi
+}
+
+finish_klog_capture() {
     sleep "$klog_settle_delay"
-    nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1
+    if [ "$continuous_klog" -eq 1 ]; then
+        stop_continuous_klog
+    else
+        nc -w 5 "$PS5_HOST" "$klog_port" >"$klog" 2>&1
+    fi
     if [ ! -s "$klog" ]; then
-        echo "kernel-log snapshot is empty: $klog" >&2
+        echo "kernel-log capture is empty: $klog" >&2
         return 1
     fi
     sanitize_klog "$klog"
 }
+
+if [ "$continuous_klog" -eq 1 ]; then
+    start_continuous_klog
+fi
 
 echo "FW550 swapchain run 1/1"
 remote_dir="/data/homebrew/$remote_name"
@@ -340,7 +402,7 @@ if ! {
     curl -sS --connect-timeout 3 --max-time "$websrv_timeout" \
         "http://${PS5_HOST}:8080/hbldr?pipe=1&daemon=0&path=${remote_dir}/eboot.elf"
 } >"$log" 2>&1; then
-    capture_klog || true
+    finish_klog_capture || true
     if [ -s "$klog" ]; then
         target_pid=$(latest_eboot_pid "$klog")
     fi
@@ -351,7 +413,7 @@ if ! {
     echo "swapchain run failed; log: $log" >&2
     exit 1
 fi
-if ! capture_klog; then
+if ! finish_klog_capture; then
     echo "swapchain output completed but klog could not be verified" >&2
     exit 1
 fi

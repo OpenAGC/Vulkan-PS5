@@ -14,6 +14,16 @@ qualification concern.
 
 Migration status:
 
+- **Continuous qualification klog:** the guarded FW 5.50 runner now has an
+  opt-in, fail-closed continuous kernel-log mode. It starts and verifies one
+  listener after the pinned cleanup and exact `eboot.bin` absence checks but
+  before qualification upload/launch, preserves captured bytes if the console
+  disconnects, and stops the listener before exit cleanup so cleanup events do
+  not contaminate the target trace. The host regression proves pre-launch
+  ordering, post-launch evidence retention, single-listener use, listener
+  retirement, and refusal to launch when the listener is unavailable. Snapshot
+  mode remains the default for existing qualification wrappers.
+
 - **Eden consecutive descriptor updates:** descriptor writes, copies, and
   update templates now roll across compatible consecutive bindings as Vulkan
   requires, including sparse/zero-count bindings, declaration-order-independent

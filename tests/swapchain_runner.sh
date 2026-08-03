@@ -34,6 +34,14 @@ for arg do
         -o) take_output=1 ;;
         -T) take_upload=1 ;;
         */hbldr*)
+            case "$arg" in
+                *vulkan_ps5_process_cleanup*) ;;
+                *)
+                    if [ -n "${FAKE_EVENT_LOG:-}" ]; then
+                        printf '%s\n' hbldr >>"$FAKE_EVENT_LOG"
+                    fi
+                    ;;
+            esac
             printf '%s\n' \
                 'swapchain: 1800/1800 frames' \
                 "Total Pipeline Count: ${FAKE_PIPELINE_COUNT:-3}" \
@@ -58,6 +66,25 @@ EOF
 
 cat >"$test_root/bin/nc" <<'EOF'
 #!/bin/sh
+if [ -n "${FAKE_EVENT_LOG:-}" ]; then
+    printf '%s\n' nc >>"$FAKE_EVENT_LOG"
+fi
+if [ -n "${FAKE_NC_PID_FILE:-}" ]; then
+    printf '%s\n' "$$" >"$FAKE_NC_PID_FILE"
+fi
+if [ "${FAKE_NC_EXIT_IMMEDIATELY:-0}" = 1 ]; then
+    exit 0
+fi
+if [ "${FAKE_NC_WAIT_FOR_HBLDR:-0}" = 1 ]; then
+    attempts=0
+    until grep -F hbldr "$FAKE_EVENT_LOG" >/dev/null; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 5 ]; then
+            exit 3
+        fi
+        sleep 1
+    done
+fi
 printf '<321> EXEC /app0/eboot.bin [system], vm#1 category=native_game\n'
 printf '\000'
 printf '<322> EXEC /app0/eboot.bin [system], vm#1 category=shell_ui\n'
@@ -85,6 +112,12 @@ case "${FAKE_KLOG_MODE:-clean}" in
         ;;
     *) exit 2 ;;
 esac
+if [ "${FAKE_NC_HOLD:-0}" = 1 ]; then
+    trap 'exit 0' TERM INT
+    while :; do
+        sleep 1
+    done
+fi
 EOF
 
 cat >"$test_root/bin/uv" <<'EOF'
@@ -108,11 +141,18 @@ run_runner() {
     PYPS4DEBUG_DIR="$test_root/pyps4debug" \
     VULKAN_PS5_PROSPERO_BUILD="$test_root/build" \
     VULKAN_PS5_FW550_LOG_DIR="$log_dir" \
-    VULKAN_PS5_KLOG_SETTLE_DELAY=0 \
+    VULKAN_PS5_KLOG_SETTLE_DELAY="${FAKE_KLOG_SETTLE_DELAY:-0}" \
     VULKAN_PS5_CLEANUP_SETTLE_DELAY=0 \
     FAKE_UV_LOG="$test_root/uv.log" \
     FAKE_CURL_REMOTE="$test_root/remote" \
     FAKE_KLOG_MODE="$mode" \
+    FAKE_EVENT_LOG="${FAKE_EVENT_LOG:-}" \
+    FAKE_NC_PID_FILE="${FAKE_NC_PID_FILE:-}" \
+    FAKE_NC_HOLD="${FAKE_NC_HOLD:-0}" \
+    FAKE_NC_EXIT_IMMEDIATELY="${FAKE_NC_EXIT_IMMEDIATELY:-0}" \
+    FAKE_NC_WAIT_FOR_HBLDR="${FAKE_NC_WAIT_FOR_HBLDR:-0}" \
+    VULKAN_PS5_CONTINUOUS_KLOG="${FAKE_CONTINUOUS_KLOG:-0}" \
+    VULKAN_PS5_LIVE_KLOG_START_DELAY="${FAKE_LIVE_KLOG_START_DELAY:-0}" \
     VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256="${FAKE_EXPECTED_SHA256:-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}" \
     VULKAN_PS5_CLEANUP_EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
         sh "$runner" >"$output" 2>&1
@@ -129,6 +169,76 @@ grep -F 'accepted proven raw-ELF baseline warning amount=0x4000' \
 grep -F -- '--assert-absent 127.0.0.1 eboot.bin' "$test_root/uv.log" >/dev/null
 grep -F -- '--assert-absent --pid 321 127.0.0.1 eboot.bin' \
     "$test_root/uv.log" >/dev/null
+
+: >"$test_root/events.log"
+(
+    FAKE_EVENT_LOG="$test_root/events.log" \
+    FAKE_NC_PID_FILE="$test_root/nc.pid" \
+    FAKE_NC_HOLD=1 \
+    FAKE_NC_WAIT_FOR_HBLDR=1 \
+    FAKE_KLOG_SETTLE_DELAY=1 \
+    FAKE_CONTINUOUS_KLOG=1 \
+        run_runner clean "$test_root/continuous.out" \
+        "$test_root/continuous-logs"
+)
+if [ "$(sed -n '1p' "$test_root/events.log")" != nc ] || \
+   [ "$(sed -n '2p' "$test_root/events.log")" != hbldr ]; then
+    echo "continuous klog listener did not start before qualification launch" >&2
+    cat "$test_root/events.log" >&2
+    exit 1
+fi
+if [ "$(grep -Fxc nc "$test_root/events.log")" -ne 1 ]; then
+    echo "continuous mode opened more than one kernel-log listener" >&2
+    cat "$test_root/events.log" >&2
+    exit 1
+fi
+if kill -0 "$(cat "$test_root/nc.pid")" 2>/dev/null; then
+    echo "continuous klog listener remained after runner exit" >&2
+    exit 1
+fi
+grep -F 'FW550 swapchain: PASS (1800 frames, clean exit and klog)' \
+    "$test_root/continuous.out" >/dev/null
+
+: >"$test_root/unavailable-events.log"
+if (
+    FAKE_EVENT_LOG="$test_root/unavailable-events.log" \
+    FAKE_NC_EXIT_IMMEDIATELY=1 \
+    FAKE_CONTINUOUS_KLOG=1 \
+    FAKE_LIVE_KLOG_START_DELAY=1 \
+        run_runner clean "$test_root/unavailable-listener.out" \
+        "$test_root/unavailable-listener-logs"
+); then
+    echo "unavailable continuous klog listener unexpectedly launched" >&2
+    exit 1
+fi
+grep -F 'continuous kernel-log listener was unavailable before launch' \
+    "$test_root/unavailable-listener.out" >/dev/null
+if grep -F hbldr "$test_root/unavailable-events.log" >/dev/null; then
+    echo "qualification launched after continuous klog listener failure" >&2
+    exit 1
+fi
+
+if (
+    FAKE_CONTINUOUS_KLOG=invalid \
+        run_runner clean "$test_root/invalid-continuous.out" \
+        "$test_root/invalid-continuous-logs"
+); then
+    echo "invalid continuous klog mode unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'VULKAN_PS5_CONTINUOUS_KLOG must be 0 or 1' \
+    "$test_root/invalid-continuous.out" >/dev/null
+
+if (
+    VULKAN_PS5_LIVE_KLOG_TIMEOUT=0 \
+        run_runner clean "$test_root/invalid-live-timeout.out" \
+        "$test_root/invalid-live-timeout-logs"
+); then
+    echo "invalid live klog timeout unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'VULKAN_PS5_LIVE_KLOG_TIMEOUT must be a positive integer' \
+    "$test_root/invalid-live-timeout.out" >/dev/null
 
 : >"$test_root/build/eden-bootstrap.elf"
 if ! (
