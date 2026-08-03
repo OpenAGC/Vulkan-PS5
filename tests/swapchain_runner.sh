@@ -45,6 +45,7 @@ for arg do
             printf '%s\n' \
                 'swapchain: 1800/1800 frames' \
                 "Total Pipeline Count: ${FAKE_PIPELINE_COUNT:-3}" \
+                'required-ten' \
                 'swapchain: cleanup begin' \
                 'swapchain: swapchain destroyed' \
                 'swapchain: PASS 1800 frames'
@@ -154,6 +155,7 @@ run_runner() {
     FAKE_NC_EXIT_IMMEDIATELY="${FAKE_NC_EXIT_IMMEDIATELY:-0}" \
     FAKE_NC_WAIT_FOR_HBLDR="${FAKE_NC_WAIT_FOR_HBLDR:-0}" \
     VULKAN_PS5_CONTINUOUS_KLOG="${FAKE_CONTINUOUS_KLOG:-0}" \
+    VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_10="${FAKE_REQUIRED_PATTERN_10:-}" \
     VULKAN_PS5_LIVE_KLOG_START_DELAY="${FAKE_LIVE_KLOG_START_DELAY:-0}" \
     VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256="${FAKE_EXPECTED_SHA256:-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}" \
     VULKAN_PS5_CLEANUP_EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
@@ -180,6 +182,22 @@ if [ "$global_absence_count" -lt 4 ] || [ "$scoped_absence_count" -lt 4 ]; then
     echo "runner did not repeat preflight/postflight absence checks" >&2
     exit 1
 fi
+
+if ! FAKE_REQUIRED_PATTERN_10='^required-ten$' \
+    run_runner clean "$test_root/tenth-required.out" \
+    "$test_root/tenth-required-logs"; then
+    cat "$test_root/tenth-required.out" >&2
+    exit 1
+fi
+if FAKE_REQUIRED_PATTERN_10='^missing-ten$' \
+    run_runner clean "$test_root/missing-tenth.out" \
+    "$test_root/missing-tenth-logs"; then
+    echo "missing tenth required oracle unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'tenth required diagnostic oracle' \
+    "$test_root/missing-tenth.out" >/dev/null
+unset FAKE_REQUIRED_PATTERN_10
 
 : >"$test_root/events.log"
 (
