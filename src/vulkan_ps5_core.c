@@ -8973,6 +8973,18 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
         !(destination->usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
         (dl != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
          dl != VK_IMAGE_LAYOUT_GENERAL)) {
+        fprintf(stderr,
+            "vulkan-ps5: vkCmdCopyBufferToImage rejected render_pass=%u "
+            "source=%u destination=%u regions=%u source_memory=%u "
+            "source_native=%u destination_memory=%u destination_native=%u "
+            "source_usage=0x%x destination_usage=0x%x layout=%u\n",
+            command->active_render_pass != NULL, source != NULL,
+            destination != NULL, n, source && source->memory != NULL,
+            source && source->native_buffer != NULL,
+            destination && destination->memory != NULL,
+            destination && destination->native_image != NULL,
+            source ? source->usage : 0u,
+            destination ? destination->usage : 0u, dl);
         command->record_error = VK_ERROR_INITIALIZATION_FAILED;
         return;
     }
@@ -8982,6 +8994,18 @@ vkCmdCopyBufferToImage(VkCommandBuffer c, VkBuffer s, VkImage d, VkImageLayout d
                 &r[region].imageSubresource, &layers) ||
             !r[region].imageExtent.width || !r[region].imageExtent.height ||
             !r[region].imageExtent.depth) {
+            fprintf(stderr,
+                "vulkan-ps5: vkCmdCopyBufferToImage invalid region=%u "
+                "format=%u aspect=0x%x mip=%u layer=%u layers=%u "
+                "offset=%d,%d,%d extent=%u,%u,%u\n",
+                region, destination->format,
+                r[region].imageSubresource.aspectMask,
+                r[region].imageSubresource.mipLevel,
+                r[region].imageSubresource.baseArrayLayer,
+                r[region].imageSubresource.layerCount,
+                r[region].imageOffset.x, r[region].imageOffset.y,
+                r[region].imageOffset.z, r[region].imageExtent.width,
+                r[region].imageExtent.height, r[region].imageExtent.depth);
             command->record_error = VK_ERROR_INITIALIZATION_FAILED;
             return;
         }
