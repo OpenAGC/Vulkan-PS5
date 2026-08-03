@@ -1699,6 +1699,9 @@ int main(int argc, char **argv)
     const VkImageMemoryBarrier transfer_source_barriers[] = {
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT |
+                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
             .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,

@@ -7155,6 +7155,15 @@ static bool native_image_usage_from_access(VkAccessFlags access,
                                            VkImageLayout layout,
                                            AgcResourceUsage *usage)
 {
+    /* Vulkan discards prior contents for UNDEFINED. The source access scope
+     * is therefore irrelevant even when an application supplies a broad
+     * conservative mask spanning several typed roles. */
+    if (layout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        if (!usage)
+            return false;
+        *usage = kAgcResourceUsageUndefined;
+        return true;
+    }
     const VkAccessFlags generic = VK_ACCESS_MEMORY_READ_BIT |
         VK_ACCESS_MEMORY_WRITE_BIT;
     const VkAccessFlags concrete = access & ~generic;
