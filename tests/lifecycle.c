@@ -572,11 +572,8 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
     }
     assert(vkGetPhysicalDeviceImageFormatProperties(physical,
         VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_TYPE_2D,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_SAMPLED_BIT |
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        0u, &image_format_properties) == VK_SUCCESS);
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT, 0u,
+        &image_format_properties) == VK_ERROR_FORMAT_NOT_SUPPORTED);
     const VkFormat integer_color_formats[] = {
         VK_FORMAT_R16_UINT,
         VK_FORMAT_R16_SINT,

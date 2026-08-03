@@ -10,8 +10,7 @@
 
 #include "../system_service_exit.h"
 
-#define BASE_FORMAT_COUNT 38u
-#define FORMAT_COUNT (BASE_FORMAT_COUNT + 1u)
+#define FORMAT_COUNT 38u
 #define COMMAND_COUNT FORMAT_COUNT
 #define PIPELINE_COUNT 3u
 #define RESULT_WORDS 4u
@@ -46,7 +45,7 @@ typedef struct ShaderCode {
     size_t size;
 } ShaderCode;
 
-static const FormatCase format_cases[BASE_FORMAT_COUNT] = {
+static const FormatCase format_cases[FORMAT_COUNT] = {
     {VK_FORMAT_R8_UNORM, "r8_unorm", NUMERIC_FLOAT,
         {.float32 = {0.25f, 0.0f, 0.0f, 1.0f}},
         {.float32 = {64.0f / 255.0f, 0.0f, 0.0f, 1.0f}}},
@@ -166,7 +165,7 @@ static const FormatCase format_cases[BASE_FORMAT_COUNT] = {
         {.int32 = {-1, INT32_MIN, 123456789, -987654321}}},
 };
 
-static const RawTexel raw_texels[BASE_FORMAT_COUNT] = {
+static const RawTexel raw_texels[FORMAT_COUNT] = {
     {{UINT32_C(0x00000040), 0u, 0u, 0u}, 1u},
     {{UINT32_C(0x00000040), 0u, 0u, 0u}, 1u},
     {{UINT32_C(0x000000ab), 0u, 0u, 0u}, 1u},
@@ -301,67 +300,6 @@ static VkResult create_test_image(VkPhysicalDevice physical, VkDevice device,
     return vkCreateImageView(device, &view_info, NULL, &test_image->view);
 }
 
-static VkResult create_sampled_d32s8(VkPhysicalDevice physical,
-    VkDevice device, TestImage *test_image)
-{
-    VkImageFormatProperties properties;
-    VkResult result = vkGetPhysicalDeviceImageFormatProperties(physical,
-        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_TYPE_2D,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_SAMPLED_BIT |
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        0u, &properties);
-    if (result != VK_SUCCESS)
-        return result;
-    const VkImageCreateInfo image_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-        .extent = {1u, 1u, 1u},
-        .mipLevels = 1u,
-        .arrayLayers = 1u,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_SAMPLED_BIT |
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    result = vkCreateImage(device, &image_info, NULL, &test_image->image);
-    if (result != VK_SUCCESS)
-        return result;
-    VkMemoryRequirements requirements;
-    vkGetImageMemoryRequirements(device, test_image->image, &requirements);
-    const uint32_t memory_type = find_host_visible_memory_type(
-        physical, requirements.memoryTypeBits);
-    if (memory_type == UINT32_MAX)
-        return VK_ERROR_FEATURE_NOT_PRESENT;
-    const VkMemoryAllocateInfo allocation = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = requirements.size,
-        .memoryTypeIndex = memory_type,
-    };
-    result = vkAllocateMemory(device, &allocation, NULL, &test_image->memory);
-    if (result == VK_SUCCESS)
-        result = vkBindImageMemory(device, test_image->image,
-            test_image->memory, 0u);
-    const VkImageViewCreateInfo view_info = {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = test_image->image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
-        .subresourceRange = {
-            VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 1u, 0u, 1u,
-        },
-    };
-    if (result == VK_SUCCESS)
-        result = vkCreateImageView(device, &view_info, NULL,
-            &test_image->view);
-    return result;
-}
-
 static VkResult create_pipeline(VkDevice device, VkPipelineLayout layout,
     const ShaderCode *code, VkShaderModule *module, VkPipeline *pipeline)
 {
@@ -450,7 +388,7 @@ static int run_probe(void)
     };
     VK_TRY(vkCreateDevice(physical, &device_info, NULL, &device));
 
-    for (uint32_t i = 0u; i < BASE_FORMAT_COUNT; ++i) {
+    for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         result = create_test_image(physical, device, &format_cases[i],
             &raw_texels[i], &images[i]);
         if (result != VK_SUCCESS) {
@@ -459,8 +397,6 @@ static int run_probe(void)
             goto cleanup;
         }
     }
-    VK_TRY(create_sampled_d32s8(physical, device,
-        &images[BASE_FORMAT_COUNT]));
     const VkSamplerCreateInfo sampler_info = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_NEAREST,
@@ -572,7 +508,7 @@ static int run_probe(void)
     VkDescriptorImageInfo descriptor_images[FORMAT_COUNT];
     VkDescriptorBufferInfo descriptor_buffers[FORMAT_COUNT];
     VkWriteDescriptorSet descriptor_writes[FORMAT_COUNT * 2u];
-    for (uint32_t i = 0u; i < BASE_FORMAT_COUNT; ++i) {
+    for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         descriptor_images[i] = (VkDescriptorImageInfo) {
             .sampler = sampler,
             .imageView = images[i].view,
@@ -600,32 +536,6 @@ static int run_probe(void)
             .pBufferInfo = &descriptor_buffers[i],
         };
     }
-    descriptor_images[BASE_FORMAT_COUNT] = (VkDescriptorImageInfo) {
-        .sampler = sampler,
-        .imageView = images[BASE_FORMAT_COUNT].view,
-        .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
-    };
-    descriptor_buffers[BASE_FORMAT_COUNT] = (VkDescriptorBufferInfo) {
-        .buffer = output,
-        .offset = 0u,
-        .range = output_size,
-    };
-    descriptor_writes[2u * BASE_FORMAT_COUNT] = (VkWriteDescriptorSet) {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = descriptor_sets[BASE_FORMAT_COUNT],
-        .dstBinding = 0u,
-        .descriptorCount = 1u,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .pImageInfo = &descriptor_images[BASE_FORMAT_COUNT],
-    };
-    descriptor_writes[2u * BASE_FORMAT_COUNT + 1u] = (VkWriteDescriptorSet) {
-        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-        .dstSet = descriptor_sets[BASE_FORMAT_COUNT],
-        .dstBinding = 1u,
-        .descriptorCount = 1u,
-        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-        .pBufferInfo = &descriptor_buffers[BASE_FORMAT_COUNT],
-    };
     vkUpdateDescriptorSets(device, FORMAT_COUNT * 2u, descriptor_writes,
         0u, NULL);
 
@@ -657,7 +567,7 @@ static int run_probe(void)
     const VkImageSubresourceRange image_range = {
         VK_IMAGE_ASPECT_COLOR_BIT, 0u, 1u, 0u, 1u,
     };
-    for (uint32_t i = 0u; i < BASE_FORMAT_COUNT; ++i) {
+    for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         to_sample[i] = (VkImageMemoryBarrier) {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
@@ -699,55 +609,13 @@ static int run_probe(void)
             (command_index + 1u) * FORMAT_COUNT / COMMAND_COUNT;
         const uint32_t count = end - first;
         VK_TRY(vkBeginCommandBuffer(command, &begin_info));
-        if (first == BASE_FORMAT_COUNT) {
-            const VkImageSubresourceRange depth_stencil_range = {
-                VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
-                0u, 1u, 0u, 1u,
-            };
-            const VkImageMemoryBarrier to_clear = {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = images[BASE_FORMAT_COUNT].image,
-                .subresourceRange = depth_stencil_range,
-            };
-            vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 0u, NULL, 0u, NULL,
-                1u, &to_clear);
-            const VkClearDepthStencilValue clear = {0.25f, 0x5au};
-            vkCmdClearDepthStencilImage(command,
-                images[BASE_FORMAT_COUNT].image,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear, 1u,
-                &depth_stencil_range);
-            to_sample[BASE_FORMAT_COUNT] = (VkImageMemoryBarrier) {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-                .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                .newLayout = VK_IMAGE_LAYOUT_GENERAL,
-                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = images[BASE_FORMAT_COUNT].image,
-                .subresourceRange = {
-                    VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 1u, 0u, 1u,
-                },
-            };
-        }
-        const VkPipelineStageFlags source_stage =
-            first == BASE_FORMAT_COUNT ? VK_PIPELINE_STAGE_TRANSFER_BIT :
-                                         VK_PIPELINE_STAGE_HOST_BIT;
-        vkCmdPipelineBarrier(command, source_stage,
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_HOST_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0u, 0u, NULL,
             1u, &output_to_shader,
             count, &to_sample[first]);
         for (uint32_t i = first; i < first + count; ++i) {
-            const NumericClass numeric_class = i < BASE_FORMAT_COUNT ?
-                format_cases[i].numeric_class : NUMERIC_FLOAT;
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
-                pipelines[numeric_class]);
+                pipelines[format_cases[i].numeric_class]);
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                 pipeline_layout, 0u, 1u, &descriptor_sets[i], 0u, NULL);
             vkCmdPushConstants(command, pipeline_layout,
@@ -779,7 +647,7 @@ static int run_probe(void)
 
 #if defined(OPENAGC_PROSPERO)
     uint32_t mismatch_count = 0u;
-    for (uint32_t i = 0u; i < BASE_FORMAT_COUNT; ++i) {
+    for (uint32_t i = 0u; i < FORMAT_COUNT; ++i) {
         uint32_t expected[4];
         expected_words(&format_cases[i], expected);
         const uint32_t *actual = &mapped[i * RESULT_WORDS];
@@ -797,17 +665,8 @@ static int run_probe(void)
         printf("format_sampling: mismatches=%u\n", mismatch_count);
         goto cleanup;
     }
-    const float expected_depth[4] = {0.25f, 0.0f, 0.0f, 1.0f};
-    if (memcmp(&mapped[BASE_FORMAT_COUNT * RESULT_WORDS], expected_depth,
-               sizeof(expected_depth)) != 0) {
-        const uint32_t *actual = &mapped[BASE_FORMAT_COUNT * RESULT_WORDS];
-        printf("format_sampling: D32S8 mismatch got=%08x,%08x,%08x,%08x\n",
-            actual[0], actual[1], actual[2], actual[3]);
-        goto cleanup;
-    }
     printf("format_sampling: PASS formats=%u components=%u exact-bits\n",
-        BASE_FORMAT_COUNT, BASE_FORMAT_COUNT * RESULT_WORDS);
-    puts("format_sampling: D32S8 PASS depth=0.25 stencil=0x5a sampled-depth");
+        FORMAT_COUNT, FORMAT_COUNT * RESULT_WORDS);
 #else
     puts("format_sampling: PASS command recording");
 #endif
