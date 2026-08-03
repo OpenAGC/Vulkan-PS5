@@ -1692,6 +1692,20 @@ int main(int argc, char **argv)
     assert(vkEndCommandBuffer(command) == VK_SUCCESS);
     assert(vk_ps5_command_buffer_native_stream_complete(command));
     assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
+    const VkMemoryBarrier eden_global_transfer_barrier = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT |
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+    };
+    assert(vkBeginCommandBuffer(command, &begin_info) == VK_SUCCESS);
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0u, 1u,
+                         &eden_global_transfer_barrier, 0u, NULL, 0u, NULL);
+    assert(vk_ps5_command_buffer_record_error(command) == VK_SUCCESS);
+    assert(vkEndCommandBuffer(command) == VK_SUCCESS);
+    assert(vk_ps5_command_buffer_native_stream_complete(command));
+    assert(vkResetCommandBuffer(command, 0) == VK_SUCCESS);
     /* Eden uses a broad memory-write scope while returning a transfer source
      * to GENERAL.  MEMORY_WRITE is not evidence of storage-image use: this
      * color/transfer image intentionally has no VK_IMAGE_USAGE_STORAGE_BIT.

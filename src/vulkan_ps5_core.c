@@ -7060,9 +7060,7 @@ static VkResult native_command_result(int32_t result)
     return VK_ERROR_INITIALIZATION_FAILED;
 }
 
-static bool native_usage_from_access(VkAccessFlags access,
-                                     VkImageLayout layout,
-                                     AgcResourceUsage *usage)
+static bool native_access_mask_supported(VkAccessFlags access)
 {
     const VkAccessFlags known = VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
         VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
@@ -7075,7 +7073,14 @@ static bool native_usage_from_access(VkAccessFlags access,
         VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT |
         VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT |
         VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-    if (!usage || (access & ~known) != 0u)
+    return (access & ~known) == 0u;
+}
+
+static bool native_usage_from_access(VkAccessFlags access,
+                                     VkImageLayout layout,
+                                     AgcResourceUsage *usage)
+{
+    if (!usage || !native_access_mask_supported(access))
         return false;
     if (layout == VK_IMAGE_LAYOUT_UNDEFINED ||
         layout == VK_IMAGE_LAYOUT_PREINITIALIZED) {
@@ -9000,12 +9005,8 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
         return;
     }
     for (uint32_t index = 0u; index < mn; ++index) {
-        AgcResourceUsage before;
-        AgcResourceUsage after;
-        if (!native_usage_from_access(m[index].srcAccessMask,
-                                      VK_IMAGE_LAYOUT_GENERAL, &before) ||
-            !native_usage_from_access(m[index].dstAccessMask,
-                                      VK_IMAGE_LAYOUT_GENERAL, &after)) {
+        if (!native_access_mask_supported(m[index].srcAccessMask) ||
+            !native_access_mask_supported(m[index].dstAccessMask)) {
             fprintf(stderr,
                 "vulkan-ps5: memory barrier access rejected index=%u "
                 "src_access=0x%x dst_access=0x%x\n", index,
@@ -9084,45 +9085,17 @@ vkCmdPipelineBarrier(VkCommandBuffer c, VkPipelineStageFlags s, VkPipelineStageF
             return;
         }
     }
-    for (uint32_t index = 0u; index < mn; ++index) {
-        AgcResourceUsage before;
-        AgcResourceUsage after;
-        (void)native_usage_from_access(m[index].srcAccessMask,
-                                       VK_IMAGE_LAYOUT_GENERAL, &before);
-        (void)native_usage_from_access(m[index].dstAccessMask,
-                                       VK_IMAGE_LAYOUT_GENERAL, &after);
-        if (before == kAgcResourceUsageUndefined)
-            continue;
-        if (after == kAgcResourceUsageUndefined)
-            after = before;
+    if (mn != 0u) {
         if (!native_require_complete_stream(command))
             return;
-        for (uint32_t state_index = 0u;
-             state_index < command->native_buffer_state_count; ++state_index) {
-            VkPs5NativeBufferState *state =
-                &command->native_buffer_states[state_index];
-            if (state->usage != before)
-                continue;
-            VkResult result = native_prepare_buffer_range(command,
-                state->buffer, 0u, state->buffer->size, after);
-            if (result != VK_SUCCESS) {
-                command->record_error = result;
-                return;
-            }
-        }
-        for (uint32_t state_index = 0u;
-             state_index < command->native_image_state_count; ++state_index) {
-            VkPs5NativeImageState *state =
-                &command->native_image_states[state_index];
-            if (state->usage != before ||
-                !native_image_supports_usage(state->image, after))
-                continue;
-            VkResult result = native_transition_whole_image(command,
-                state->image, before, after);
-            if (result != VK_SUCCESS) {
-                command->record_error = result;
-                return;
-            }
+        const int32_t result = agcCmdMemoryBarrier(
+            command->native_graphics_command_buffer);
+        if (result != AGC_OK) {
+            fprintf(stderr,
+                "vulkan-ps5: global memory barrier emission failed "
+                "result=0x%08x count=%u\n", (unsigned)result, mn);
+            command->record_error = native_command_result(result);
+            return;
         }
     }
     for (uint32_t index = 0u; index < bn; ++index) {
