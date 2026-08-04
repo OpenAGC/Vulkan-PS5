@@ -540,6 +540,20 @@ passed twice on FW 5.500.008 with bounded waits, teardown, and immediate
 relaunch. See `analysis/fw550_format_storage_20260802.md`. Sampled-image
 execution and scalar/vector attachment exports remain pending.
 
+The Flappy startup format audit exposed a capability-table gap for ten formats
+whose native OpenAGC image and storage-descriptor mappings already exist:
+`B8G8R8A8_UNORM`, `A8B8G8R8_UNORM_PACK32`, `A2B10G10R10_UNORM_PACK32`,
+`R16_SFLOAT`, `R16G16_SFLOAT`, `R16G16B16A16_SFLOAT`, `R32_SFLOAT`,
+`R32G32_SFLOAT`, `R32G32B32A32_SFLOAT`, and
+`B10G11R11_UFLOAT_PACK32`. Vulkan-PS5 now advertises storage-image support for
+those formats and accepts Eden's combined sampled/storage/attachment/transfer
+usage without relying on `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT`. The lifecycle
+test checks the exact feature set and image-format query for every format; the
+command-recording test retains an sRGB storage-negative case. All 62 host tests
+pass. Hardware storage writes for this expanded set remain a qualification
+gate; this change does not broaden combined D32/S8 sampling, whose prior FW
+5.50 probe left the native queue pending.
+
 The BC slice is application-neutral Vulkan behavior, not an Eden override.
 `vkGetPhysicalDeviceFormatProperties` reports the same sampled/filter/transfer
 contract for all 14 formats, while image-format queries reject BC 3D images.

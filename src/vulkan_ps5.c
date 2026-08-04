@@ -1344,8 +1344,8 @@ vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice physicalDevice, VkFormat fo
     case VK_FORMAT_R32G32_SFLOAT:
     case VK_FORMAT_R32G32B32A32_SFLOAT:
     case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
-        pFormatProperties->linearTilingFeatures = color;
-        pFormatProperties->optimalTilingFeatures = color;
+        pFormatProperties->linearTilingFeatures = storage_color;
+        pFormatProperties->optimalTilingFeatures = storage_color;
         pFormatProperties->bufferFeatures =
             VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT |
             VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;

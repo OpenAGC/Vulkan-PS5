@@ -667,6 +667,36 @@ assert(line_features.stippledRectangularLines == VK_FALSE);
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
             0u, &image_format_properties) == VK_SUCCESS);
     }
+    const VkFormat eden_float_and_packed_storage_formats[] = {
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+        VK_FORMAT_R16_SFLOAT,
+        VK_FORMAT_R16G16_SFLOAT,
+        VK_FORMAT_R16G16B16A16_SFLOAT,
+        VK_FORMAT_R32_SFLOAT,
+        VK_FORMAT_R32G32_SFLOAT,
+        VK_FORMAT_R32G32B32A32_SFLOAT,
+        VK_FORMAT_B10G11R11_UFLOAT_PACK32,
+    };
+    for (size_t i = 0u;
+         i < sizeof(eden_float_and_packed_storage_formats) /
+             sizeof(eden_float_and_packed_storage_formats[0]); ++i) {
+        vkGetPhysicalDeviceFormatProperties(physical,
+            eden_float_and_packed_storage_formats[i], &format_properties);
+        assert(format_properties.linearTilingFeatures ==
+            normalized_storage_features);
+        assert(format_properties.optimalTilingFeatures ==
+            normalized_storage_features);
+        assert(vkGetPhysicalDeviceImageFormatProperties(physical,
+            eden_float_and_packed_storage_formats[i], VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            0u, &image_format_properties) == VK_SUCCESS);
+    }
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
                                         &format_properties);
     assert(format_properties.optimalTilingFeatures == 0);

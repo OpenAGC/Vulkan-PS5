@@ -308,12 +308,22 @@ static bool native_image_storage_supported(VkFormat format,
         format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R8_SINT ||
         format == VK_FORMAT_R8G8_UNORM || format == VK_FORMAT_R8G8_SNORM ||
         format == VK_FORMAT_R8G8_UINT || format == VK_FORMAT_R8G8_SINT ||
+        format == VK_FORMAT_A8B8G8R8_UNORM_PACK32 ||
+        format == VK_FORMAT_B8G8R8A8_UNORM ||
         format == VK_FORMAT_A8B8G8R8_SNORM_PACK32 ||
         format == VK_FORMAT_A8B8G8R8_UINT_PACK32 ||
         format == VK_FORMAT_A8B8G8R8_SINT_PACK32 ||
+        format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ||
         format == VK_FORMAT_A2B10G10R10_UINT_PACK32 ||
+        format == VK_FORMAT_R16_SFLOAT ||
+        format == VK_FORMAT_R16G16_SFLOAT ||
+        format == VK_FORMAT_R16G16B16A16_SFLOAT ||
         format == VK_FORMAT_R16G16B16A16_UINT ||
         format == VK_FORMAT_R16G16B16A16_SINT ||
+        format == VK_FORMAT_R32_SFLOAT ||
+        format == VK_FORMAT_R32G32_SFLOAT ||
+        format == VK_FORMAT_R32G32B32A32_SFLOAT ||
+        format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
         format == VK_FORMAT_R32G32B32A32_UINT ||
         format == VK_FORMAT_R32G32B32A32_SINT ||
         format == VK_FORMAT_R16_UNORM || format == VK_FORMAT_R16_SNORM ||

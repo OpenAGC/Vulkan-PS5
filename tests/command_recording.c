@@ -822,7 +822,7 @@ int main(int argc, char **argv)
                &extended_storage_format_info,
                &extended_storage_format_properties) == VK_SUCCESS);
     const VkFormat no_storage_view_format =
-        VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+        VK_FORMAT_A8B8G8R8_SRGB_PACK32;
     const VkImageFormatListCreateInfo no_storage_format_list = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO,
         .viewFormatCount = 1u,
@@ -860,9 +860,8 @@ int main(int argc, char **argv)
     extended_storage_image_info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
     extended_storage_image = VK_NULL_HANDLE;
     assert(vkCreateImage(device, &extended_storage_image_info, NULL,
-                         &extended_storage_image) ==
-           VK_ERROR_FORMAT_NOT_SUPPORTED);
-    assert(extended_storage_image == VK_NULL_HANDLE);
+                         &extended_storage_image) == VK_SUCCESS);
+    vkDestroyImage(device, extended_storage_image, NULL);
     VkImage color_image_1;
     assert(vkCreateImage(device, &image_info, NULL,
                          &color_image_1) == VK_SUCCESS);
