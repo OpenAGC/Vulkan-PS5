@@ -55,8 +55,12 @@ closed; queue submission never falls back to a second encoder.
 
 `analysis/native_runtime_calls.tsv` intentionally contains only its schema
 header. `tests/native_migration_audit.py` accepts that zero-row inventory and
-continues to fail if a direct low-level symbol reappears. Normal and sanitizer
-host builds pass all 46 CTest gates, and the Prospero target set builds cleanly.
+continues to fail if a direct low-level symbol reappears. The gate also rejects
+source-level `libSceAgcDriver` lookup/linkage, `/dev/gc`, private
+`AgcDriverOps`, `kernel_dynlib_*`, and mutating `dlopen` coupling. Vulkan may
+inherit the installed-driver `DT_NEEDED` entry from `OpenAGC::openagc`, but it
+cannot select or invoke that carrier itself. Normal and sanitizer host builds
+pass all 46 CTest gates, and the Prospero target set builds cleanly.
 The focused FW 5.500.008 custom-border gate then passed `covered=18432
 blue=18432 swizzle=BR`, self-exited, and left only the established `amount=0x4000`
 warning; see `examples/qualification-logs/20260731T155934Z-custom-border-color-run1.log`.

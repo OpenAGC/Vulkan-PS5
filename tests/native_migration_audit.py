@@ -16,6 +16,13 @@ VALID_CATEGORIES = {
     "lifecycle", "memory", "resource", "shader", "pipeline", "command",
     "transition", "synchronization", "query", "presentation",
 }
+FORBIDDEN_BACKEND_TOKENS = {
+    "libSceAgcDriver": "installed Sony module lookup/linkage",
+    "/dev/gc": "direct kernel graphics-device access",
+    "AgcDriverOps": "OpenAGC private carrier dispatch",
+    "kernel_dynlib_": "module-specific dynamic-loader access",
+    "dlopen(": "mutating dynamic module loading",
+}
 
 
 def main() -> int:
@@ -40,19 +47,27 @@ def main() -> int:
         inventory[symbol] = row
 
     observed = set()
+    forbidden = []
     for source in sorted((root / "src").glob("*.c")):
         text = source.read_text(encoding="utf-8")
         observed.update(match.group(0).split("(", 1)[0].strip()
                         for match in CALL.finditer(text))
+        for token, reason in FORBIDDEN_BACKEND_TOKENS.items():
+            if token in text:
+                forbidden.append(
+                    f"{source.relative_to(root)}: {token} ({reason})")
     missing = sorted(observed - inventory.keys())
     stale = sorted(inventory.keys() - observed)
-    if missing or stale:
+    if missing or stale or forbidden:
         if missing:
             print("unowned direct calls: " + ", ".join(missing))
         if stale:
             print("stale inventory calls: " + ", ".join(stale))
+        if forbidden:
+            print("forbidden backend coupling:\n  " + "\n  ".join(forbidden))
         return 1
-    print(f"native-migration-audit: {len(observed)} direct calls owned")
+    print(f"native-migration-audit: {len(observed)} direct calls owned; "
+          "no private carrier coupling")
     return 0
 
 
