@@ -14,6 +14,13 @@ qualification concern.
 
 Migration status:
 
+- **Eleventh qualification oracle:** the guarded FW 5.50 runner now consumes,
+  bounds-checks, and enforces `VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_11`.
+  This closes a silent gap where Eden's Flappy wrapper supplied a Cross-press
+  oracle that the runner ignored. The safety regression proves both present
+  and missing eleventh-pattern behavior; the runner SHA-256 is
+  `6730996b22594de47467d46addfcf6c8def1ccfa085d233120371c1fd0b6db68`.
+
 - **Continuous qualification klog:** the guarded FW 5.50 runner now has an
   opt-in, fail-closed continuous kernel-log mode. It starts and verifies one
   listener after the pinned cleanup and exact `eboot.bin` absence checks but

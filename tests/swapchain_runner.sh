@@ -46,6 +46,7 @@ for arg do
                 'swapchain: 1800/1800 frames' \
                 "Total Pipeline Count: ${FAKE_PIPELINE_COUNT:-3}" \
                 'required-ten' \
+                'required-eleven' \
                 'swapchain: cleanup begin' \
                 'swapchain: swapchain destroyed' \
                 'swapchain: PASS 1800 frames'
@@ -156,6 +157,7 @@ run_runner() {
     FAKE_NC_WAIT_FOR_HBLDR="${FAKE_NC_WAIT_FOR_HBLDR:-0}" \
     VULKAN_PS5_CONTINUOUS_KLOG="${FAKE_CONTINUOUS_KLOG:-0}" \
     VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_10="${FAKE_REQUIRED_PATTERN_10:-}" \
+    VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_11="${FAKE_REQUIRED_PATTERN_11:-}" \
     VULKAN_PS5_LIVE_KLOG_START_DELAY="${FAKE_LIVE_KLOG_START_DELAY:-0}" \
     VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256="${FAKE_EXPECTED_SHA256:-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}" \
     VULKAN_PS5_CLEANUP_EXPECTED_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" \
@@ -198,6 +200,22 @@ fi
 grep -F 'tenth required diagnostic oracle' \
     "$test_root/missing-tenth.out" >/dev/null
 unset FAKE_REQUIRED_PATTERN_10
+
+if ! FAKE_REQUIRED_PATTERN_11='^required-eleven$' \
+    run_runner clean "$test_root/eleventh-required.out" \
+    "$test_root/eleventh-required-logs"; then
+    cat "$test_root/eleventh-required.out" >&2
+    exit 1
+fi
+if FAKE_REQUIRED_PATTERN_11='^missing-eleven$' \
+    run_runner clean "$test_root/missing-eleventh.out" \
+    "$test_root/missing-eleventh-logs"; then
+    echo "missing eleventh required oracle unexpectedly passed" >&2
+    exit 1
+fi
+grep -F 'eleventh required diagnostic oracle' \
+    "$test_root/missing-eleventh.out" >/dev/null
+unset FAKE_REQUIRED_PATTERN_11
 
 : >"$test_root/events.log"
 (

@@ -33,6 +33,7 @@ required_pattern_7=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_7:-}
 required_pattern_8=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_8:-}
 required_pattern_9=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_9:-}
 required_pattern_10=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_10:-}
+required_pattern_11=${VULKAN_PS5_QUALIFICATION_REQUIRED_PATTERN_11:-}
 reject_pattern=${VULKAN_PS5_QUALIFICATION_REJECT_PATTERN:-}
 expected_sha256=${VULKAN_PS5_SWAPCHAIN_EXPECTED_SHA256:-}
 expected_cleanup_sha256=${VULKAN_PS5_CLEANUP_EXPECTED_SHA256:-}
@@ -109,6 +110,7 @@ if [ "${#required_pattern}" -gt 256 ] || \
    [ "${#required_pattern_8}" -gt 256 ] || \
    [ "${#required_pattern_9}" -gt 256 ] || \
    [ "${#required_pattern_10}" -gt 256 ] || \
+   [ "${#required_pattern_11}" -gt 256 ] || \
    [ "${#reject_pattern}" -gt 256 ]; then
     echo "qualification required or reject pattern is oversized" >&2
     exit 2
@@ -512,6 +514,11 @@ fi
 if [ -n "$required_pattern_10" ] && ! grep -E "$required_pattern_10" "$log" >/dev/null; then
     target_pid=$(latest_eboot_pid "$klog")
     echo "swapchain run did not produce its tenth required diagnostic oracle; log: $log" >&2
+    exit 1
+fi
+if [ -n "$required_pattern_11" ] && ! grep -E "$required_pattern_11" "$log" >/dev/null; then
+    target_pid=$(latest_eboot_pid "$klog")
+    echo "swapchain run did not produce its eleventh required diagnostic oracle; log: $log" >&2
     exit 1
 fi
 if [ -n "$reject_pattern" ]; then
