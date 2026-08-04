@@ -624,6 +624,11 @@ process before `sceSystemServiceKillApp` can return, so stdout after that call
 is intentionally not used as an oracle. On
 timeout or a post-PASS safety failure it derives that PID from klog and asks
 ps5debug-NG to kill only that process before returning failure.
+If the process exits between enumeration and debugger attachment, the helper
+accepts that race only after two fresh exact-identity queries both prove
+absence. A failed attach or kill with a live match, a single transient empty
+list, or an ambiguous name remains a hard failure; a nominally successful kill
+also requires the same repeated absence proof.
 
 The first FW 5.50 attempt stopped safely before registration: kernel evidence
 showed that byte verification touched the execute-only VideoOut text page
